@@ -261,3 +261,100 @@ export async function getSpotifyArtistsByIdsWithTokenFallback(
   }
   return [];
 }
+
+export type SpotifyAlbumTrackRow = {
+  id: string;
+  name: string;
+  duration_ms: number;
+  track_number: number;
+};
+
+export type SpotifyAlbumBundle = {
+  id: string;
+  name: string;
+  images: { url?: string }[];
+  external_urls?: { spotify?: string };
+  artists: { id: string; name: string }[];
+  total_tracks: number;
+};
+
+async function fetchSpotifyJson(
+  accessToken: string,
+  url: string
+): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    next: { revalidate: 0 },
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("EXPIRED_TOKEN");
+    throw new Error(
+      `Spotify ${response.status}: ${response.statusText} · ${raw.slice(0, 200)}`
+    );
+  }
+  return JSON.parse(raw) as unknown;
+}
+
+/** Metadatos del álbum + tracklist oficial (todas las páginas). */
+export async function getSpotifyAlbumWithTracks(
+  accessToken: string,
+  albumId: string
+): Promise<{ album: SpotifyAlbumBundle; tracks: SpotifyAlbumTrackRow[] }> {
+  type Item = {
+    id?: string;
+    name?: string;
+    duration_ms?: number;
+    track_number?: number;
+  };
+  type Paged = {
+    items?: Item[];
+    next?: string | null;
+    total?: number;
+  };
+
+  const root = `${SPOTIFY_API_BASE}/albums/${encodeURIComponent(albumId)}`;
+  const first = (await fetchSpotifyJson(accessToken, root)) as SpotifyAlbumBundle & {
+    tracks?: Paged;
+  };
+
+  const out: SpotifyAlbumTrackRow[] = [];
+  let page: Paged | undefined = first.tracks;
+  if (!page || (!page.items?.length && !page.next)) {
+    const u = `${SPOTIFY_API_BASE}/albums/${encodeURIComponent(albumId)}/tracks?limit=50&offset=0`;
+    page = (await fetchSpotifyJson(accessToken, u)) as Paged;
+  }
+  let guard = 0;
+
+  while (page && guard < 40) {
+    guard++;
+    for (const it of page.items ?? []) {
+      if (it?.id && it.name != null && typeof it.duration_ms === "number") {
+        out.push({
+          id: it.id,
+          name: it.name,
+          duration_ms: it.duration_ms,
+          track_number:
+            typeof it.track_number === "number" ? it.track_number : out.length + 1,
+        });
+      }
+    }
+    if (!page.next) break;
+    page = (await fetchSpotifyJson(accessToken, page.next)) as Paged;
+  }
+
+  const album: SpotifyAlbumBundle = {
+    id: first.id,
+    name: first.name,
+    images: first.images ?? [],
+    external_urls: first.external_urls,
+    artists: (first.artists ?? []).map((a) => ({
+      id: a.id,
+      name: a.name,
+    })),
+    total_tracks: typeof first.total_tracks === "number" ? first.total_tracks : out.length,
+  };
+
+  out.sort((a, b) => a.track_number - b.track_number);
+  return { album, tracks: out };
+}

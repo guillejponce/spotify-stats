@@ -12,12 +12,14 @@ import {
   Menu,
   X,
   Users,
+  Library,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/artists", label: "Artistas", icon: Users },
+  { href: "/albums", label: "Álbumes", icon: Library },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },
