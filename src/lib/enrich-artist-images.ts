@@ -34,11 +34,11 @@ export async function enrichArtistsMissingImages(
   if (ids.length === 0) return 0;
 
   const cc = await getSpotifyClientCredentialsToken();
-  const tokens = [cc, fallbackUserAccessToken] as (
-    | string
-    | null
-    | undefined
-  )[];
+  /** Preferir token de usuario: en algunos proyectos Spotify acepta ese para catálogo y devuelve 403 con client_credentials. */
+  const tokens = [
+    fallbackUserAccessToken,
+    cc,
+  ] as (string | null | undefined)[];
   if (!tokens.some(Boolean)) {
     console.warn(
       "[enrich-artist-images] Sin token Spotify: definí CLIENT_ID + SECRET o conectá cuenta."
@@ -48,3 +48,23 @@ export async function enrichArtistsMissingImages(
 
   let enriched = 0;
   const artists = await getSpotifyArtistsByIdsWithTokenFallback(ids, tokens);
+  if (artists.length === 0) return 0;
+
+  for (const a of artists) {
+    const img = a.images?.[0]?.url;
+    if (!img) continue;
+    const patch: { image_url: string; spotify_url?: string } = {
+      image_url: img,
+    };
+    if (a.external_urls?.spotify) {
+      patch.spotify_url = a.external_urls.spotify;
+    }
+    const { error: updErr } = await supabase
+      .from("artists")
+      .update(patch)
+      .eq("id", a.id);
+    if (!updErr) enriched++;
+  }
+
+  return enriched;
+}
