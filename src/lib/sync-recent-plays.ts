@@ -10,6 +10,7 @@ import {
   upsertArtistAndGetDbId,
   upsertAlbumAndGetDbId,
 } from "@/lib/spotify-graph-db";
+import { PLAYBACK_PLATFORM_SPOTIFY_SYNC } from "@/lib/playback-platform";
 
 export type SyncRecentResult = {
   synced: number;
@@ -189,7 +190,7 @@ export async function syncRecentPlaysFromSpotify(
       source: "live",
       shuffle: null,
       offline: null,
-      platform: "spotify_recent_api",
+      platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
     });
 
     if (insErr?.code === "23505") {

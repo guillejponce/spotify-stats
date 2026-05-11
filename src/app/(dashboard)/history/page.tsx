@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatMs } from "@/lib/utils";
 import { formatChileDateTimeFromIso } from "@/lib/chile-time";
 import { Music2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { formatPlaybackPlatform, formatPlaybackSource } from "@/lib/playback-platform";
 
 interface HistoryPlay {
   id: string;
@@ -27,8 +28,8 @@ interface HistoryPlay {
 
 function PlaybackMeta({ play }: { play: HistoryPlay }) {
   const bits: string[] = [];
-  if (play.platform) bits.push(`Plataforma: ${play.platform}`);
-  if (play.source) bits.push(`Origen: ${play.source}`);
+  if (play.platform) bits.push(`Dispositivo: ${formatPlaybackPlatform(play.platform)}`);
+  if (play.source) bits.push(`Origen: ${formatPlaybackSource(play.source)}`);
   if (play.reason_start) bits.push(`Inicio: ${play.reason_start}`);
   if (play.reason_end) bits.push(`Fin: ${play.reason_end}`);
   if (play.shuffle != null) bits.push(play.shuffle ? "Shuffle" : "Sin shuffle");

@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SPOTIFY_API = "https://api.spotify.com/v1";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
+/** Igual que en la app: `PLAYBACK_PLATFORM_SPOTIFY_SYNC` (Deno no importa `src/`). */
+const PLAYBACK_PLATFORM_SPOTIFY_SYNC = "spotify_recent_api";
+
 type SpotifyTokenRow = {
   id: string;
   access_token: string;
@@ -431,7 +434,7 @@ Deno.serve(async (req) => {
         source: "live" as const,
         shuffle: null as boolean | null,
         offline: null as boolean | null,
-        platform: null as string | null,
+        platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
         reason_start: null as string | null,
         reason_end: null as string | null,
       };

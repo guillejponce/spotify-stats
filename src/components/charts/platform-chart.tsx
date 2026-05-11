@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { msToHours, formatNumber } from "@/lib/utils";
+import { summarizePlatformsForChart } from "@/lib/playback-platform";
 
 const COLORS = ["#1DB954", "#1AA34A", "#15803D", "#166534", "#14532D", "#4ADE80", "#86EFAC"];
 
@@ -27,6 +29,8 @@ interface PlatformChartProps {
 }
 
 export function PlatformChart({ title, data, loading = false }: PlatformChartProps) {
+  const chartData = useMemo(() => summarizePlatformsForChart(data), [data]);
+
   if (loading) {
     return (
       <Card>
@@ -36,7 +40,7 @@ export function PlatformChart({ title, data, loading = false }: PlatformChartPro
     );
   }
 
-  if (data.length === 0) {
+  if (chartData.length === 0) {
     return (
       <Card>
         <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
@@ -54,15 +58,16 @@ export function PlatformChart({ title, data, loading = false }: PlatformChartPro
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Dispositivo o app (`platform`) de cada reproducción en el rango temporal que
-          elegiste.
+          Cómo te escuchabas la música cuando el dato existe: en imports completos aparece el
+          dispositivo real; desde la API de Spotify solo sabemos que fue sincronizada como «últimas
+          reproducciones», no el equipo concreto.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
           <PieChart>
             <Pie
-              data={data}
+              data={chartData}
               cx="50%"
               cy="50%"
               innerRadius={60}
@@ -71,7 +76,7 @@ export function PlatformChart({ title, data, loading = false }: PlatformChartPro
               dataKey="play_count"
               nameKey="platform"
             >
-              {data.map((_, index) => (
+              {chartData.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
