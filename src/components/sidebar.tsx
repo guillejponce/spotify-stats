@@ -11,11 +11,13 @@ import {
   Music2,
   Menu,
   X,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/artists", label: "Artistas", icon: Users },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },

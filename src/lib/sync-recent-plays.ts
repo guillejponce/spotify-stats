@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRecentlyPlayed } from "@/lib/spotify";
 import { getSpotifyAccessToken } from "@/lib/spotify-token";
+import { upsertTrackAndGetPk } from "@/lib/spotify-tracks-db";
+import {
+  upsertArtistAndGetDbId,
+  upsertAlbumAndGetDbId,
+} from "@/lib/spotify-graph-db";
 
 export type SyncRecentResult = {
   synced: number;
@@ -77,69 +82,79 @@ export async function syncRecentPlaysFromSpotify(
 
     const primaryArtist = artists?.[0] ?? FALLBACK_ARTIST;
 
-    const artistId =
+    /** Prefer Spotify id when present so legacy base_script upsert stays stable. */
+    const spotifyArtistKey =
       primaryArtist?.id ||
       String(track.name ?? "unknown")
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "_");
 
-    if (primaryArtist?.name) {
-      await supabase.from("artists").upsert(
-        {
-          id: artistId,
-          name: primaryArtist.name,
-          image_url: primaryArtist.images?.[0]?.url ?? null,
-          spotify_url: primaryArtist.external_urls?.spotify ?? null,
-        },
-        { onConflict: "id" }
-      );
+    const artistName = primaryArtist.name || "Unknown";
+
+    const artistDbId = await upsertArtistAndGetDbId(supabase, {
+      spotifyArtistId: spotifyArtistKey,
+      name: artistName,
+      image_url: primaryArtist.images?.[0]?.url ?? null,
+      spotify_url: primaryArtist.external_urls?.spotify ?? null,
+    });
+
+    if (!artistDbId) {
+      console.error("[sync-recent] artist upsert failed", spotifyArtistKey);
+      skipped++;
+      continue;
     }
 
-    const albumId = album?.id ?? null;
-    if (album?.id && album?.name) {
-      await supabase.from("albums").upsert(
-        {
-          id: album.id,
-          name: album.name,
-          artist_id: artistId,
-          image_url: album.images?.[0]?.url ?? null,
-          release_date: album.release_date ?? null,
-          album_type: album.album_type ?? null,
-          spotify_url: album.external_urls?.spotify ?? null,
-        },
-        { onConflict: "id" }
-      );
+    let albumDbId: string | null = null;
+    if (album?.name) {
+      albumDbId = await upsertAlbumAndGetDbId(supabase, {
+        spotifyAlbumId: album?.id ?? null,
+        name: album.name,
+        artist_db_id: artistDbId,
+        image_url: album.images?.[0]?.url ?? null,
+        release_date: album.release_date ?? null,
+        album_type: album.album_type ?? null,
+        spotify_url: album.external_urls?.spotify ?? null,
+      });
+      if (!albumDbId && album?.id) {
+        console.warn(
+          "[sync-recent] album upsert skipped; track/play without album",
+          album.name
+        );
+      }
     }
 
-    await supabase.from("tracks").upsert(
-      {
-        id: track.id as string,
-        name: track.name as string,
-        artist_id: artistId,
-        album_id: albumId,
-        duration_ms:
-          typeof track.duration_ms === "number" ? track.duration_ms : 0,
-        explicit: Boolean(track.explicit),
-        preview_url: (track.preview_url as string | null) ?? null,
-        spotify_url:
-          (track.external_urls as { spotify?: string } | undefined)?.spotify ??
-          null,
-        popularity:
-          typeof track.popularity === "number"
-            ? (track.popularity as number)
-            : null,
-      },
-      { onConflict: "id" }
-    );
+    const dbTrackId = await upsertTrackAndGetPk(supabase, {
+      spotifyTrackId: track.id as string,
+      name: track.name as string,
+      artist_id: artistDbId,
+      album_id: albumDbId,
+      duration_ms:
+        typeof track.duration_ms === "number" ? track.duration_ms : 0,
+      explicit: Boolean(track.explicit),
+      preview_url: (track.preview_url as string | null) ?? null,
+      spotify_url:
+        (track.external_urls as { spotify?: string } | undefined)?.spotify ??
+        null,
+      popularity:
+        typeof track.popularity === "number"
+          ? (track.popularity as number)
+          : null,
+    });
+
+    if (!dbTrackId) {
+      console.error("[sync-recent] tracks upsert failed", track.id);
+      skipped++;
+      continue;
+    }
 
     const playedAtTs = new Date(playedAt).toISOString();
     const dur =
       typeof track.duration_ms === "number" ? track.duration_ms : 180_000;
 
     const { error: insErr } = await supabase.from("plays").insert({
-      track_id: track.id as string,
-      artist_id: artistId,
-      album_id: albumId,
+      track_id: dbTrackId,
+      artist_id: artistDbId,
+      album_id: albumDbId,
       played_at: playedAtTs,
       ms_played: dur,
       source: "live",

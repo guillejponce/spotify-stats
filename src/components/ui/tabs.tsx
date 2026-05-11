@@ -31,14 +31,15 @@ function Tabs({
   ...props
 }: TabsProps) {
   const [internalValue, setInternalValue] = React.useState(defaultValue);
-  const activeTab = value ?? internalValue;
+  const isControlled = value !== undefined;
+  const activeTab = isControlled ? value : internalValue;
 
   const setActiveTab = React.useCallback(
     (newValue: string) => {
-      if (onValueChange) onValueChange(newValue);
-      else setInternalValue(newValue);
+      if (!isControlled) setInternalValue(newValue);
+      onValueChange?.(newValue);
     },
-    [onValueChange]
+    [onValueChange, isControlled]
   );
 
   return (

@@ -18,6 +18,12 @@ export async function GET(request: NextRequest) {
         id,
         played_at,
         ms_played,
+        platform,
+        reason_start,
+        reason_end,
+        shuffle,
+        offline,
+        source,
         tracks!inner (
           name,
           artists!inner (name),
@@ -30,15 +36,28 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    const plays = (data || []).map((play: any) => ({
-      id: play.id,
-      played_at: play.played_at,
-      ms_played: play.ms_played,
-      track_name: play.tracks.name,
-      artist_name: play.tracks.artists.name,
-      album_name: play.tracks.albums?.name || null,
-      image_url: play.tracks.albums?.image_url || null,
-    }));
+    const plays = (data || []).map((play: Record<string, unknown>) => {
+      const t = play.tracks as {
+        name: string;
+        artists: { name: string };
+        albums: { name: string; image_url: string | null } | null;
+      };
+      return {
+        id: play.id as string,
+        played_at: play.played_at as string,
+        ms_played: play.ms_played as number,
+        platform: (play.platform as string | null) ?? null,
+        reason_start: (play.reason_start as string | null) ?? null,
+        reason_end: (play.reason_end as string | null) ?? null,
+        shuffle: (play.shuffle as boolean | null) ?? null,
+        offline: (play.offline as boolean | null) ?? null,
+        source: (play.source as string | null) ?? null,
+        track_name: t.name,
+        artist_name: t.artists.name,
+        album_name: t.albums?.name || null,
+        image_url: t.albums?.image_url || null,
+      };
+    });
 
     return NextResponse.json({ plays });
   } catch (error) {

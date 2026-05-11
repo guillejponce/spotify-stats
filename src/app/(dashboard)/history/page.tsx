@@ -6,16 +6,41 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMs } from "@/lib/utils";
+import { formatChileDateTimeFromIso } from "@/lib/chile-time";
 import { Music2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface HistoryPlay {
   id: string;
   played_at: string;
   ms_played: number;
+  platform: string | null;
+  reason_start: string | null;
+  reason_end: string | null;
+  shuffle: boolean | null;
+  offline: boolean | null;
+  source: string | null;
   track_name: string;
   artist_name: string;
   album_name: string | null;
   image_url: string | null;
+}
+
+function PlaybackMeta({ play }: { play: HistoryPlay }) {
+  const bits: string[] = [];
+  if (play.platform) bits.push(`Plataforma: ${play.platform}`);
+  if (play.source) bits.push(`Origen: ${play.source}`);
+  if (play.reason_start) bits.push(`Inicio: ${play.reason_start}`);
+  if (play.reason_end) bits.push(`Fin: ${play.reason_end}`);
+  if (play.shuffle != null) bits.push(play.shuffle ? "Shuffle" : "Sin shuffle");
+  if (play.offline != null) bits.push(play.offline ? "Offline" : "Online");
+
+  if (bits.length === 0) return null;
+
+  return (
+    <p className="mt-1 text-[11px] leading-snug text-spotify-light-gray/65">
+      {bits.join(" · ")}
+    </p>
+  );
 }
 
 export default function HistoryPage() {
@@ -48,15 +73,15 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Listening History</h1>
+        <h1 className="text-2xl font-bold text-white">Historial</h1>
         <p className="text-sm text-spotify-light-gray">
-          Browse your past plays
+          Fecha y hora en Chile; detalle de reproducción según tus datos.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent Plays</CardTitle>
+          <CardTitle>Últimos plays</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -106,12 +131,13 @@ export default function HistoryPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs text-spotify-light-gray">
-                      {formatMs(play.ms_played)}
+                    <p className="text-xs font-medium text-white/90">
+                      {formatChileDateTimeFromIso(play.played_at)}
                     </p>
-                    <p className="text-[10px] text-spotify-light-gray/60">
-                      {new Date(play.played_at).toLocaleDateString()}
+                    <p className="text-[11px] text-spotify-light-gray/80">
+                      Escuchado {formatMs(play.ms_played)}
                     </p>
+                    <PlaybackMeta play={play} />
                   </div>
                 </div>
               ))}
@@ -126,10 +152,10 @@ export default function HistoryPage() {
               disabled={page === 0}
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
-              Previous
+              Anterior
             </Button>
             <span className="text-xs text-spotify-light-gray">
-              Page {page + 1}
+              Página {page + 1}
             </span>
             <Button
               variant="secondary"
@@ -137,7 +163,7 @@ export default function HistoryPage() {
               onClick={() => setPage((p) => p + 1)}
               disabled={!hasMore}
             >
-              Next
+              Siguiente
               <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           </div>

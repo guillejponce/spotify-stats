@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "./supabase";
+import { buildDateFilterChile } from "./chile-stats-range";
 import type {
   TopItem,
   ListeningTimeData,
@@ -6,66 +7,47 @@ import type {
   TimeFilterParams,
 } from "@/types/database";
 
-function buildDateFilter(params: TimeFilterParams): {
-  start: string;
-  end: string;
-} {
-  const now = new Date();
-
-  switch (params.filter) {
-    case "year": {
-      const year = params.year || now.getFullYear();
-      return {
-        start: `${year}-01-01T00:00:00Z`,
-        end: `${year}-12-31T23:59:59Z`,
-      };
-    }
-    case "month": {
-      const year = params.year || now.getFullYear();
-      const month = params.month || now.getMonth() + 1;
-      const lastDay = new Date(year, month, 0).getDate();
-      return {
-        start: `${year}-${String(month).padStart(2, "0")}-01T00:00:00Z`,
-        end: `${year}-${String(month).padStart(2, "0")}-${lastDay}T23:59:59Z`,
-      };
-    }
-    case "week": {
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
-      weekStart.setHours(0, 0, 0, 0);
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-      weekEnd.setHours(23, 59, 59, 999);
-      return {
-        start: weekStart.toISOString(),
-        end: weekEnd.toISOString(),
-      };
-    }
-    case "day": {
-      const dayStart = new Date(
-        params.startDate || now.toISOString().split("T")[0]
-      );
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setHours(23, 59, 59, 999);
-      return {
-        start: dayStart.toISOString(),
-        end: dayEnd.toISOString(),
-      };
-    }
-    default:
-      return {
-        start: "1970-01-01T00:00:00Z",
-        end: new Date().toISOString(),
-      };
+function numeric(v: unknown, fallback = 0): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
   }
+  return fallback;
+}
+
+function firstRpcRow<R extends Record<string, unknown>>(
+  data: unknown,
+  fallback: R
+): R {
+  if (data == null) return fallback;
+  if (Array.isArray(data))
+    return (data[0] as R | undefined) ?? fallback;
+  if (typeof data === "object") return data as R;
+  return fallback;
+}
+
+function asRpcRows<T>(data: unknown): T[] {
+  if (data == null) return [];
+  return Array.isArray(data) ? (data as T[]) : [];
+}
+
+function mapTopItemRow(r: Record<string, unknown>): TopItem {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    image_url:
+      r.image_url == null ? null : String(r.image_url as string),
+    play_count: numeric(r.play_count),
+    total_ms_played: numeric(r.total_ms_played),
+  };
 }
 
 export async function getTotalListeningTime(
   params: TimeFilterParams
 ): Promise<{ total_ms: number; play_count: number }> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_total_listening_time", {
     start_date: start,
@@ -73,7 +55,14 @@ export async function getTotalListeningTime(
   });
 
   if (error) throw error;
-  return data || { total_ms: 0, play_count: 0 };
+  const row = firstRpcRow<{
+    total_ms?: unknown;
+    play_count?: unknown;
+  }>(data, { total_ms: 0, play_count: 0 });
+  return {
+    total_ms: numeric(row.total_ms),
+    play_count: numeric(row.play_count),
+  };
 }
 
 export async function getTopTracks(
@@ -81,7 +70,7 @@ export async function getTopTracks(
   limit: number = 50
 ): Promise<TopItem[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_top_tracks", {
     start_date: start,
@@ -90,7 +79,7 @@ export async function getTopTracks(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map(mapTopItemRow);
 }
 
 export async function getTopArtists(
@@ -98,7 +87,7 @@ export async function getTopArtists(
   limit: number = 50
 ): Promise<TopItem[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_top_artists", {
     start_date: start,
@@ -107,7 +96,7 @@ export async function getTopArtists(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map(mapTopItemRow);
 }
 
 export async function getTopAlbums(
@@ -115,7 +104,7 @@ export async function getTopAlbums(
   limit: number = 50
 ): Promise<TopItem[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_top_albums", {
     start_date: start,
@@ -124,7 +113,7 @@ export async function getTopAlbums(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map(mapTopItemRow);
 }
 
 export async function getListeningOverTime(
@@ -132,7 +121,7 @@ export async function getListeningOverTime(
   groupBy: "day" | "week" | "month" = "day"
 ): Promise<ListeningTimeData[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_listening_over_time", {
     start_date: start,
@@ -141,14 +130,18 @@ export async function getListeningOverTime(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map((r) => ({
+    date: String(r.date ?? ""),
+    ms_played: numeric(r.ms_played),
+    play_count: numeric(r.play_count),
+  }));
 }
 
 export async function getHourlyDistribution(
   params: TimeFilterParams
 ): Promise<HourlyData[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_hourly_distribution", {
     start_date: start,
@@ -156,14 +149,18 @@ export async function getHourlyDistribution(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map((r) => ({
+    hour: Math.floor(numeric(r.hour)),
+    ms_played: numeric(r.ms_played),
+    play_count: numeric(r.play_count),
+  }));
 }
 
 export async function getPlatformBreakdown(
   params: TimeFilterParams
 ): Promise<{ platform: string; play_count: number; ms_played: number }[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilter(params);
+  const { start, end } = buildDateFilterChile(params);
 
   const { data, error } = await supabase.rpc("get_platform_breakdown", {
     start_date: start,
@@ -171,7 +168,11 @@ export async function getPlatformBreakdown(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map((r) => ({
+    platform: String(r.platform ?? ""),
+    play_count: numeric(r.play_count),
+    ms_played: numeric(r.ms_played),
+  }));
 }
 
 export async function getHeatmapData(
@@ -184,5 +185,9 @@ export async function getHeatmapData(
   });
 
   if (error) throw error;
-  return data || [];
+  return asRpcRows<Record<string, unknown>>(data).map((r) => ({
+    date: String(r.date ?? ""),
+    count: Math.floor(numeric(r.count)),
+    ms_played: numeric(r.ms_played),
+  }));
 }

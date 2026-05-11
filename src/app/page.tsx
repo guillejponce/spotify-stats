@@ -28,6 +28,7 @@ import type {
   HourlyData,
 } from "@/types/database";
 import { syncSpotifyRecentFromServer } from "@/actions/spotify-sync";
+import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 
 export default function DashboardPage() {
   const [timeFilter, setTimeFilter] = useState<TimeFilterParams>({
@@ -128,7 +129,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
           <p className="text-sm text-spotify-light-gray">
-            Your listening stats at a glance
+            Resumen de tu escucha; tiempos mostrados para Chile.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -171,6 +172,11 @@ export default function DashboardPage() {
       </div>
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
+      <p className="-mt-4 text-xs text-spotify-light-gray/65">
+        Gráficas de período y mapa térmico agrupan por día y hora en{" "}
+        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>
+        {" "}(misma zona que el historial).
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -208,19 +214,19 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ListeningChart
-          title="Listening Over Time"
+          title="Escucha en el tiempo"
           data={stats.listeningOverTime}
           loading={loading}
         />
         <HourlyChart
-          title="Most Active Hours"
+          title="Horas más activas (Chile)"
           data={stats.hourlyData}
           loading={loading}
         />
       </div>
 
       <Heatmap
-        title={`Listening Heatmap ${timeFilter.year || new Date().getFullYear()}`}
+        title={`Mapa de escuchas ${timeFilter.year || new Date().getFullYear()} (calendario Chile)`}
         data={stats.heatmapData}
         loading={loading}
         year={timeFilter.year || new Date().getFullYear()}
@@ -244,7 +250,7 @@ export default function DashboardPage() {
       </Tabs>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <PlatformChart title="Platform Breakdown" data={stats.platformData} loading={loading} />
+        <PlatformChart title="Plataforma" data={stats.platformData} loading={loading} />
       </div>
     </div>
   );

@@ -36,14 +36,38 @@ export async function GET(request: NextRequest) {
       platformData,
       heatmapData,
     ] = await Promise.all([
-      getTotalListeningTime(params).catch(() => ({ total_ms: 0, play_count: 0 })),
-      getTopTracks(params, 20).catch(() => []),
-      getTopArtists(params, 20).catch(() => []),
-      getTopAlbums(params, 20).catch(() => []),
-      getListeningOverTime(params).catch(() => []),
-      getHourlyDistribution(params).catch(() => []),
-      getPlatformBreakdown(params).catch(() => []),
-      getHeatmapData(year || new Date().getFullYear()).catch(() => []),
+      getTotalListeningTime(params).catch((e) => {
+        console.warn("[stats] getTotalListeningTime", e);
+        return { total_ms: 0, play_count: 0 };
+      }),
+      getTopTracks(params, 20).catch((e) => {
+        console.warn("[stats] getTopTracks", e);
+        return [];
+      }),
+      getTopArtists(params, 20).catch((e) => {
+        console.warn("[stats] getTopArtists", e);
+        return [];
+      }),
+      getTopAlbums(params, 20).catch((e) => {
+        console.warn("[stats] getTopAlbums", e);
+        return [];
+      }),
+      getListeningOverTime(params).catch((e) => {
+        console.warn("[stats] getListeningOverTime", e);
+        return [];
+      }),
+      getHourlyDistribution(params).catch((e) => {
+        console.warn("[stats] getHourlyDistribution", e);
+        return [];
+      }),
+      getPlatformBreakdown(params).catch((e) => {
+        console.warn("[stats] getPlatformBreakdown", e);
+        return [];
+      }),
+      getHeatmapData(year || new Date().getFullYear()).catch((e) => {
+        console.warn("[stats] getHeatmapData", e);
+        return [];
+      }),
     ]);
 
     return NextResponse.json({

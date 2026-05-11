@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getCurrentlyPlaying } from "@/lib/spotify";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getSpotifyAccessToken } from "@/lib/spotify-token";
+import { upsertTrackAndGetPk } from "@/lib/spotify-tracks-db";
+import {
+  upsertArtistAndGetDbId,
+  upsertAlbumAndGetDbId,
+} from "@/lib/spotify-graph-db";
 
 export const dynamic = "force-dynamic";
 
@@ -29,60 +34,66 @@ export async function GET() {
     }
 
     const track = data.item;
-    const artistId =
-      track.artists?.[0]?.id ||
-      track.artists?.[0]?.name?.toLowerCase().replace(/[^a-z0-9]/g, "_");
-    const albumId = track.album?.id || null;
+    const a0 = track.artists?.[0];
+    const spotifyArtistKey =
+      a0?.id ||
+      a0?.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") ||
+      "unknown";
 
-    if (track.artists?.[0]) {
-      const a = track.artists[0];
-      await supabase.from("artists").upsert(
-        {
-          id: a.id || artistId,
-          name: a.name,
-          image_url: a.images?.[0]?.url || null,
-          spotify_url: a.external_urls?.spotify || null,
-        },
-        { onConflict: "id" }
+    const artistDbId = await upsertArtistAndGetDbId(supabase, {
+      spotifyArtistId: spotifyArtistKey,
+      name: a0?.name || "Unknown",
+      image_url: a0?.images?.[0]?.url ?? null,
+      spotify_url: a0?.external_urls?.spotify ?? null,
+    });
+
+    if (!artistDbId) {
+      console.error("[now-playing] artist upsert failed", spotifyArtistKey);
+      return NextResponse.json(
+        { error: "Failed to persist artist row" },
+        { status: 500 }
       );
     }
 
-    if (track.album) {
-      await supabase.from("albums").upsert(
-        {
-          id: track.album.id,
-          name: track.album.name,
-          artist_id: artistId,
-          image_url: track.album.images?.[0]?.url || null,
-          release_date: track.album.release_date || null,
-          album_type: track.album.album_type || null,
-          spotify_url: track.album.external_urls?.spotify || null,
-        },
-        { onConflict: "id" }
-      );
+    let albumDbId: string | null = null;
+    if (track.album?.name) {
+      albumDbId = await upsertAlbumAndGetDbId(supabase, {
+        spotifyAlbumId: track.album.id ?? null,
+        name: track.album.name,
+        artist_db_id: artistDbId,
+        image_url: track.album.images?.[0]?.url ?? null,
+        release_date: track.album.release_date ?? null,
+        album_type: track.album.album_type ?? null,
+        spotify_url: track.album.external_urls?.spotify ?? null,
+      });
     }
 
-    await supabase.from("tracks").upsert(
-      {
-        id: track.id,
-        name: track.name,
-        artist_id: artistId,
-        album_id: albumId,
-        duration_ms: track.duration_ms,
-        explicit: track.explicit || false,
-        preview_url: track.preview_url || null,
-        spotify_url: track.external_urls?.spotify || null,
-        popularity: track.popularity || null,
-      },
-      { onConflict: "id" }
-    );
+    const dbTrackId = await upsertTrackAndGetPk(supabase, {
+      spotifyTrackId: track.id,
+      name: track.name,
+      artist_id: artistDbId,
+      album_id: albumDbId,
+      duration_ms: track.duration_ms,
+      explicit: track.explicit || false,
+      preview_url: track.preview_url || null,
+      spotify_url: track.external_urls?.spotify || null,
+      popularity: track.popularity ?? null,
+    });
+
+    if (!dbTrackId) {
+      console.error("[now-playing] tracks upsert failed", track.id);
+      return NextResponse.json(
+        { error: "Failed to persist track row" },
+        { status: 500 }
+      );
+    }
 
     await supabase.from("now_playing").upsert(
       {
         id: 1,
-        track_id: track.id,
-        artist_id: artistId,
-        album_id: albumId,
+        track_id: dbTrackId,
+        artist_id: artistDbId,
+        album_id: albumDbId,
         is_playing: data.is_playing,
         progress_ms: data.progress_ms || 0,
         updated_at: new Date().toISOString(),

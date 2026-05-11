@@ -1,9 +1,22 @@
 "use client";
 
 import { useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, formatMs, formatNumber } from "@/lib/utils";
+import {
+  CHILE_TIMEZONE_LABEL,
+  CHILE_WEEKDAY_ROWS,
+  eachYmdInGregorianYear,
+  formatChileCalendarDayLong,
+  utcWeekdayJan1,
+} from "@/lib/chile-time";
 
 interface HeatmapProps {
   title: string;
@@ -12,8 +25,18 @@ interface HeatmapProps {
   year: number;
 }
 
+function padWeek(
+  week: { date: string; count: number; ms_played: number }[]
+): ({ date: string; count: number; ms_played: number } | null)[] {
+  const w = week.map((d) => ({ ...d }));
+  while (w.length < 7) {
+    w.push({ date: "", count: -1, ms_played: 0 });
+  }
+  return w;
+}
+
 function getIntensityClass(count: number, max: number): string {
-  if (count === 0) return "bg-white/5";
+  if (count <= 0) return "bg-white/5";
   const ratio = count / max;
   if (ratio < 0.25) return "bg-spotify-green/20";
   if (ratio < 0.5) return "bg-spotify-green/40";
@@ -22,83 +45,130 @@ function getIntensityClass(count: number, max: number): string {
 }
 
 export function Heatmap({ title, data, loading = false, year }: HeatmapProps) {
-  const { grid, max } = useMemo(() => {
+  const { rows, max } = useMemo(() => {
     const map = new Map(data.map((d) => [d.date, d]));
-    const max = Math.max(...data.map((d) => d.count), 1);
+    const maxCount = Math.max(...data.map((d) => d.count), 1);
 
-    const startDate = new Date(year, 0, 1);
-    const endDate = new Date(year, 11, 31);
-    const weeks: { date: string; count: number }[][] = [];
-    let currentWeek: { date: string; count: number }[] = [];
+    const startPadding = utcWeekdayJan1(year);
+    const days = Array.from(eachYmdInGregorianYear(year));
 
-    const startPadding = startDate.getDay();
+    const weeks: { date: string; count: number; ms_played: number }[][] = [];
+    let current: { date: string; count: number; ms_played: number }[] = [];
+
     for (let i = 0; i < startPadding; i++) {
-      currentWeek.push({ date: "", count: -1 });
+      current.push({ date: "", count: -1, ms_played: 0 });
     }
 
-    for (
-      let d = new Date(startDate);
-      d <= endDate;
-      d.setDate(d.getDate() + 1)
-    ) {
-      const dateStr = d.toISOString().split("T")[0];
+    for (const dateStr of days) {
       const entry = map.get(dateStr);
-      currentWeek.push({
+      current.push({
         date: dateStr,
-        count: entry?.count || 0,
+        count: entry?.count ?? 0,
+        ms_played: entry?.ms_played ?? 0,
       });
 
-      if (d.getDay() === 6 || d.getTime() === endDate.getTime()) {
-        weeks.push(currentWeek);
-        currentWeek = [];
+      const [, m, d] = dateStr.split("-").map(Number);
+      const dow = new Date(Date.UTC(year, m - 1, d, 12, 0, 0)).getUTCDay();
+      const last =
+        m === 12 && d === 31;
+
+      if (dow === 6 || last) {
+        weeks.push(current);
+        current = [];
       }
     }
 
-    return { grid: weeks, max };
+    if (current.length) {
+      weeks.push(current);
+    }
+
+    const padded = weeks.map(padWeek);
+
+    const numWeeks = padded.length;
+    const matrix: ({
+      date: string;
+      count: number;
+      ms_played: number;
+    } | null)[][] = Array.from({ length: 7 }, (_, ri) =>
+      Array.from({ length: numWeeks }, (_, wi) => padded[wi][ri] ?? null)
+    );
+
+    return { rows: matrix, max: maxCount };
   }, [data, year]);
 
   if (loading) {
     return (
       <Card>
-        <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-        <CardContent><Skeleton className="h-32 w-full" /></CardContent>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-36 w-full" />
+        </CardContent>
       </Card>
     );
   }
 
   return (
     <Card>
-      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>
+          Filas = día de la semana · columnas = semanas del año · cada cuadro = un día
+          calendario en {CHILE_TIMEZONE_LABEL}. Pasá el mouse para ver fecha, reproducciones
+          y tiempo escuchado.
+        </CardDescription>
+      </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <div className="flex gap-[3px]">
-            {grid.map((week, wi) => (
-              <div key={wi} className="flex flex-col gap-[3px]">
-                {week.map((day, di) => (
-                  <div
-                    key={`${wi}-${di}`}
-                    className={cn(
-                      "h-3 w-3 rounded-sm transition-colors",
-                      day.count === -1
-                        ? "bg-transparent"
-                        : getIntensityClass(day.count, max)
-                    )}
-                    title={
-                      day.date ? `${day.date}: ${day.count} plays` : undefined
+        <div className="overflow-x-auto pb-1">
+          <div className="flex flex-col gap-[3px]">
+            {rows.map((row, ri) => (
+              <div key={ri} className="flex items-center gap-1">
+                <span
+                  className="w-8 shrink-0 text-right text-[10px] font-medium text-spotify-light-gray/70"
+                  title="Fila = día de la semana (Chile)"
+                >
+                  {CHILE_WEEKDAY_ROWS[ri]}
+                </span>
+                <div className="flex gap-[3px]">
+                  {row.map((cell, ci) => {
+                    if (!cell || cell.count < 0 || !cell.date) {
+                      return (
+                        <div
+                          key={ci}
+                          className="h-3 w-3 shrink-0 rounded-sm bg-transparent"
+                        />
+                      );
                     }
-                  />
-                ))}
+                    const label = formatChileCalendarDayLong(cell.date);
+                    const title = `${label}\n${formatNumber(cell.count)} reproducciones · ${formatMs(cell.ms_played)}`;
+                    return (
+                      <div
+                        key={ci}
+                        className={cn(
+                          "h-3 w-3 shrink-0 rounded-sm transition-colors",
+                          getIntensityClass(cell.count, max)
+                        )}
+                        title={title}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
-          <div className="mt-3 flex items-center justify-end gap-1 text-[10px] text-spotify-light-gray/60">
-            <span>Less</span>
+          <p className="mt-2 text-[10px] text-spotify-light-gray/50">
+            Eje horizontal: semanas de enero a diciembre · colores = intensidad de escuchas
+            ese día (Chile).
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-1 text-[10px] text-spotify-light-gray/60">
+            <span>Menos</span>
             <div className="h-3 w-3 rounded-sm bg-white/5" />
             <div className="h-3 w-3 rounded-sm bg-spotify-green/20" />
             <div className="h-3 w-3 rounded-sm bg-spotify-green/40" />
             <div className="h-3 w-3 rounded-sm bg-spotify-green/60" />
             <div className="h-3 w-3 rounded-sm bg-spotify-green" />
-            <span>More</span>
+            <span>Más</span>
           </div>
         </div>
       </CardContent>

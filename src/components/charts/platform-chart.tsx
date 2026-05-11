@@ -8,8 +8,15 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { msToHours, formatNumber } from "@/lib/utils";
 
 const COLORS = ["#1DB954", "#1AA34A", "#15803D", "#166534", "#14532D", "#4ADE80", "#86EFAC"];
 
@@ -44,7 +51,13 @@ export function PlatformChart({ title, data, loading = false }: PlatformChartPro
 
   return (
     <Card>
-      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>
+          Dispositivo o app (`platform`) de cada reproducción en el rango temporal que
+          elegiste.
+        </CardDescription>
+      </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
           <PieChart>
@@ -69,6 +82,20 @@ export function PlatformChart({ title, data, loading = false }: PlatformChartPro
                 borderRadius: "8px",
                 color: "#fff",
                 fontSize: "12px",
+              }}
+              formatter={(value: number, name: string, props) => {
+                const ms =
+                  typeof props?.payload === "object" &&
+                  props.payload !== null &&
+                  "ms_played" in props.payload
+                    ? Number(
+                        (props.payload as { ms_played: number }).ms_played
+                      )
+                    : 0;
+                return [
+                  `${formatNumber(Number(value))} reproducciones · ${msToHours(ms)} h`,
+                  name,
+                ];
               }}
             />
             <Legend wrapperStyle={{ fontSize: "12px", color: "#B3B3B3" }} />

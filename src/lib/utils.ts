@@ -37,6 +37,21 @@ export function extractSpotifyId(uri: string | null): string | null {
   return parts[parts.length - 1] || null;
 }
 
+/** Spotify albums use `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`; Postgres `date` needs a full ISO day. */
+export function normalizeSpotifyAlbumReleaseDate(
+  raw: string | null | undefined
+): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (s === "") return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}$/.test(s)) return `${s}-01`;
+  if (/^\d{4}$/.test(s)) return `${s}-01-01`;
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
 export function msToMinutes(ms: number): number {
   return Math.round(ms / 60000);
 }
