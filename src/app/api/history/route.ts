@@ -74,7 +74,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ plays });
+    return NextResponse.json(
+      { plays },
+      {
+        headers: {
+          "Cache-Control":
+            "private, no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error) {
     console.error("History API error:", error);
     return NextResponse.json(

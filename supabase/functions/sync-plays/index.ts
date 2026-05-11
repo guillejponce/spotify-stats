@@ -3,9 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SPOTIFY_API = "https://api.spotify.com/v1";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
-type UserTokenRow = {
+type SpotifyTokenRow = {
   id: string;
-  user_id: string;
   access_token: string;
   refresh_token: string | null;
   expires_at: string;
@@ -75,12 +74,10 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    console.log("[sync-plays] step 1: load user_tokens");
+    console.log("[sync-plays] step 1: load spotify_tokens");
     const { data: tokenRow, error: tokenErr } = await supabase
-      .from("user_tokens")
-      .select(
-        "id, user_id, access_token, refresh_token, expires_at",
-      )
+      .from("spotify_tokens")
+      .select("id, access_token, refresh_token, expires_at")
       .limit(1)
       .single();
 
@@ -90,7 +87,7 @@ Deno.serve(async (req) => {
       (tokenErr?.message ?? "").includes("no rows");
 
     if (tokenErr && !noRow) {
-      console.error("[sync-plays] user_tokens query error", tokenErr);
+      console.error("[sync-plays] spotify_tokens query error", tokenErr);
       return new Response(JSON.stringify({ error: String(tokenErr.message) }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
@@ -98,9 +95,9 @@ Deno.serve(async (req) => {
     }
 
     if (!tokenRow) {
-      console.error("[sync-plays] No user token found");
+      console.error("[sync-plays] No spotify_tokens row");
       return new Response(
-        JSON.stringify({ ok: true, message: "No user token found" }),
+        JSON.stringify({ ok: true, message: "No spotify_tokens row" }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -108,7 +105,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const row = tokenRow as UserTokenRow;
+    const row = tokenRow as SpotifyTokenRow;
     const refresh = row.refresh_token?.trim();
 
     if (!refresh) {
@@ -162,16 +159,17 @@ Deno.serve(async (req) => {
 
     const expiresAtIso = new Date(Date.now() + 3600 * 1000).toISOString();
     const { error: tokenUpdateErr } = await supabase
-      .from("user_tokens")
+      .from("spotify_tokens")
       .update({
         access_token: newAccess,
         expires_at: expiresAtIso,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
 
     if (tokenUpdateErr) {
       console.error(
-        "[sync-plays] user_tokens update failed (continuing in memory)",
+        "[sync-plays] spotify_tokens update failed (continuing in memory)",
         tokenUpdateErr,
       );
     }

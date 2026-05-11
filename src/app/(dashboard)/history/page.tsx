@@ -54,11 +54,20 @@ export default function HistoryPage() {
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent) setLoading(true);
       try {
-        const res = await fetch(`/api/history?offset=${page * limit}&limit=${limit}`);
+        const params = new URLSearchParams({
+          offset: String(page * limit),
+          limit: String(limit),
+          _t: String(Date.now()),
+        });
+        const res = await fetch(`/api/history?${params}`, {
+          cache: "no-store",
+        });
         if (res.ok) {
           const data = await res.json();
           setPlays(data.plays || []);
           setHasMore((data.plays || []).length === limit);
+        } else if (opts?.silent) {
+          console.warn("[history] silent refresh failed", res.status);
         }
       } catch (err) {
         console.error("Failed to fetch history:", err);
@@ -66,7 +75,7 @@ export default function HistoryPage() {
         if (!opts?.silent) setLoading(false);
       }
     },
-    [page]
+    [page, limit]
   );
 
   useEffect(() => {
@@ -76,18 +85,21 @@ export default function HistoryPage() {
   useEffect(() => {
     if (page !== 0) return;
 
-    const id = window.setInterval(() => {
-      void fetchHistory({ silent: true });
-    }, 60_000);
+    const tick = () => void fetchHistory({ silent: true });
+    const id = window.setInterval(tick, 20_000);
 
     const onVis = () => {
-      if (document.visibilityState === "visible") void fetchHistory({ silent: true });
+      if (document.visibilityState === "visible") tick();
     };
+    const onFocus = () => tick();
+
     document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
 
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
     };
   }, [page, fetchHistory]);
 
@@ -100,7 +112,7 @@ export default function HistoryPage() {
             Fecha y hora en Chile; detalle de reproducción según tus datos.
             {page === 0 && (
               <span className="block mt-1 text-xs text-spotify-light-gray/60">
-                Se actualiza solo cada minuto si estás en la primera página.
+                La primera página se actualiza cada ~20 s (y al volver a la pestaña).
               </span>
             )}
           </p>
