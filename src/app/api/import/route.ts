@@ -5,6 +5,8 @@ import type { SpotifyStreamingRecord } from "@/types/database";
 
 const BATCH_SIZE = 500;
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const { filename, records } = (await request.json()) as {

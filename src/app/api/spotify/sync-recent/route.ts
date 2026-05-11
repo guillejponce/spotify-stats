@@ -6,6 +6,9 @@ import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
  * Cron / manual: requires CRON_SECRET in production.
  * La app abierta usa `syncSpotifyRecentFromServer` (server action) en su lugar.
  */
+
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");

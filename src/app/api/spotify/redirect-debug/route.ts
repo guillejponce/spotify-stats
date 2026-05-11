@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSpotifyRedirectUri } from "@/lib/spotify";
 
+export const dynamic = "force-dynamic";
+
 /** Dev helper: Spotify requires this exact URI in Dashboard Redirect URIs. Disabled in production. */
 export async function GET() {
   if (process.env.NODE_ENV === "production") {

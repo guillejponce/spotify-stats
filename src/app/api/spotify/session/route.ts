@@ -4,6 +4,9 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 /**
  * No secrets exposed. Lets you verify OAuth stored tokens server-side (Supabase spotify_tokens).
  */
+
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const supabase = createServerSupabaseClient();
