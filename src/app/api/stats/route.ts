@@ -40,15 +40,15 @@ export async function GET(request: NextRequest) {
         console.warn("[stats] getTotalListeningTime", e);
         return { total_ms: 0, play_count: 0 };
       }),
-      getTopTracks(params, 20).catch((e) => {
+      getTopTracks(params, 50).catch((e) => {
         console.warn("[stats] getTopTracks", e);
         return [];
       }),
-      getTopArtists(params, 20).catch((e) => {
+      getTopArtists(params, 50).catch((e) => {
         console.warn("[stats] getTopArtists", e);
         return [];
       }),
-      getTopAlbums(params, 20).catch((e) => {
+      getTopAlbums(params, 50).catch((e) => {
         console.warn("[stats] getTopAlbums", e);
         return [];
       }),

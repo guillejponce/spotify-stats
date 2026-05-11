@@ -4,6 +4,7 @@ import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
 
 /**
  * Cron / manual: requires CRON_SECRET in production.
+ * Vercel Cron: proyecto → Settings → Crons debe enviar el mismo Bearer (o usar el header automático si Vercel lo inyecta en tu plan).
  * La app abierta usa `syncSpotifyRecentFromServer` (server action) en su lugar.
  */
 
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
       synced: result.synced,
       skipped: result.skipped,
       polled: result.polled,
+      images_enriched: result.images_enriched ?? 0,
     });
   } catch (e) {
     console.error("[sync-recent]", e);

@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRecentlyPlayed } from "@/lib/spotify";
-import { getSpotifyAccessToken } from "@/lib/spotify-token";
+import {
+  forceRefreshSpotifyAccessToken,
+  getSpotifyAccessToken,
+} from "@/lib/spotify-token";
+import { enrichArtistsMissingImages } from "@/lib/enrich-artist-images";
 import { upsertTrackAndGetPk } from "@/lib/spotify-tracks-db";
 import {
   upsertArtistAndGetDbId,
@@ -13,6 +17,8 @@ export type SyncRecentResult = {
   polled: number;
   ok: boolean;
   error?: string;
+  /** Fotos actualizadas vía GET /artists para filas sin `image_url`. */
+  images_enriched?: number;
 };
 
 /** Pull Spotify Recently Played and append `plays` rows (source live). Requires spotify_tokens. */
@@ -31,17 +37,40 @@ export async function syncRecentPlaysFromSpotify(
     };
   }
 
-  const data = await getRecentlyPlayed(token, limit);
+  let data;
+  try {
+    data = await getRecentlyPlayed(token, limit);
+  } catch (err) {
+    if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
+      const fresh = await forceRefreshSpotifyAccessToken(supabase);
+      if (!fresh) throw err;
+      data = await getRecentlyPlayed(fresh, limit);
+    } else {
+      throw err;
+    }
+  }
+
   const items = data?.items as
     | { track?: Record<string, unknown>; played_at?: string }[]
     | undefined;
 
+  const runImageBackfill = async () => {
+    try {
+      return await enrichArtistsMissingImages(supabase, token);
+    } catch (e) {
+      console.warn("[sync-recent] enrich artist images", e);
+      return 0;
+    }
+  };
+
   if (!items?.length) {
+    const ie = await runImageBackfill();
     return {
       synced: 0,
       skipped: 0,
       polled: 0,
       ok: true,
+      images_enriched: ie,
     };
   }
 
@@ -173,10 +202,13 @@ export async function syncRecentPlaysFromSpotify(
     }
   }
 
+  const imagesEnriched = await runImageBackfill();
+
   return {
     synced: inserted,
     skipped,
     polled: items.length,
     ok: true,
+    images_enriched: imagesEnriched,
   };
 }

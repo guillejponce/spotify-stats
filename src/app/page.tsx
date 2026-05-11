@@ -83,8 +83,8 @@ export default function DashboardPage() {
     const run = async () => {
       try {
         const r = await syncSpotifyRecentFromServer();
-        if (r.ok && r.synced > 0) {
-          await fetchStats();
+        if (r.ok) {
+          void fetchStats();
         }
       } catch {
         // sin tokens o error temporal
@@ -173,9 +173,11 @@ export default function DashboardPage() {
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
       <p className="-mt-4 text-xs text-spotify-light-gray/65">
-        Gráficas de período y mapa térmico agrupan por día y hora en{" "}
-        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>
-        {" "}(misma zona que el historial).
+        Con «Todo», top canciones/artistas/álbumes y totales usan{" "}
+        <span className="text-spotify-light-gray">todo el historial</span> hasta ahora; el mapa
+        térmico sigue siendo solo el año indicado. Gráficas de período y hora usan{" "}
+        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span> (misma zona que el
+        historial).
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

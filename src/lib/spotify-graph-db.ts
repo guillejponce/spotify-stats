@@ -15,14 +15,18 @@ export async function upsertArtistAndGetDbId(
 ): Promise<string | null> {
   if (!payload.name) return null;
 
-  const extras = {
-    image_url: payload.image_url,
-    spotify_url: payload.spotify_url,
+  const extras: { image_url?: string; spotify_url?: string } = {};
+  if (payload.image_url) extras.image_url = payload.image_url;
+  if (payload.spotify_url) extras.spotify_url = payload.spotify_url;
+
+  const row = {
+    name: payload.name,
+    ...extras,
   };
 
   const byName = await supabase
     .from("artists")
-    .upsert({ name: payload.name, ...extras }, { onConflict: "name" })
+    .upsert(row, { onConflict: "name" })
     .select("id")
     .maybeSingle();
 

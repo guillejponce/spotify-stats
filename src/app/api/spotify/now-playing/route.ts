@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentlyPlaying } from "@/lib/spotify";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { getSpotifyAccessToken } from "@/lib/spotify-token";
+import {
+  forceRefreshSpotifyAccessToken,
+  getSpotifyAccessToken,
+} from "@/lib/spotify-token";
 import { upsertTrackAndGetPk } from "@/lib/spotify-tracks-db";
 import {
   upsertArtistAndGetDbId,
@@ -13,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const supabase = createServerSupabaseClient();
-    const accessToken = await getSpotifyAccessToken(supabase);
+    let accessToken = await getSpotifyAccessToken(supabase);
 
     if (!accessToken) {
       return NextResponse.json(
@@ -22,7 +25,27 @@ export async function GET() {
       );
     }
 
-    const data = await getCurrentlyPlaying(accessToken);
+    let data;
+    try {
+      data = await getCurrentlyPlaying(accessToken);
+    } catch (err) {
+      if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
+        const fresh = await forceRefreshSpotifyAccessToken(supabase);
+        if (!fresh) {
+          return NextResponse.json(
+            {
+              error:
+                "Spotify access expired; reconnect with “Connect Spotify” in the dashboard.",
+            },
+            { status: 401 }
+          );
+        }
+        accessToken = fresh;
+        data = await getCurrentlyPlaying(accessToken);
+      } else {
+        throw err;
+      }
+    }
 
     if (!data || !data.item) {
       await supabase

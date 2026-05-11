@@ -11,6 +11,11 @@ export async function GET(request: NextRequest) {
 
     const supabase = createServerSupabaseClient();
 
+    /*
+     * Sin `!inner`: incluye todas las filas de `plays` ( orden por played_at ).
+     * El inner anterior ocultaba eventos cuando el join a track/artist no coincidía
+     * (imports viejos, ids distintos, etc.) y parecía “solo lo reciente de la API”.
+     */
     const { data, error } = await supabase
       .from("plays")
       .select(
@@ -24,22 +29,23 @@ export async function GET(request: NextRequest) {
         shuffle,
         offline,
         source,
-        tracks!inner (
+        tracks (
           name,
-          artists!inner (name),
+          artists (name),
           albums (name, image_url)
         )
       `
       )
       .order("played_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
     const plays = (data || []).map((play: Record<string, unknown>) => {
-      const t = play.tracks as {
+      const t = play.tracks as null | {
         name: string;
-        artists: { name: string };
+        artists: { name: string } | null;
         albums: { name: string; image_url: string | null } | null;
       };
       return {
@@ -52,12 +58,21 @@ export async function GET(request: NextRequest) {
         shuffle: (play.shuffle as boolean | null) ?? null,
         offline: (play.offline as boolean | null) ?? null,
         source: (play.source as string | null) ?? null,
-        track_name: t.name,
-        artist_name: t.artists.name,
-        album_name: t.albums?.name || null,
-        image_url: t.albums?.image_url || null,
+        track_name: t?.name ?? "(sin track)",
+        artist_name: t?.artists?.name ?? "—",
+        album_name: t?.albums?.name || null,
+        image_url: t?.albums?.image_url ?? null,
       };
     });
+
+    if (
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
+      !process.env.SUPABASE_SERVICE_ROLE_KEY
+    ) {
+      console.warn(
+        "[history] SUPABASE_SERVICE_ROLE_KEY no definida: RLS puede ocultar filas en plays."
+      );
+    }
 
     return NextResponse.json({ plays });
   } catch (error) {

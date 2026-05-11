@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMs } from "@/lib/utils";
 import { formatChileDateTimeFromIso } from "@/lib/chile-time";
-import { Music2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Music2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 
 interface HistoryPlay {
   id: string;
@@ -50,33 +50,72 @@ export default function HistoryPage() {
   const [hasMore, setHasMore] = useState(true);
   const limit = 50;
 
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/history?offset=${page * limit}&limit=${limit}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPlays(data.plays || []);
-        setHasMore((data.plays || []).length === limit);
+  const fetchHistory = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      try {
+        const res = await fetch(`/api/history?offset=${page * limit}&limit=${limit}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPlays(data.plays || []);
+          setHasMore((data.plays || []).length === limit);
+        }
+      } catch (err) {
+        console.error("Failed to fetch history:", err);
+      } finally {
+        if (!opts?.silent) setLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch history:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
+    },
+    [page]
+  );
 
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
 
+  useEffect(() => {
+    if (page !== 0) return;
+
+    const id = window.setInterval(() => {
+      void fetchHistory({ silent: true });
+    }, 60_000);
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") void fetchHistory({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [page, fetchHistory]);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Historial</h1>
-        <p className="text-sm text-spotify-light-gray">
-          Fecha y hora en Chile; detalle de reproducción según tus datos.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Historial</h1>
+          <p className="text-sm text-spotify-light-gray">
+            Fecha y hora en Chile; detalle de reproducción según tus datos.
+            {page === 0 && (
+              <span className="block mt-1 text-xs text-spotify-light-gray/60">
+                Se actualiza solo cada minuto si estás en la primera página.
+              </span>
+            )}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="shrink-0 gap-2"
+          onClick={() => void fetchHistory()}
+          disabled={loading}
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Actualizar
+        </Button>
       </div>
 
       <Card>
