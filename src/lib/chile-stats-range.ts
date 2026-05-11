@@ -13,6 +13,17 @@ export function chileYmdEndUtcIso(ymd: string): string {
   return fromZonedTime(`${ymd}T23:59:59.999`, DISPLAY_TIME_ZONE).toISOString();
 }
 
+/** Si el fin del rango queda después del instante de referencia, recorta (alinea “hasta ahora”). */
+export function clipUtcEndAtNow(
+  isoUtc: string,
+  referenceNow: Date = new Date(),
+): string {
+  const t = Date.parse(isoUtc);
+  if (!Number.isFinite(t)) return isoUtc;
+  const n = referenceNow.getTime();
+  return t > n ? referenceNow.toISOString() : isoUtc;
+}
+
 function todayYmdChile(now: Date): string {
   return formatInTimeZone(now, DISPLAY_TIME_ZONE, "yyyy-MM-dd");
 }
@@ -38,7 +49,7 @@ export function buildDateFilterChile(params: TimeFilterParams): {
         Number(formatInTimeZone(now, DISPLAY_TIME_ZONE, "yyyy"));
       return {
         start: chileYmdStartUtcIso(`${y}-01-01`),
-        end: chileYmdEndUtcIso(`${y}-12-31`),
+        end: clipUtcEndAtNow(chileYmdEndUtcIso(`${y}-12-31`), now),
       };
     }
     case "month": {
@@ -53,7 +64,7 @@ export function buildDateFilterChile(params: TimeFilterParams): {
       const dd = String(last).padStart(2, "0");
       return {
         start: chileYmdStartUtcIso(`${y}-${mm}-01`),
-        end: chileYmdEndUtcIso(`${y}-${mm}-${dd}`),
+        end: clipUtcEndAtNow(chileYmdEndUtcIso(`${y}-${mm}-${dd}`), now),
       };
     }
     case "week": {
@@ -83,14 +94,14 @@ export function buildDateFilterChile(params: TimeFilterParams): {
       );
       return {
         start: chileYmdStartUtcIso(weekStartYmd),
-        end: chileYmdEndUtcIso(weekEndYmd),
+        end: clipUtcEndAtNow(chileYmdEndUtcIso(weekEndYmd), now),
       };
     }
     case "day": {
       const ymd = params.startDate ?? todayYmdChile(now);
       return {
         start: chileYmdStartUtcIso(ymd),
-        end: chileYmdEndUtcIso(ymd),
+        end: clipUtcEndAtNow(chileYmdEndUtcIso(ymd), now),
       };
     }
     default:

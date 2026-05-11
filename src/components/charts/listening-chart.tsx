@@ -77,6 +77,7 @@ export function ListeningChart({
         <CardTitle>{title}</CardTitle>
         <CardDescription>
           Agrupación por día (o semana/mes según período) en {CHILE_TIMEZONE_LABEL}.
+          El conteo por barra es filas / segmentos (igual que el KPI «Filas reproducidas»).
         </CardDescription>
       </CardHeader>
       <CardContent>

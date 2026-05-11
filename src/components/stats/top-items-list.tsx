@@ -99,7 +99,7 @@ export function TopItemsList({
                 </p>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-spotify-light-gray">
-                    {formatNumber(item.play_count)} plays
+                    {formatNumber(item.play_count)} sesiones
                   </span>
                   <span className="text-xs text-spotify-light-gray/40">·</span>
                   <span className="text-xs text-spotify-light-gray/60">

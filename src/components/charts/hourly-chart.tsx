@@ -110,7 +110,7 @@ export function HourlyChart({ title, data, loading = false }: HourlyChartProps) 
                 const row = item?.payload as HourlyData | undefined;
                 const plays = row?.play_count ?? 0;
                 return [
-                  `${msToHours(value)} h · ${formatNumber(plays)} reproducciones`,
+                  `${msToHours(value)} h · ${formatNumber(plays)} filas`,
                   "Tiempo escuchado",
                 ];
               }}

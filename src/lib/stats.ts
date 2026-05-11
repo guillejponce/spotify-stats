@@ -45,7 +45,7 @@ function mapTopItemRow(r: Record<string, unknown>): TopItem {
 
 export async function getTotalListeningTime(
   params: TimeFilterParams
-): Promise<{ total_ms: number; play_count: number }> {
+): Promise<{ total_ms: number; play_count: number; session_count: number }> {
   const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
@@ -58,10 +58,12 @@ export async function getTotalListeningTime(
   const row = firstRpcRow<{
     total_ms?: unknown;
     play_count?: unknown;
-  }>(data, { total_ms: 0, play_count: 0 });
+    session_count?: unknown;
+  }>(data, { total_ms: 0, play_count: 0, session_count: 0 });
   return {
     total_ms: numeric(row.total_ms),
     play_count: numeric(row.play_count),
+    session_count: numeric(row.session_count),
   };
 }
 

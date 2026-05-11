@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       getTotalListeningTime(params).catch((e) => {
         console.warn("[stats] getTotalListeningTime", e);
-        return { total_ms: 0, play_count: 0 };
+        return { total_ms: 0, play_count: 0, session_count: 0 };
       }),
       getTopTracks(params, 50).catch((e) => {
         console.warn("[stats] getTopTracks", e);
@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totalMs: totalListening.total_ms,
       playCount: totalListening.play_count,
+      sessionCount: totalListening.session_count,
       topTracks,
       topArtists,
       topAlbums,

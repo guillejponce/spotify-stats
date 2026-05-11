@@ -45,6 +45,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalMs: 0,
     playCount: 0,
+    sessionCount: 0,
     topTracks: [] as TopItem[],
     topArtists: [] as TopItem[],
     topAlbums: [] as TopItem[],
@@ -173,11 +174,13 @@ export default function DashboardPage() {
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
       <p className="-mt-4 text-xs text-spotify-light-gray/65">
-        Con «Todo», top canciones/artistas/álbumes y totales usan{" "}
-        <span className="text-spotify-light-gray">todo el historial</span> hasta ahora; el mapa
-        térmico sigue siendo solo el año indicado. Gráficas de período y hora usan{" "}
-        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span> (misma zona que el
-        historial).
+        El número grande de reproducciones cuenta{" "}
+        <span className="text-spotify-light-gray">cada fila en `plays`</span>
+        {" "}(segmentos)—igual que la gráfica de escucha por día. Las listas Top usan{" "}
+        <span className="text-spotify-light-gray">sesiones</span>{" "}(mismo tema con pausas
+        cortas cuenta una vez). Rangos siguen{" "}
+        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>; el heatmap muestra el
+        año del selector año/mapa o el año calendario actual en otros filtros.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -188,8 +191,13 @@ export default function DashboardPage() {
           icon={Clock}
         />
         <StatCard
-          title="Total Plays"
+          title="Filas reproducidas"
           value={formatNumber(stats.playCount)}
+          subtitle={
+            stats.sessionCount > 0
+              ? `${formatNumber(stats.sessionCount)} sesiones (~15 min mismo tema)`
+              : undefined
+          }
           icon={Music2}
         />
         <StatCard
@@ -197,7 +205,7 @@ export default function DashboardPage() {
           value={stats.topArtists[0]?.name || "—"}
           subtitle={
             stats.topArtists[0]
-              ? `${formatNumber(stats.topArtists[0].play_count)} plays`
+              ? `${formatNumber(stats.topArtists[0].play_count)} sesiones`
               : undefined
           }
           icon={Disc3}
@@ -207,7 +215,7 @@ export default function DashboardPage() {
           value={stats.topTracks[0]?.name || "—"}
           subtitle={
             stats.topTracks[0]
-              ? `${formatNumber(stats.topTracks[0].play_count)} plays`
+              ? `${formatNumber(stats.topTracks[0].play_count)} sesiones`
               : undefined
           }
           icon={TrendingUp}

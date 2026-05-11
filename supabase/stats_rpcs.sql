@@ -5,9 +5,9 @@
 -- Run once in Supabase SQL Editor after `plays`, `tracks`, `artists`, `albums` exist.
 
 -- Spotify exporta una fila por *segmento* de escucha: pausar y reanudar suele generar varias filas
--- para el mismo tema. Para “reproducciones” en rankings y totales, agrupamos segmentos consecutivos
--- del mismo track_id cuyo `played_at` dista a lo sumo `max_gap` (p. ej. 15 min) en una sola sesión.
--- El tiempo total (ms) sigue siendo la suma de todas las filas.
+-- para el mismo tema. Para los rankings top, agrupamos segmentos en *sesiones* (mismo track_id,
+-- hueco máx. configurable). El KPI «Total» del dashboard usa COUNT(*) de filas (segmentos),
+-- coherente con las gráficas de período/hora/plataforma; las listas Top siguen en sesiones.
 CREATE OR REPLACE FUNCTION public.plays_in_range_with_sessions(
   start_date timestamptz,
   end_date timestamptz,
@@ -67,11 +67,14 @@ AS $$
 $$;
 
 
+-- Al agregar `session_count`, el tipo OUT cambia: hace falta DROP antes de crear.
+DROP FUNCTION IF EXISTS public.get_total_listening_time(timestamptz, timestamptz);
+
 CREATE OR REPLACE FUNCTION public.get_total_listening_time(
   start_date timestamptz,
   end_date timestamptz
 )
-RETURNS TABLE (total_ms bigint, play_count bigint)
+RETURNS TABLE (total_ms bigint, play_count bigint, session_count bigint)
 LANGUAGE sql
 STABLE
 SET search_path = public
@@ -85,6 +88,14 @@ AS $$
       ),
       0
     ) AS total_ms,
+    COALESCE(
+      (
+        SELECT COUNT(*)::bigint
+        FROM plays p
+        WHERE p.played_at >= start_date AND p.played_at <= end_date
+      ),
+      0
+    ) AS play_count,
     (
       COALESCE(
         (
@@ -106,7 +117,7 @@ AS $$
         ),
         0
       )
-    ) AS play_count;
+    ) AS session_count;
 $$;
 
 
