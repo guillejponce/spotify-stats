@@ -43,7 +43,6 @@ export async function GET(request: NextRequest) {
       topAlbums: bundle.topAlbums,
       listeningOverTime: bundle.listeningOverTime,
       hourlyData: bundle.hourlyData,
-      platformData: bundle.platformData,
       monthsTop: bundle.monthsTop,
       yearsBreakdown: bundle.yearsBreakdown,
       heatmapData,

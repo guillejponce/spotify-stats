@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { msToHours, formatNumber } from "@/lib/utils";
+import { msToHours, formatReproductionCount } from "@/lib/utils";
 import type { HourlyData } from "@/types/database";
 import {
   CHILE_TIMEZONE_LABEL,
@@ -110,7 +110,7 @@ export function HourlyChart({ title, data, loading = false }: HourlyChartProps) 
                 const row = item?.payload as HourlyData | undefined;
                 const plays = row?.play_count ?? 0;
                 return [
-                  `${msToHours(value)} h · ${formatNumber(plays)} filas`,
+                  `${msToHours(value)} h · ${formatReproductionCount(plays)} repros`,
                   "Tiempo escuchado",
                 ];
               }}

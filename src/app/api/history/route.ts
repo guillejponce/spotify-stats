@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       !process.env.SUPABASE_SERVICE_ROLE_KEY
     ) {
       console.warn(
-        "[history] SUPABASE_SERVICE_ROLE_KEY no definida: RLS puede ocultar filas en plays.",
+        "[history] SUPABASE_SERVICE_ROLE_KEY no definida: RLS puede ocultar reproducciones en plays.",
       );
     }
 

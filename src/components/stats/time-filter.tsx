@@ -74,53 +74,64 @@ export function TimeFilterControl({
 
   if (variant === "dashboard") {
     return (
-      <div className="flex flex-wrap items-center gap-3">
-        <Tabs
-          defaultValue="all"
-          value={value.filter}
-          onValueChange={handleFilterChange}
-        >
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
-            <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
-            <TabsTrigger value="last_month">Último mes</TabsTrigger>
-            <TabsTrigger value="last_week">Última semana</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="flex w-full min-w-0 flex-col gap-3">
+        <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch]">
+          <Tabs
+            defaultValue="all"
+            value={value.filter}
+            onValueChange={handleFilterChange}
+            className="min-w-0"
+          >
+            <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
+              <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
+              <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
+              <TabsTrigger value="last_month">Último mes</TabsTrigger>
+              <TabsTrigger value="last_week">Última semana</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Tabs defaultValue="all" value={value.filter} onValueChange={handleFilterChange}>
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="all">Todo</TabsTrigger>
-          <TabsTrigger value="year">Año</TabsTrigger>
-          <TabsTrigger value="month">Mes</TabsTrigger>
-          <TabsTrigger value="week">Esta semana</TabsTrigger>
-          <TabsTrigger value="day">Hoy</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <div className="flex w-full min-w-0 flex-col gap-3">
+      <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch]">
+        <Tabs defaultValue="all" value={value.filter} onValueChange={handleFilterChange}>
+          <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
+            <TabsTrigger value="all">Todo</TabsTrigger>
+            <TabsTrigger value="year">Año</TabsTrigger>
+            <TabsTrigger value="month">Mes</TabsTrigger>
+            <TabsTrigger value="week">Esta semana</TabsTrigger>
+            <TabsTrigger value="day">Hoy</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
-      {(value.filter === "year" || value.filter === "month") && (
-        <Select
-          value={String(selectedYear)}
-          onChange={(e) => handleYearChange(Number(e.target.value))}
-          options={years.map((y) => ({ value: String(y), label: String(y) }))}
-        />
-      )}
+      <div className="flex flex-wrap items-stretch gap-2 sm:items-center sm:gap-3">
+        {(value.filter === "year" || value.filter === "month") && (
+          <div className="min-w-[8.5rem] flex-1 sm:flex-none sm:max-w-[11rem]">
+            <Select
+              value={String(selectedYear)}
+              onChange={(e) => handleYearChange(Number(e.target.value))}
+              options={years.map((y) => ({ value: String(y), label: String(y) }))}
+            />
+          </div>
+        )}
 
-      {value.filter === "month" && (
-        <Select
-          value={String(selectedMonth)}
-          onChange={(e) => handleMonthChange(Number(e.target.value))}
-          options={months.map((m, i) => ({
-            value: String(i + 1),
-            label: m,
-          }))}
-        />
-      )}
+        {value.filter === "month" && (
+          <div className="min-w-[8.5rem] flex-1 sm:flex-none sm:max-w-[14rem]">
+            <Select
+              value={String(selectedMonth)}
+              onChange={(e) => handleMonthChange(Number(e.target.value))}
+              options={months.map((m, i) => ({
+                value: String(i + 1),
+                label: m,
+              }))}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

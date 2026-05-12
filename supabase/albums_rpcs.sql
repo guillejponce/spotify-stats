@@ -1,4 +1,5 @@
--- Album browser: /albums — ejecutá en SQL Editor después de stats_rpcs.sql (necesita plays_in_range_with_sessions).
+-- Album browser: /albums — `play_count` = segmentos (filas en `plays`).
+-- “Todo el tiempo” usa stats_album_segments si los rollups están al día.
 
 CREATE OR REPLACE FUNCTION public.get_albums_leaderboard(
   start_date timestamptz,
@@ -14,42 +15,84 @@ RETURNS TABLE (
   play_count bigint,
   total_ms_played bigint
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SET search_path = public
 AS $$
-  WITH per_session AS (
-    SELECT s.album_id,
-           s.track_id,
-           s.session_id,
-           SUM(s.ms_played)::bigint AS session_ms
-    FROM public.plays_in_range_with_sessions(start_date, end_date) s
-    WHERE s.album_id IS NOT NULL
-    GROUP BY s.album_id, s.track_id, s.session_id
-  ),
-  joined AS (
-    SELECT ps.album_id,
-           ps.session_ms,
-           ab.name AS ab_name,
-           ab.image_url AS ab_img
-    FROM per_session ps
-    INNER JOIN albums ab ON ab.id = ps.album_id
+DECLARE
+  rollup_ok boolean;
+  use_rollup boolean;
+BEGIN
+  PERFORM set_config('statement_timeout', '120s', true);
+
+  rollup_ok :=
+    to_regclass('public.stats_daily_segments') IS NOT NULL
+    AND EXISTS (SELECT 1 FROM public.stats_daily_segments LIMIT 1)
+    AND EXISTS (SELECT 1 FROM public.stats_album_segments LIMIT 1)
+    AND (
+      SELECT MAX(d.bucket_date)
+      FROM public.stats_daily_segments d
+    ) >= COALESCE(
+      (
+        SELECT MAX((p.played_at AT TIME ZONE 'America/Santiago')::date)
+        FROM public.plays p
+      ),
+      '1900-01-01'::date
+    );
+
+  use_rollup := rollup_ok AND start_date < timestamptz '1971-01-01 UTC';
+
+  IF use_rollup THEN
+    RETURN QUERY
+    SELECT
+      sal.album_id::text AS id,
+      ab.name::text AS name,
+      ab.image_url::text AS image_url,
+      sal.segment_count::bigint AS play_count,
+      sal.total_ms::bigint AS total_ms_played
+    FROM public.stats_album_segments sal
+    INNER JOIN public.albums ab ON ab.id = sal.album_id
     WHERE (
       search_query IS NULL
       OR trim(search_query) = ''
       OR ab.name ILIKE '%' || trim(search_query) || '%'
     )
+    ORDER BY sal.segment_count DESC, sal.total_ms DESC, ab.name ASC
+    OFFSET greatest(result_offset, 0)
+    LIMIT greatest(least(result_limit, 200), 1);
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  WITH agg AS (
+    SELECT
+      COALESCE(p.album_id, tr.album_id) AS album_id,
+      COUNT(*)::bigint AS pc,
+      COALESCE(SUM(p.ms_played), 0)::bigint AS ms
+    FROM public.plays p
+    LEFT JOIN public.tracks tr ON tr.id = p.track_id
+    WHERE p.played_at >= start_date
+      AND p.played_at <= end_date
+      AND COALESCE(p.album_id, tr.album_id) IS NOT NULL
+    GROUP BY COALESCE(p.album_id, tr.album_id)
   )
-  SELECT j.album_id AS id,
-         j.ab_name AS name,
-         j.ab_img AS image_url,
-         COUNT(*)::bigint AS play_count,
-         COALESCE(SUM(j.session_ms), 0)::bigint AS total_ms_played
-  FROM joined j
-  GROUP BY j.album_id, j.ab_name, j.ab_img
-  ORDER BY play_count DESC, total_ms_played DESC, j.ab_name ASC
+  SELECT
+    a.album_id::text AS id,
+    ab.name::text AS name,
+    ab.image_url::text AS image_url,
+    a.pc AS play_count,
+    a.ms AS total_ms_played
+  FROM agg a
+  INNER JOIN public.albums ab ON ab.id = a.album_id
+  WHERE (
+    search_query IS NULL
+    OR trim(search_query) = ''
+    OR ab.name ILIKE '%' || trim(search_query) || '%'
+  )
+  ORDER BY a.pc DESC, a.ms DESC, ab.name ASC
   OFFSET greatest(result_offset, 0)
   LIMIT greatest(least(result_limit, 200), 1);
+END;
 $$;
 
 
@@ -63,23 +106,17 @@ LANGUAGE sql
 STABLE
 SET search_path = public
 AS $$
-  WITH per_session AS (
-    SELECT s.track_id,
-           s.session_id,
-           SUM(s.ms_played)::bigint AS session_ms
-    FROM public.plays_in_range_with_sessions(start_date, end_date) s
-    INNER JOIN tracks tr ON tr.id = s.track_id
-    WHERE s.track_id IS NOT NULL
-      AND COALESCE(tr.album_id, s.album_id) = album_ref
-    GROUP BY s.track_id, s.session_id
-  )
-  SELECT COUNT(*)::bigint AS play_count,
-         COALESCE(SUM(per_session.session_ms), 0)::bigint AS total_ms_played
-  FROM per_session;
+  SELECT
+    COUNT(*)::bigint AS play_count,
+    COALESCE(SUM(p.ms_played), 0)::bigint AS total_ms_played
+  FROM public.plays p
+  INNER JOIN public.tracks tr ON tr.id = p.track_id
+  WHERE p.played_at >= start_date
+    AND p.played_at <= end_date
+    AND COALESCE(tr.album_id, p.album_id) = album_ref;
 $$;
 
 
--- Play counts por track (sesiones) en el período; una fila por id en track_ids preservando orden.
 CREATE OR REPLACE FUNCTION public.get_track_play_counts_in_period(
   track_ids text[],
   start_date timestamptz,
@@ -90,36 +127,45 @@ LANGUAGE sql
 STABLE
 SET search_path = public
 AS $$
+  -- `plays.track_id` referencia `tracks.id` (UUID tras import con spotify_id).
+  -- Este RPC recibe IDs de Spotify (tracklist del API) o PK internos: resolvemos vía tracks.spotify_id / tracks.id.
   WITH ranked AS (
     SELECT u.tid AS track_id,
            u.ord
     FROM unnest(track_ids) WITH ORDINALITY AS u(tid, ord)
   ),
   agg AS (
-    SELECT s.track_id AS tid,
-           COUNT(DISTINCT s.session_id)::bigint AS pc,
-           COALESCE(SUM(s.ms_played), 0)::bigint AS tm
-    FROM public.plays_in_range_with_sessions(start_date, end_date) s
-    INNER JOIN ranked r ON r.track_id = s.track_id
-    GROUP BY s.track_id
+    SELECT
+      r.track_id AS ranked_tid,
+      COUNT(*)::bigint AS pc,
+      COALESCE(SUM(p.ms_played), 0)::bigint AS tm
+    FROM ranked r
+    INNER JOIN public.tracks tr
+      ON tr.spotify_id = r.track_id
+      OR tr.id = r.track_id
+    INNER JOIN public.plays p ON p.track_id = tr.id
+    WHERE p.played_at >= start_date
+      AND p.played_at <= end_date
+    GROUP BY r.track_id
   )
-  SELECT ranked.track_id,
-         COALESCE(agg.pc, 0)::bigint AS play_count,
-         COALESCE(agg.tm, 0)::bigint AS total_ms_played
+  SELECT
+    ranked.track_id,
+    COALESCE(agg.pc, 0)::bigint AS play_count,
+    COALESCE(agg.tm, 0)::bigint AS total_ms_played
   FROM ranked
-  LEFT JOIN agg ON agg.tid = ranked.track_id
+  LEFT JOIN agg ON agg.ranked_tid = ranked.track_id
   ORDER BY ranked.ord ASC;
 $$;
 
 
 GRANT EXECUTE ON FUNCTION public.get_albums_leaderboard(
   timestamptz, timestamptz, text, integer, integer
-) TO service_role;
+) TO anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION public.get_album_period_stats(
   text, timestamptz, timestamptz
-) TO service_role;
+) TO anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION public.get_track_play_counts_in_period(
   text[], timestamptz, timestamptz
-) TO service_role;
+) TO anon, authenticated, service_role;

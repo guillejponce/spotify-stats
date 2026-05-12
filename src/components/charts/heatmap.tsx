@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatMs, formatNumber } from "@/lib/utils";
+import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
 import {
   CHILE_TIMEZONE_LABEL,
   CHILE_WEEKDAY_ROWS,
@@ -114,9 +114,8 @@ export function Heatmap({ title, data, loading = false, year }: HeatmapProps) {
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Filas = día de la semana · columnas = semanas del año · cada cuadro = un día
-          calendario en {CHILE_TIMEZONE_LABEL}. Pasá el mouse para ver fecha, reproducciones
-          y tiempo escuchado.
+          Eje vertical = día de la semana · horizontal = semanas del año · cada cuadrado = un día
+          en {CHILE_TIMEZONE_LABEL}. Pasá el mouse para ver fecha, reproducciones y tiempo escuchado.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -126,7 +125,7 @@ export function Heatmap({ title, data, loading = false, year }: HeatmapProps) {
               <div key={ri} className="flex items-center gap-1">
                 <span
                   className="w-8 shrink-0 text-right text-[10px] font-medium text-spotify-light-gray/70"
-                  title="Fila = día de la semana (Chile)"
+                  title="Día de la semana (Chile)"
                 >
                   {CHILE_WEEKDAY_ROWS[ri]}
                 </span>
@@ -141,7 +140,7 @@ export function Heatmap({ title, data, loading = false, year }: HeatmapProps) {
                       );
                     }
                     const label = formatChileCalendarDayLong(cell.date);
-                    const title = `${label}\n${formatNumber(cell.count)} reproducciones · ${formatMs(cell.ms_played)}`;
+                    const title = `${label}\n${formatReproductionCount(cell.count)} reproducciones · ${formatMs(cell.ms_played)}`;
                     return (
                       <div
                         key={ci}

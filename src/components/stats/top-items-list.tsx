@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatMs, formatNumber } from "@/lib/utils";
+import { formatMs, formatReproductionCount } from "@/lib/utils";
 import { Music2 } from "lucide-react";
 import type { TopItem } from "@/types/database";
 
@@ -22,11 +22,11 @@ export function TopItemsList({
 }: TopItemsListProps) {
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="px-4 pt-5 sm:p-6">
+          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 px-3 pb-4 sm:p-6 sm:pt-0">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
               <Skeleton className="h-10 w-10 rounded" />
@@ -43,11 +43,11 @@ export function TopItemsList({
 
   if (items.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
+      <Card className="overflow-hidden">
+        <CardHeader className="px-4 pt-5 sm:p-6">
+          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-4 sm:p-6 sm:pt-0">
           <p className="py-8 text-center text-sm text-spotify-light-gray">
             No data available. Import your listening history to see stats.
           </p>
@@ -59,26 +59,26 @@ export function TopItemsList({
   const maxValue = Math.max(...items.map((i) => i.play_count));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="px-4 pt-5 sm:p-6">
+        <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 px-3 pb-4 sm:p-6 sm:pt-0">
         {items.map((item, index) => {
           const barWidth = maxValue > 0 ? (item.play_count / maxValue) * 100 : 0;
 
           return (
             <div
               key={item.id}
-              className="group relative flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/5"
+              className="group relative flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-white/5 active:bg-white/10 sm:rounded-lg sm:p-2"
             >
               {showIndex && (
-                <span className="w-6 text-right text-sm font-medium text-spotify-light-gray/60">
+                <span className="w-6 shrink-0 text-right text-sm font-medium tabular-nums text-spotify-light-gray/60">
                   {index + 1}
                 </span>
               )}
 
-              <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded">
+              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md sm:h-10 sm:w-10">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
@@ -94,12 +94,12 @@ export function TopItemsList({
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
+                <p className="line-clamp-2 text-sm font-medium leading-snug text-white">
                   {item.name}
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="text-xs text-spotify-light-gray">
-                    {formatNumber(item.play_count)} sesiones
+                    {formatReproductionCount(item.play_count)} reproducciones
                   </span>
                   <span className="text-xs text-spotify-light-gray/40">·</span>
                   <span className="text-xs text-spotify-light-gray/60">

@@ -51,30 +51,3 @@ function humanizeDeviceSlug(s: string): string {
     )
     .join(" ");
 }
-
-/** Agrupa por etiqueta ya formateada por si llegan valores distintos que mapean igual. */
-export function summarizePlatformsForChart(
-  rows: { platform: string; play_count: number; ms_played: number }[],
-): { platform: string; play_count: number; ms_played: number }[] {
-  const merged = new Map<
-    string,
-    { platform: string; play_count: number; ms_played: number }
-  >();
-
-  for (const row of rows) {
-    const label = formatPlaybackPlatform(row.platform);
-    const prev = merged.get(label);
-    if (!prev) {
-      merged.set(label, {
-        platform: label,
-        play_count: row.play_count,
-        ms_played: row.ms_played,
-      });
-    } else {
-      prev.play_count += row.play_count;
-      prev.ms_played += row.ms_played;
-    }
-  }
-
-  return Array.from(merged.values()).sort((a, b) => b.play_count - a.play_count);
-}

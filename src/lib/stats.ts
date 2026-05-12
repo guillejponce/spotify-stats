@@ -19,7 +19,6 @@ export interface DashboardBundlePayload {
   topAlbums: TopItem[];
   listeningOverTime: ListeningTimeData[];
   hourlyData: HourlyData[];
-  platformData: { platform: string; play_count: number; ms_played: number }[];
   monthsTop: MonthBucket[];
   yearsBreakdown: YearBucket[];
 }
@@ -144,7 +143,6 @@ async function getDashboardLegacyPayload(
     topAlbums,
     listeningOverTime,
     hourlyData,
-    platformData,
   ] = await Promise.all([
     getTotalListeningTime(params),
     getTopTracks(params, limit),
@@ -152,7 +150,6 @@ async function getDashboardLegacyPayload(
     getTopAlbums(params, limit),
     getListeningOverTime(params, "day"),
     getHourlyDistribution(params),
-    getPlatformBreakdown(params),
   ]);
 
   return {
@@ -164,7 +161,6 @@ async function getDashboardLegacyPayload(
     topAlbums,
     listeningOverTime,
     hourlyData,
-    platformData,
     monthsTop: rollupMonthsTopFromDays(listeningOverTime),
     yearsBreakdown: rollupYearsFromDays(listeningOverTime),
   };
@@ -189,14 +185,6 @@ function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundl
       hour: Math.floor(numeric(r.hour)),
       ms_played: numeric(r.ms_played),
       play_count: numeric(r.play_count),
-    }),
-  );
-
-  const platformRows = asRpcRows<Record<string, unknown>>(root.platform).map(
-    (r) => ({
-      platform: String(r.platform ?? ""),
-      play_count: numeric(r.play_count),
-      ms_played: numeric(r.ms_played),
     }),
   );
 
@@ -231,7 +219,6 @@ function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundl
     ),
     listeningOverTime: listeningRows,
     hourlyData: hourlyRows,
-    platformData: platformRows,
     monthsTop,
     yearsBreakdown,
   };
@@ -305,7 +292,6 @@ export async function getDashboardBundlePayload(
     topAlbums: [],
     listeningOverTime: [],
     hourlyData: [],
-    platformData: [],
     monthsTop: [],
     yearsBreakdown: [],
   };
@@ -423,25 +409,6 @@ export async function getHourlyDistribution(
     hour: Math.floor(numeric(r.hour)),
     ms_played: numeric(r.ms_played),
     play_count: numeric(r.play_count),
-  }));
-}
-
-export async function getPlatformBreakdown(
-  params: TimeFilterParams
-): Promise<{ platform: string; play_count: number; ms_played: number }[]> {
-  const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
-
-  const { data, error } = await supabase.rpc("get_platform_breakdown", {
-    start_date: start,
-    end_date: end,
-  });
-
-  if (error) throw error;
-  return asRpcRows<Record<string, unknown>>(data).map((r) => ({
-    platform: String(r.platform ?? ""),
-    play_count: numeric(r.play_count),
-    ms_played: numeric(r.ms_played),
   }));
 }
 

@@ -67,11 +67,11 @@ export default function HistoryPage() {
       : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-4">
+        <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-white">
+            <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
               Historial
             </h1>
             {page === 0 && silentBusy && !loading && (
@@ -96,13 +96,13 @@ export default function HistoryPage() {
             </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {page > 0 && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="border-white/15 text-white/90"
+              className="min-h-[44px] w-full border-white/15 text-white/90 sm:min-h-0 sm:w-auto"
               onClick={() => setPage(0)}
             >
               <TimelineIcon className="mr-1.5 h-4 w-4" />
@@ -113,7 +113,7 @@ export default function HistoryPage() {
             type="button"
             variant="secondary"
             size="sm"
-            className="gap-2"
+            className="min-h-[44px] w-full gap-2 sm:min-h-0 sm:w-auto"
             onClick={() => void refresh()}
             disabled={loading}
           >
@@ -128,7 +128,7 @@ export default function HistoryPage() {
       {error && (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100/95"
+          className="flex flex-col gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100/95 sm:flex-row sm:items-start"
         >
           <WifiOff className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0 flex-1">
@@ -139,7 +139,7 @@ export default function HistoryPage() {
             type="button"
             variant="secondary"
             size="sm"
-            className="shrink-0"
+            className="min-h-[44px] w-full shrink-0 sm:min-h-0 sm:w-auto"
             onClick={() => void refresh()}
           >
             Reintentar
@@ -148,15 +148,15 @@ export default function HistoryPage() {
       )}
 
       {freshBatch && page === 0 && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-spotify-green/35 bg-spotify-green/10 px-4 py-2.5 text-sm text-white/95">
-          <span className="inline-flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-spotify-green" />
+        <div className="flex flex-col gap-3 rounded-xl border border-spotify-green/35 bg-spotify-green/10 px-4 py-3 text-sm text-white/95 sm:flex-row sm:items-center sm:justify-between">
+          <span className="inline-flex items-start gap-2 sm:items-center">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-spotify-green sm:mt-0" />
             Hay reproducciones nuevas arriba del listado.
           </span>
           <button
             type="button"
             onClick={clearFreshBadge}
-            className="rounded p-1 text-spotify-light-gray transition hover:bg-white/10 hover:text-white"
+            className="self-end rounded-lg p-2 text-spotify-light-gray transition hover:bg-white/10 hover:text-white sm:self-auto sm:p-1"
             aria-label="Cerrar aviso"
           >
             <X className="h-4 w-4" />
@@ -165,23 +165,23 @@ export default function HistoryPage() {
       )}
 
       <Card className="overflow-hidden border-white/[0.06] bg-[#181818]">
-        <CardHeader className="border-b border-white/[0.06] pb-4">
-          <CardTitle className="text-lg font-semibold text-white">
-            Últimos plays
+        <CardHeader className="border-b border-white/[0.06] px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+          <CardTitle className="text-base font-semibold text-white sm:text-lg">
+            Últimas reproducciones
           </CardTitle>
           <p className="text-xs text-spotify-light-gray/70">
             {page === 0
-              ? `Mostrando hasta ${limit} filas por página · sync en vivo en esta vista`
+              ? `Hasta ${limit} repros por página · sync en vivo en esta vista`
               : `Página ${page + 1} · sincronización automática sólo en la primera página`}
           </p>
         </CardHeader>
-        <CardContent className="pt-5">
+        <CardContent className="px-2 pb-4 pt-4 sm:px-6 sm:pt-5">
           {loading ? (
             <HistorySkeletonRows />
           ) : plays.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
               <p className="text-sm font-medium text-white/90">
-                Todavía no hay plays en la base
+                Todavía no hay reproducciones en la base
               </p>
               <p className="max-w-sm text-xs leading-relaxed text-spotify-light-gray/75">
                 Conectá Spotify, importá tu historial o esperá a que el job de
@@ -200,29 +200,57 @@ export default function HistoryPage() {
             </div>
           )}
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0 || loading}
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              Anterior
-            </Button>
-            <span className="text-xs tabular-nums text-spotify-light-gray">
+          <div className="mt-6 border-t border-white/[0.06] pt-4">
+            <div className="flex gap-2 sm:hidden">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="min-h-[44px] flex-1"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0 || loading}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Anterior
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="min-h-[44px] flex-1"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasMore || loading}
+              >
+                Siguiente
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
+            <p className="mt-2 text-center text-xs tabular-nums text-spotify-light-gray sm:hidden">
               Página {page + 1}
               {hasMore ? "" : " · fin del historial"}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!hasMore || loading}
-            >
-              Siguiente
-              <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
+            </p>
+            <div className="hidden items-center justify-between gap-3 sm:flex">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0 || loading}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Anterior
+              </Button>
+              <span className="text-xs tabular-nums text-spotify-light-gray">
+                Página {page + 1}
+                {hasMore ? "" : " · fin del historial"}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasMore || loading}
+              >
+                Siguiente
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

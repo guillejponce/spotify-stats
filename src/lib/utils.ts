@@ -44,8 +44,15 @@ export function formatNumber(num: number): string {
   return num.toString();
 }
 
+/** Conteos de reproducciones/segmentos: valor exacto con miles (es-CL), sin abreviar tipo 1.2K. */
+export function formatReproductionCount(num: number): string {
+  const n = Math.floor(Number(num));
+  if (!Number.isFinite(n)) return "0";
+  return Math.max(0, n).toLocaleString("es-CL");
+}
+
 export function formatPlayCount(count: number): string {
-  return `${formatNumber(count)} plays`;
+  return `${formatReproductionCount(count)} reproducciones`;
 }
 
 export function extractSpotifyId(uri: string | null): string | null {

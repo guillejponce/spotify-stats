@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/stats/stat-card";
-import { cn, formatMs, formatNumber } from "@/lib/utils";
+import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 import type { TimeFilterParams, TopItem } from "@/types/database";
 import {
@@ -124,13 +124,13 @@ function ArtistDetailInner({
   }, [load]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-3">
         <Link
           href={listHref}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "gap-2 text-spotify-light-gray"
+            "min-h-[44px] w-full justify-center gap-2 text-spotify-light-gray sm:w-fit sm:min-h-0 sm:justify-start"
           )}
         >
           <ArrowLeft className="h-4 w-4" /> Volver a artistas
@@ -139,7 +139,7 @@ function ArtistDetailInner({
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <p className="text-xs text-spotify-light-gray/65">
+      <p className="text-xs leading-relaxed text-spotify-light-gray/65">
         Estadísticas del período en {CHILE_TIMEZONE_LABEL}.
       </p>
 
@@ -152,7 +152,7 @@ function ArtistDetailInner({
       {!loading && data && (
         <>
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <div className="relative mx-auto h-40 w-40 shrink-0 overflow-hidden rounded-xl bg-spotify-medium-gray shadow-lg sm:mx-0">
+            <div className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-xl bg-spotify-medium-gray shadow-lg sm:mx-0 sm:h-40 sm:w-40">
               {data.artist.image_url ? (
                 <Image
                   src={data.artist.image_url}
@@ -167,7 +167,7 @@ function ArtistDetailInner({
               )}
             </div>
             <div className="min-w-0 flex-1 text-center sm:text-left">
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">
+              <h1 className="text-xl font-bold leading-tight text-white sm:text-2xl md:text-3xl">
                 {data.artist.name}
               </h1>
               {data.artist.genres && data.artist.genres.length > 0 && (
@@ -195,25 +195,25 @@ function ArtistDetailInner({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             <StatCard
               title="Reproducciones"
-              value={formatNumber(data.stats.play_count)}
+              value={formatReproductionCount(data.stats.play_count)}
               icon={Disc3}
             />
             <StatCard
               title="Tiempo escuchado"
               value={formatMs(data.stats.total_ms_played)}
-              subtitle={`${formatNumber(Math.round(data.stats.total_ms_played / 3600000))} h redondeadas`}
+              subtitle={`${formatReproductionCount(Math.round(data.stats.total_ms_played / 3600000))} h redondeadas`}
               icon={Clock}
             />
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Canciones en este período</CardTitle>
+          <Card className="overflow-hidden">
+            <CardHeader className="px-4 pt-5 sm:p-6 sm:pb-2">
+              <CardTitle className="text-base sm:text-lg">Canciones en este período</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-4 pt-0 sm:p-6 sm:pt-0">
               {data.tracks.length === 0 ? (
                 <p className="text-sm text-spotify-light-gray">
                   Sin datos en el rango elegido.
@@ -223,31 +223,33 @@ function ArtistDetailInner({
                   {data.tracks.map((t, i) => (
                     <li
                       key={`${t.id}-${i}`}
-                      className="flex items-center gap-3 rounded-lg border border-white/5 p-2"
+                      className="flex flex-col gap-2 rounded-xl border border-white/5 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-2"
                     >
-                      <span className="w-7 text-right text-xs text-spotify-light-gray/50">
-                        {i + 1}
-                      </span>
-                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-spotify-medium-gray">
-                        {t.image_url ? (
-                          <Image
-                            src={t.image_url}
-                            alt=""
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <Music2 className="h-4 w-4 text-spotify-light-gray" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-white">{t.name}</p>
-                        <p className="text-xs text-spotify-light-gray">
-                          {formatNumber(t.play_count)} reproducciones ·{" "}
-                          {formatMs(t.total_ms_played)}
-                        </p>
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <span className="w-7 shrink-0 text-right text-xs text-spotify-light-gray/50">
+                          {i + 1}
+                        </span>
+                        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray sm:h-10 sm:w-10">
+                          {t.image_url ? (
+                            <Image
+                              src={t.image_url}
+                              alt=""
+                              fill
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <Music2 className="h-4 w-4 text-spotify-light-gray" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium leading-snug text-white">{t.name}</p>
+                          <p className="mt-0.5 text-xs text-spotify-light-gray">
+                            {formatReproductionCount(t.play_count)} reproducciones ·{" "}
+                            {formatMs(t.total_ms_played)}
+                          </p>
+                        </div>
                       </div>
                     </li>
                   ))}

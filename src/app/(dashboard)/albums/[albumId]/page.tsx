@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/stats/stat-card";
-import { cn, formatMs, formatNumber } from "@/lib/utils";
+import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 import type { TimeFilterParams } from "@/types/database";
 import {
@@ -131,13 +131,13 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
   }, [load]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-6 sm:space-y-8">
+      <div className="flex flex-col gap-3">
         <Link
           href={listHref}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "gap-2 text-spotify-light-gray"
+            "min-h-[44px] w-full justify-center gap-2 text-spotify-light-gray sm:w-fit sm:min-h-0 sm:justify-start"
           )}
         >
           <ArrowLeft className="h-4 w-4" /> Volver a álbumes
@@ -146,7 +146,7 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <p className="text-xs text-spotify-light-gray/65">
+      <p className="text-xs leading-relaxed text-spotify-light-gray/65">
         Reproducciones y tiempos por canción para {CHILE_TIMEZONE_LABEL} en el período elegido.
       </p>
 
@@ -159,7 +159,7 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
       {!loading && data && (
         <>
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <div className="relative mx-auto h-44 w-44 shrink-0 overflow-hidden rounded-xl bg-spotify-medium-gray shadow-lg sm:mx-0">
+            <div className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-xl bg-spotify-medium-gray shadow-lg sm:mx-0 sm:h-44 sm:w-44">
               {data.album.image_url ? (
                 <Image
                   src={data.album.image_url}
@@ -177,7 +177,7 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
               <p className="text-sm text-spotify-light-gray">
                 {data.album.artist_name ?? "—"}
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">
+              <h1 className="mt-1 text-xl font-bold leading-tight text-white sm:text-2xl md:text-3xl">
                 {data.album.name}
               </h1>
               {data.album.spotify_url && (
@@ -193,16 +193,16 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             <StatCard
               title="Reproducciones (álbum)"
-              value={formatNumber(data.stats.play_count)}
+              value={formatReproductionCount(data.stats.play_count)}
               icon={Disc3}
             />
             <StatCard
               title="Tiempo escuchado"
               value={formatMs(data.stats.total_ms_played)}
-              subtitle={`${formatNumber(Math.round(data.stats.total_ms_played / 3600000))} h redondeadas`}
+              subtitle={`${formatReproductionCount(Math.round(data.stats.total_ms_played / 3600000))} h redondeadas`}
               icon={Clock}
             />
           </div>
@@ -210,13 +210,13 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
           {data.spotify_full_tracklist &&
             data.unheard_count > 0 &&
             data.album.spotify_url && (
-              <div className="rounded-xl border border-spotify-green/25 bg-spotify-green/10 px-4 py-3 text-sm text-spotify-light-gray">
+              <div className="rounded-xl border border-spotify-green/25 bg-spotify-green/10 px-3 py-3 text-sm leading-relaxed text-spotify-light-gray sm:px-4">
                 <p className="flex items-start gap-2">
                   <Headphones className="mt-0.5 h-4 w-4 shrink-0 text-spotify-green" />
                   <span>
                     En este período aún no aparecen en tu historial{" "}
                     <span className="font-medium text-white">
-                      {formatNumber(data.unheard_count)}
+                      {formatReproductionCount(data.unheard_count)}
                     </span>{" "}
                     {data.unheard_count === 1 ? "canción" : "canciones"} del álbum
                     (orden del disco en Spotify). ¡Dales play!
@@ -240,11 +240,11 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
             </p>
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Canciones del álbum</CardTitle>
+          <Card className="overflow-hidden">
+            <CardHeader className="px-4 pt-5 sm:p-6 sm:pb-2">
+              <CardTitle className="text-base sm:text-lg">Canciones del álbum</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-4 pt-0 sm:p-6 sm:pt-0">
               {data.tracks.length === 0 ? (
                 <p className="text-sm text-spotify-light-gray">
                   Sin canciones para mostrar.
@@ -255,29 +255,31 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
                     <li
                       key={t.id}
                       className={cn(
-                        "flex flex-wrap items-center gap-3 rounded-lg border p-2 sm:flex-nowrap",
+                        "flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:p-2.5",
                         t.listened ? "border-white/5" : "border-amber-500/25 bg-amber-500/5"
                       )}
                     >
-                      <span className="w-8 text-right text-xs text-spotify-light-gray/60">
-                        {t.track_number}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-white">{t.name}</p>
-                        <p className="text-xs text-spotify-light-gray">
-                          {formatMs(t.duration_ms)}
-                        </p>
+                      <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+                        <span className="w-8 shrink-0 pt-0.5 text-right text-xs tabular-nums text-spotify-light-gray/60 sm:pt-0">
+                          {t.track_number}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium leading-snug text-white">{t.name}</p>
+                          <p className="mt-0.5 text-xs text-spotify-light-gray">
+                            {formatMs(t.duration_ms)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="ml-auto shrink-0 text-right sm:ml-0">
+                      <div className="shrink-0 pl-11 text-left sm:ml-auto sm:pl-0 sm:text-right">
                         {t.listened ? (
                           <p className="text-xs text-spotify-light-gray">
-                            <span className="font-medium text-white">
-                              {formatNumber(t.play_count)}
+                            <span className="font-medium tabular-nums text-white">
+                              {formatReproductionCount(t.play_count)}
                             </span>{" "}
-                            reps · {formatMs(t.total_ms_played)}
+                            repros · {formatMs(t.total_ms_played)}
                           </p>
                         ) : (
-                          <span className="rounded-full border border-amber-400/35 bg-black/40 px-2 py-0.5 text-[11px] text-amber-100/95">
+                          <span className="inline-block rounded-full border border-amber-400/35 bg-black/40 px-2.5 py-1 text-[11px] leading-tight text-amber-100/95">
                             Sin reproducir en este período
                           </span>
                         )}

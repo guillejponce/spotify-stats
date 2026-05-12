@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatNumber, msToHours } from "@/lib/utils";
+import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { MonthBucket } from "@/types/database";
 import { CHILE_TIMEZONE_LABEL, formatChileMonthPeriod } from "@/lib/chile-time";
 
@@ -71,8 +71,7 @@ export function MonthRankChart({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Meses con más filas de reproducción en el período filtrado (segmentos; zona{" "}
-          {CHILE_TIMEZONE_LABEL}).
+          Meses con más reproducciones en el período filtrado (zona {CHILE_TIMEZONE_LABEL}).
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -108,7 +107,7 @@ export function MonthRankChart({
                 const row = item?.payload as MonthBucket & { hours?: number };
                 const h = row?.hours ?? msToHours(row?.ms_played ?? 0);
                 return [
-                  `${formatNumber(count)} reproducciones · ${h} h`,
+                  `${formatReproductionCount(count)} reproducciones · ${h} h`,
                   "Segmentos",
                 ];
               }}

@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { msToHours, formatNumber } from "@/lib/utils";
+import { msToHours, formatReproductionCount } from "@/lib/utils";
 import type { ListeningTimeData } from "@/types/database";
 import {
   CHILE_TIMEZONE_LABEL,
@@ -77,7 +77,8 @@ export function ListeningChart({
         <CardTitle>{title}</CardTitle>
         <CardDescription>
           Agrupación por día (o semana/mes según período) en {CHILE_TIMEZONE_LABEL}.
-          El conteo por barra es filas / segmentos (igual que el KPI «Filas reproducidas»).
+          Cada barra suma reproducciones registradas (segmentos de escucha), igual que el KPI
+          principal del dashboard.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -120,7 +121,7 @@ export function ListeningChart({
                 const row = item?.payload as ListeningTimeData | undefined;
                 const plays = row?.play_count ?? 0;
                 return [
-                  `${msToHours(value)} h · ${formatNumber(plays)} reproducciones`,
+                  `${msToHours(value)} h · ${formatReproductionCount(plays)} reproducciones`,
                   "Tiempo escuchado",
                 ];
               }}

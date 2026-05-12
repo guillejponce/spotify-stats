@@ -32,10 +32,12 @@ export function Sidebar() {
   return (
     <>
       <button
+        type="button"
+        aria-label="Abrir menú"
         onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-4 z-50 rounded-lg bg-spotify-medium-gray p-2 text-white lg:hidden"
+        className="fixed left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] z-50 min-h-[44px] min-w-[44px] rounded-xl bg-spotify-medium-gray p-2.5 text-white shadow-lg ring-1 ring-white/10 lg:hidden active:bg-white/10"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="mx-auto h-5 w-5" />
       </button>
 
       {mobileOpen && (
@@ -47,18 +49,20 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-white/5 bg-black transition-transform lg:translate-x-0",
+          "fixed left-0 top-0 z-50 flex h-full w-[min(100vw-2rem,17rem)] flex-col border-r border-white/5 bg-black pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-2xl transition-transform lg:w-64 lg:shadow-none lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <button
+          type="button"
+          aria-label="Cerrar menú"
           onClick={() => setMobileOpen(false)}
-          className="absolute right-3 top-3 text-spotify-light-gray lg:hidden"
+          className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-spotify-light-gray hover:bg-white/5 lg:hidden"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <div className="flex items-center gap-3 px-6 py-8">
+        <div className="flex items-center gap-3 px-5 py-7 sm:px-6 sm:py-8">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-spotify-green">
             <Music2 className="h-5 w-5 text-black" />
           </div>
@@ -68,7 +72,7 @@ export function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3">
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 sm:px-3">
           {navItems.map((item) => {
             const isActive =
               item.href === "/"
@@ -81,7 +85,7 @@ export function Sidebar() {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex min-h-[48px] items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5",
                   isActive
                     ? "bg-spotify-medium-gray text-white"
                     : "text-spotify-light-gray hover:bg-white/5 hover:text-white"
@@ -99,7 +103,7 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="border-t border-white/5 px-6 py-4">
+        <div className="border-t border-white/5 px-5 py-4 sm:px-6">
           <p className="text-xs text-spotify-light-gray/50">
             Spotify Companion Dashboard
           </p>

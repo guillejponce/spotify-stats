@@ -15,7 +15,7 @@ import {
   Loader2,
   Search,
 } from "lucide-react";
-import { cn, formatMs, formatNumber } from "@/lib/utils";
+import { cn, formatMs, formatNumber, formatReproductionCount } from "@/lib/utils";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 import type { TimeFilterParams, TopItem } from "@/types/database";
 
@@ -133,18 +133,20 @@ export default function ArtistsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-white">Artistas</h1>
-        <p className="mt-1 text-sm text-spotify-light-gray">
-          Ranking por reproducciones en el período elegido ({CHILE_TIMEZONE_LABEL}). Expandí cada
-          fila para ver tus canciones más escuchadas de ese artista.
+        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          Artistas
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
+          Ranking por reproducciones en el período elegido ({CHILE_TIMEZONE_LABEL}).
+          Expandí cada fila para ver tus canciones más escuchadas de ese artista.
         </p>
       </div>
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <div className="relative max-w-md">
+      <div className="relative w-full max-w-none sm:max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/50" />
         <input
           type="search"
@@ -155,15 +157,15 @@ export default function ArtistsPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-white/[0.04] px-4 py-4 sm:border-0 sm:pb-2 sm:pt-6">
           <p className="text-xs text-spotify-light-gray/70">
             {loading
               ? "Cargando…"
               : `${formatNumber(rows.length)} artista${rows.length === 1 ? "" : "s"} mostrado${rows.length === 1 ? "" : "s"}`}
           </p>
         </CardHeader>
-        <CardContent className="space-y-1">
+        <CardContent className="space-y-1 px-3 pb-4 pt-2 sm:p-6 sm:pt-0">
           {loading ? (
             <div className="space-y-3 py-2">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -183,7 +185,7 @@ export default function ArtistsPage() {
                 <button
                   type="button"
                   onClick={() => void toggleExpand(a.id)}
-                  className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/5"
+                  className="flex min-h-[52px] w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/5 active:bg-white/10 sm:min-h-0"
                 >
                   <span className="w-6 text-center text-xs font-medium text-spotify-light-gray/50">
                     {idx + 1}
@@ -203,10 +205,11 @@ export default function ArtistsPage() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-white">{a.name}</p>
-                    <p className="text-xs text-spotify-light-gray">
-                      {formatNumber(a.play_count)} reproducciones ·{" "}
-                      {formatMs(a.total_ms_played)}
+                    <p className="font-medium leading-snug text-white">{a.name}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-spotify-light-gray">
+                      <span className="break-words">{formatReproductionCount(a.play_count)} reproducciones</span>
+                      <span className="text-spotify-light-gray/50"> · </span>
+                      <span>{formatMs(a.total_ms_played)}</span>
                     </p>
                   </div>
                   <ChevronDown
@@ -217,10 +220,10 @@ export default function ArtistsPage() {
                   />
                 </button>
 
-                <div className="flex gap-2 border-t border-white/5 px-3 py-2">
+                <div className="flex flex-wrap gap-2 border-t border-white/5 px-3 py-2.5">
                   <Link
                     href={`/artists/${encodeURIComponent(a.id)}?${baseQs}`}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-spotify-green hover:underline"
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 py-2 text-xs font-medium text-spotify-green hover:bg-spotify-green/10 hover:underline sm:min-h-0 sm:py-1"
                     onClick={(e) => e.stopPropagation()}
                   >
                     Ver detalle <ChevronRight className="h-3 w-3" />
@@ -268,7 +271,7 @@ export default function ArtistsPage() {
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-white">{t.name}</p>
                                 <p className="truncate text-[11px] text-spotify-light-gray/75">
-                                  {formatNumber(t.play_count)} reps ·{" "}
+                                  {formatReproductionCount(t.play_count)} repros ·{" "}
                                   {formatMs(t.total_ms_played)}
                                 </p>
                               </div>
@@ -286,10 +289,11 @@ export default function ArtistsPage() {
       </Card>
 
       {hasMore && !loading && (
-        <div className="flex justify-center">
+        <div className="flex justify-center px-1">
           <Button
             variant="secondary"
             size="sm"
+            className="min-h-[44px] w-full max-w-sm sm:min-h-0 sm:w-auto"
             disabled={loadingMore}
             onClick={() => loadPage(offset, true)}
           >

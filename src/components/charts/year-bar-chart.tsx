@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatNumber, msToHours } from "@/lib/utils";
+import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { YearBucket } from "@/types/database";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 
@@ -67,7 +67,8 @@ export function YearBarChart({ title, data, loading = false }: YearBarChartProps
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Total por año civil en {CHILE_TIMEZONE_LABEL}; altura = filas (segmentos) en cada año.
+          Total por año civil en {CHILE_TIMEZONE_LABEL}; la altura refleja reproducciones en cada
+          año.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -99,7 +100,7 @@ export function YearBarChart({ title, data, loading = false }: YearBarChartProps
                 const row = item?.payload as YearBucket & { hours?: number };
                 const h = row?.hours ?? msToHours(row?.ms_played ?? 0);
                 return [
-                  `${formatNumber(count)} reproducciones · ${h} h`,
+                  `${formatReproductionCount(count)} reproducciones · ${h} h`,
                   "Segmentos",
                 ];
               }}

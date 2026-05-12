@@ -7,7 +7,6 @@ import { TopItemsList } from "@/components/stats/top-items-list";
 import { TimeFilterControl } from "@/components/stats/time-filter";
 import { ListeningChart } from "@/components/charts/listening-chart";
 import { HourlyChart } from "@/components/charts/hourly-chart";
-import { PlatformChart } from "@/components/charts/platform-chart";
 import { MonthRankChart } from "@/components/charts/month-rank-chart";
 import { YearBarChart } from "@/components/charts/year-bar-chart";
 import { Heatmap } from "@/components/charts/heatmap";
@@ -25,7 +24,7 @@ import {
 import {
   cn,
   formatMs,
-  formatNumber,
+  formatReproductionCount,
   formatListeningTimeSubtitle,
 } from "@/lib/utils";
 import type {
@@ -63,7 +62,6 @@ export default function DashboardPage() {
     topAlbums: [] as TopItem[],
     listeningOverTime: [] as ListeningTimeData[],
     hourlyData: [] as HourlyData[],
-    platformData: [] as { platform: string; play_count: number; ms_played: number }[],
     heatmapData: [] as { date: string; count: number; ms_played: number }[],
     monthsTop: [] as MonthBucket[],
     yearsBreakdown: [] as YearBucket[],
@@ -140,23 +138,25 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {oauthBanner && (
-        <div className="flex gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <div className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100">
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" />
           <span>{oauthBanner}</span>
         </div>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-sm text-spotify-light-gray">
+          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-spotify-light-gray">
             Resumen de tu escucha; tiempos mostrados para Chile.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           {spotifySession && (
-            <div className="flex items-center gap-2 text-xs text-spotify-light-gray">
+            <div className="flex items-start gap-2 text-xs leading-relaxed text-spotify-light-gray sm:items-center">
               {spotifySession.connected ? (
                 <>
                   <CheckCircle2 className="h-4 w-4 text-spotify-green" />
@@ -181,7 +181,10 @@ export default function DashboardPage() {
           )}
           <a
             href="/api/spotify/auth"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "min-h-[44px] w-full justify-center sm:min-h-0 sm:w-auto"
+            )}
           >
             <LogIn className="mr-2 h-4 w-4" />
             {spotifySession?.connected ? "Reconectar Spotify" : "Connect Spotify"}
@@ -194,14 +197,13 @@ export default function DashboardPage() {
       </div>
 
       <TimeFilterControl variant="dashboard" value={timeFilter} onChange={setTimeFilter} />
-      <p className="-mt-4 text-xs text-spotify-light-gray/65">
-        Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El conteo grande de
-        reproducciones es{" "}
-        <span className="text-spotify-light-gray">cada fila en `plays`</span> (segmentos)—igual que
-        las barras por día / mes / año. Las listas Top usan{" "}
-        <span className="text-spotify-light-gray">sesiones</span> (mismo tema con pausas cortas
-        cuenta una vez). Todo agrupado en{" "}
-        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>.         El mapa térmico muestra el{" "}
+      <p className="-mt-2 text-xs leading-relaxed text-spotify-light-gray/65 sm:-mt-4">
+        Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El número grande cuenta{" "}
+        <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
+        (segmentos de escucha)—igual que las barras por día / mes / año. Las listas Top ordenan por{" "}
+        <span className="text-spotify-light-gray">sesiones</span> (~15 min: mismo tema con pausas
+        cortas cuenta una vez). Todo agrupado en{" "}
+        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>. El mapa térmico muestra el{" "}
         <span className="text-spotify-light-gray">año civil actual en Chile</span>.
       </p>
 
@@ -214,10 +216,10 @@ export default function DashboardPage() {
         />
         <StatCard
           title="Reproducciones"
-          value={formatNumber(stats.playCount)}
+          value={formatReproductionCount(stats.playCount)}
           subtitle={
             stats.sessionCount > 0
-              ? `${formatNumber(stats.sessionCount)} sesiones (~15 min mismo tema)`
+              ? `${formatReproductionCount(stats.sessionCount)} sesiones (~15 min mismo tema)`
               : undefined
           }
           icon={Music2}
@@ -227,7 +229,7 @@ export default function DashboardPage() {
           value={stats.topArtists[0]?.name || "—"}
           subtitle={
             stats.topArtists[0]
-              ? `${formatNumber(stats.topArtists[0].play_count)} sesiones`
+              ? `${formatReproductionCount(stats.topArtists[0].play_count)} reproducciones`
               : undefined
           }
           icon={Disc3}
@@ -237,7 +239,7 @@ export default function DashboardPage() {
           value={stats.topTracks[0]?.name || "—"}
           subtitle={
             stats.topTracks[0]
-              ? `${formatNumber(stats.topTracks[0].play_count)} sesiones`
+              ? `${formatReproductionCount(stats.topTracks[0].play_count)} reproducciones`
               : undefined
           }
           icon={TrendingUp}
@@ -277,12 +279,14 @@ export default function DashboardPage() {
         year={timeFilter.year ?? currentCalendarYearChile()}
       />
 
-      <Tabs defaultValue="tracks">
-        <TabsList>
-          <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
-          <TabsTrigger value="artists">Top Artists</TabsTrigger>
-          <TabsTrigger value="albums">Top Albums</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="tracks" className="w-full min-w-0">
+        <div className="-mx-1 max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+          <TabsList className="inline-flex w-max flex-nowrap gap-1">
+            <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
+            <TabsTrigger value="artists">Top Artists</TabsTrigger>
+            <TabsTrigger value="albums">Top Albums</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="tracks">
           <TopItemsList title="Top Tracks" items={stats.topTracks} loading={loading} />
         </TabsContent>
@@ -293,10 +297,6 @@ export default function DashboardPage() {
           <TopItemsList title="Top Albums" items={stats.topAlbums} loading={loading} />
         </TabsContent>
       </Tabs>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <PlatformChart title="Plataforma" data={stats.platformData} loading={loading} />
-      </div>
     </div>
   );
 }

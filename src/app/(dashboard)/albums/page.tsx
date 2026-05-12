@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Disc3, Loader2, Music2, Search } from "lucide-react";
-import { formatMs, formatNumber } from "@/lib/utils";
+import { formatMs, formatReproductionCount } from "@/lib/utils";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 import type { TimeFilterParams, TopItem } from "@/types/database";
 
@@ -93,10 +93,12 @@ export default function AlbumsPage() {
   }, [loadPage]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-white">Álbumes</h1>
-        <p className="mt-1 text-sm text-spotify-light-gray">
+        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+          Álbumes
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
           Álbumes más escuchados según el período ({CHILE_TIMEZONE_LABEL}). Tocá uno para ver el
           tracklist completo y cuántas reproducciones llevas en el rango.
         </p>
@@ -104,7 +106,7 @@ export default function AlbumsPage() {
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <div className="relative max-w-md">
+      <div className="relative w-full max-w-none sm:max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/50" />
         <input
           type="search"
@@ -115,12 +117,16 @@ export default function AlbumsPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center gap-2">
-          <Disc3 className="h-5 w-5 text-spotify-green" />
-          <span className="text-lg font-semibold text-white">Ranking de álbumes</span>
+      <Card className="overflow-hidden">
+        <CardHeader className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:gap-3 sm:p-6">
+          <div className="flex items-center gap-2">
+            <Disc3 className="h-5 w-5 shrink-0 text-spotify-green" />
+            <span className="text-base font-semibold text-white sm:text-lg">
+              Ranking de álbumes
+            </span>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-4 pt-0 sm:p-6 sm:pt-0">
           {loading ? (
             <div className="space-y-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -137,40 +143,47 @@ export default function AlbumsPage() {
                 <li key={a.id}>
                   <Link
                     href={`/albums/${encodeURIComponent(a.id)}?${baseQs}`}
-                    className="flex items-center gap-3 rounded-lg px-1 py-3 transition-colors hover:bg-white/5"
+                    className="flex min-h-[56px] flex-col gap-2 rounded-lg px-2 py-4 transition-colors hover:bg-white/5 active:bg-white/10 sm:flex-row sm:items-center sm:gap-3 sm:px-1 sm:py-3"
                   >
-                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
-                      {a.image_url ? (
-                        <Image
-                          src={a.image_url}
-                          alt=""
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <Music2 className="h-6 w-6 text-spotify-light-gray" />
-                        </div>
-                      )}
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
+                        {a.image_url ? (
+                          <Image
+                            src={a.image_url}
+                            alt=""
+                            fill
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <Music2 className="h-6 w-6 text-spotify-light-gray" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium leading-snug text-white">{a.name}</p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-spotify-light-gray">
+                          <span>{formatReproductionCount(a.play_count)} reproducciones</span>
+                          <span className="text-spotify-light-gray/45"> · </span>
+                          <span>{formatMs(a.total_ms_played)}</span>
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-white">{a.name}</p>
-                      <p className="text-xs text-spotify-light-gray">
-                        {formatNumber(a.play_count)} reproducciones · {formatMs(a.total_ms_played)}
-                      </p>
-                    </div>
-                    <span className="text-xs text-spotify-green/90">Ver tema a tema →</span>
+                    <span className="shrink-0 self-end text-xs font-medium text-spotify-green/90 sm:self-auto">
+                      Ver tema a tema →
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
           )}
           {hasMore && (
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex justify-center px-1">
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
+                className="min-h-[44px] w-full max-w-sm sm:min-h-0 sm:w-auto"
                 disabled={loadingMore}
                 onClick={() => loadPage(offset, true)}
               >

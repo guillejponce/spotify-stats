@@ -86,7 +86,7 @@ function TabsTrigger({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-all sm:py-1.5 sm:text-sm",
         isActive
           ? "bg-spotify-green text-black shadow-sm"
           : "text-spotify-light-gray hover:text-white hover:bg-white/5",
