@@ -8,8 +8,30 @@ import { Upload, FileJson, CheckCircle2, AlertCircle, Loader2 } from "lucide-rea
 import { cn, getProgressPercentage } from "@/lib/utils";
 import type { Import } from "@/types/database";
 
-/** ~3MB JSON típico sigue bajo límites de Vercel/serverless; Spotify manda archivos anuales enormes. */
-const IMPORT_CHUNK_RECORDS = 2000;
+/** Menos requests a Vercel; el servidor agrupa en lotes de 500 y pocos round-trips a Supabase. */
+const IMPORT_CHUNK_RECORDS = 6000;
+const IMPORT_CHUNK_RETRIES = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableImportFailure(
+  status: number,
+  text: string,
+  jsonMsg: string
+): boolean {
+  if ([408, 429, 500, 502, 503, 504].includes(status)) return true;
+  const blob = `${text} ${jsonMsg}`.toLowerCase();
+  return (
+    blob.includes("function_invocation") ||
+    blob.includes("invocation_timeout") ||
+    blob.includes("timeout") ||
+    blob.includes("gateway time-out") ||
+    blob.includes("busy") ||
+    blob.includes("deadlock")
+  );
+}
 
 async function parseResponseBody(res: Response): Promise<{ json?: unknown; text: string }> {
   const text = await res.text();
@@ -31,38 +53,51 @@ async function importRecordsChunked(
   let lastImport: Import | null = null;
 
   const postChunk = async (payload: Record<string, unknown>) => {
-    const response = await fetch("/api/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let lastMsg = "Import request failed";
 
-    const { json, text } = await parseResponseBody(response);
+    for (let attempt = 0; attempt < IMPORT_CHUNK_RETRIES; attempt++) {
+      const response = await fetch("/api/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      const msg =
+      const { json, text } = await parseResponseBody(response);
+
+      if (response.ok) {
+        const result = json as {
+          import?: Import;
+          processed?: number;
+          skipped?: number;
+        };
+        if (!result.import) {
+          throw new Error(text.slice(0, 200) || "Invalid import response");
+        }
+
+        lastImport = result.import;
+        lastProcessed = result.processed ?? 0;
+        lastSkipped = result.skipped ?? 0;
+        importId = result.import.id;
+        return;
+      }
+
+      lastMsg =
         typeof json === "object" &&
         json !== null &&
         "error" in json &&
         typeof (json as { error: unknown }).error === "string"
           ? (json as { error: string }).error
           : text.slice(0, 500) || `HTTP ${response.status}`;
-      throw new Error(msg);
+
+      const retryable = isRetryableImportFailure(response.status, text, lastMsg);
+      if (!retryable || attempt === IMPORT_CHUNK_RETRIES - 1) {
+        throw new Error(lastMsg);
+      }
+
+      await sleep(1800 * 2 ** attempt);
     }
 
-    const result = json as {
-      import?: Import;
-      processed?: number;
-      skipped?: number;
-    };
-    if (!result.import) {
-      throw new Error(text.slice(0, 200) || "Invalid import response");
-    }
-
-    lastImport = result.import;
-    lastProcessed = result.processed ?? 0;
-    lastSkipped = result.skipped ?? 0;
-    importId = result.import.id;
+    throw new Error(lastMsg);
   };
 
   if (total === 0) {
