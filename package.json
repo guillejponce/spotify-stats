@@ -6,7 +6,8 @@
     "dev": "WATCHPACK_POLLING=true next dev --turbo -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "import:streaming": "tsx scripts/import-streaming-history.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
@@ -27,11 +28,15 @@
     "@types/node": "^20.17.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.5.0",
+    "dotenv": "^16.4.5",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.35",
     "postcss": "^8.5.14",
     "tailwindcss": "^3.4.19",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.19.2",
+    "ws": "^8.20.0"
   }
 }

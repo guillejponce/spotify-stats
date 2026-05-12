@@ -5,7 +5,24 @@ import type {
   ListeningTimeData,
   HourlyData,
   TimeFilterParams,
+  MonthBucket,
+  YearBucket,
 } from "@/types/database";
+
+/** Payload listo para serializar en `/api/stats` (sin heatmap). */
+export interface DashboardBundlePayload {
+  totalMs: number;
+  playCount: number;
+  sessionCount: number;
+  topTracks: TopItem[];
+  topArtists: TopItem[];
+  topAlbums: TopItem[];
+  listeningOverTime: ListeningTimeData[];
+  hourlyData: HourlyData[];
+  platformData: { platform: string; play_count: number; ms_played: number }[];
+  monthsTop: MonthBucket[];
+  yearsBreakdown: YearBucket[];
+}
 
 function numeric(v: unknown, fallback = 0): number {
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -41,6 +58,95 @@ function mapTopItemRow(r: Record<string, unknown>): TopItem {
     play_count: numeric(r.play_count),
     total_ms_played: numeric(r.total_ms_played),
   };
+}
+
+function parseDashboardBundleJson(blob: unknown): DashboardBundlePayload {
+  const root =
+    blob && typeof blob === "object"
+      ? (blob as Record<string, unknown>)
+      : {};
+
+  const totalRaw =
+    root.total && typeof root.total === "object"
+      ? (root.total as Record<string, unknown>)
+      : {};
+
+  const listeningRows = asRpcRows<Record<string, unknown>>(
+    root.listening_by_day,
+  ).map((r) => ({
+    date: String(r.date ?? ""),
+    ms_played: numeric(r.ms_played),
+    play_count: numeric(r.play_count),
+  }));
+
+  const hourlyRows = asRpcRows<Record<string, unknown>>(root.hourly).map(
+    (r) => ({
+      hour: Math.floor(numeric(r.hour)),
+      ms_played: numeric(r.ms_played),
+      play_count: numeric(r.play_count),
+    }),
+  );
+
+  const platformRows = asRpcRows<Record<string, unknown>>(root.platform).map(
+    (r) => ({
+      platform: String(r.platform ?? ""),
+      play_count: numeric(r.play_count),
+      ms_played: numeric(r.ms_played),
+    }),
+  );
+
+  const monthsTop = asRpcRows<Record<string, unknown>>(root.months_top).map(
+    (r) => ({
+      period: String(r.period ?? ""),
+      ms_played: numeric(r.ms_played),
+      play_count: numeric(r.play_count),
+    }),
+  );
+
+  const yearsBreakdown = asRpcRows<Record<string, unknown>>(root.years).map(
+    (r) => ({
+      year: Math.floor(numeric(r.year)),
+      ms_played: numeric(r.ms_played),
+      play_count: numeric(r.play_count),
+    }),
+  );
+
+  return {
+    totalMs: numeric(totalRaw.total_ms),
+    playCount: numeric(totalRaw.play_count),
+    sessionCount: numeric(totalRaw.session_count),
+    topTracks: asRpcRows(root.top_tracks).map((x) =>
+      mapTopItemRow(x as Record<string, unknown>),
+    ),
+    topArtists: asRpcRows(root.top_artists).map((x) =>
+      mapTopItemRow(x as Record<string, unknown>),
+    ),
+    topAlbums: asRpcRows(root.top_albums).map((x) =>
+      mapTopItemRow(x as Record<string, unknown>),
+    ),
+    listeningOverTime: listeningRows,
+    hourlyData: hourlyRows,
+    platformData: platformRows,
+    monthsTop,
+    yearsBreakdown,
+  };
+}
+
+export async function getDashboardBundlePayload(
+  params: TimeFilterParams,
+  limit: number = 50,
+): Promise<DashboardBundlePayload> {
+  const supabase = createServerSupabaseClient();
+  const { start, end } = buildDateFilterChile(params);
+
+  const { data, error } = await supabase.rpc("get_dashboard_bundle", {
+    start_date: start,
+    end_date: end,
+    result_limit: limit,
+  });
+
+  if (error) throw error;
+  return parseDashboardBundleJson(data);
 }
 
 export async function getTotalListeningTime(

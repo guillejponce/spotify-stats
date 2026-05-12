@@ -8,6 +8,8 @@ import { TimeFilterControl } from "@/components/stats/time-filter";
 import { ListeningChart } from "@/components/charts/listening-chart";
 import { HourlyChart } from "@/components/charts/hourly-chart";
 import { PlatformChart } from "@/components/charts/platform-chart";
+import { MonthRankChart } from "@/components/charts/month-rank-chart";
+import { YearBarChart } from "@/components/charts/year-bar-chart";
 import { Heatmap } from "@/components/charts/heatmap";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -20,15 +22,25 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
-import { cn, formatMs, formatNumber } from "@/lib/utils";
+import {
+  cn,
+  formatMs,
+  formatNumber,
+  formatListeningTimeSubtitle,
+} from "@/lib/utils";
 import type {
   TimeFilterParams,
   TopItem,
   ListeningTimeData,
   HourlyData,
+  MonthBucket,
+  YearBucket,
 } from "@/types/database";
 import { syncSpotifyRecentFromServer } from "@/actions/spotify-sync";
-import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
+import {
+  CHILE_TIMEZONE_LABEL,
+  currentCalendarYearChile,
+} from "@/lib/chile-time";
 
 export default function DashboardPage() {
   const [timeFilter, setTimeFilter] = useState<TimeFilterParams>({
@@ -53,6 +65,8 @@ export default function DashboardPage() {
     hourlyData: [] as HourlyData[],
     platformData: [] as { platform: string; play_count: number; ms_played: number }[],
     heatmapData: [] as { date: string; count: number; ms_played: number }[],
+    monthsTop: [] as MonthBucket[],
+    yearsBreakdown: [] as YearBucket[],
   });
 
   const fetchStats = useCallback(async () => {
@@ -66,7 +80,14 @@ export default function DashboardPage() {
       const response = await fetch(`/api/stats?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
-        setStats(data);
+        setStats((prev) => ({
+          ...prev,
+          ...data,
+          monthsTop: Array.isArray(data.monthsTop) ? data.monthsTop : [],
+          yearsBreakdown: Array.isArray(data.yearsBreakdown)
+            ? data.yearsBreakdown
+            : [],
+        }));
       }
     } catch (err) {
       console.error("Failed to fetch stats:", err);
@@ -172,22 +193,23 @@ export default function DashboardPage() {
         <NowPlayingCard />
       </div>
 
-      <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
+      <TimeFilterControl variant="dashboard" value={timeFilter} onChange={setTimeFilter} />
       <p className="-mt-4 text-xs text-spotify-light-gray/65">
-        El número grande de reproducciones cuenta{" "}
-        <span className="text-spotify-light-gray">cada fila en `plays`</span>
-        {" "}(segmentos)—igual que la gráfica de escucha por día. Las listas Top usan{" "}
-        <span className="text-spotify-light-gray">sesiones</span>{" "}(mismo tema con pausas
-        cortas cuenta una vez). Rangos siguen{" "}
-        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>; el heatmap muestra el
-        año del selector año/mapa o el año calendario actual en otros filtros.
+        Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El conteo grande de
+        reproducciones es{" "}
+        <span className="text-spotify-light-gray">cada fila en `plays`</span> (segmentos)—igual que
+        las barras por día / mes / año. Las listas Top usan{" "}
+        <span className="text-spotify-light-gray">sesiones</span> (mismo tema con pausas cortas
+        cuenta una vez). Todo agrupado en{" "}
+        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>.         El mapa térmico muestra el{" "}
+        <span className="text-spotify-light-gray">año civil actual en Chile</span>.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Listening"
+          title="Tiempo de escucha"
           value={formatMs(stats.totalMs)}
-          subtitle={`${Math.round(stats.totalMs / 3600000)} hours`}
+          subtitle={formatListeningTimeSubtitle(stats.totalMs)}
           icon={Clock}
         />
         <StatCard
@@ -235,11 +257,24 @@ export default function DashboardPage() {
         />
       </div>
 
+      <div className="grid gap-6 lg:grid-cols-2">
+        <MonthRankChart
+          title="Meses con más reproducciones"
+          data={stats.monthsTop}
+          loading={loading}
+        />
+        <YearBarChart
+          title="Por año"
+          data={stats.yearsBreakdown}
+          loading={loading}
+        />
+      </div>
+
       <Heatmap
-        title={`Mapa de escuchas ${timeFilter.year || new Date().getFullYear()} (calendario Chile)`}
+        title={`Mapa de escuchas ${timeFilter.year ?? currentCalendarYearChile()} (calendario Chile)`}
         data={stats.heatmapData}
         loading={loading}
-        year={timeFilter.year || new Date().getFullYear()}
+        year={timeFilter.year ?? currentCalendarYearChile()}
       />
 
       <Tabs defaultValue="tracks">

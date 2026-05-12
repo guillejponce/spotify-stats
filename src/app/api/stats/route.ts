@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getTotalListeningTime,
-  getTopTracks,
-  getTopArtists,
-  getTopAlbums,
-  getListeningOverTime,
-  getHourlyDistribution,
-  getPlatformBreakdown,
+  getDashboardBundlePayload,
   getHeatmapData,
 } from "@/lib/stats";
+import { currentCalendarYearChile } from "@/lib/chile-time";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -26,60 +21,41 @@ export async function GET(request: NextRequest) {
 
     const params: TimeFilterParams = { filter, year, month };
 
-    const [
-      totalListening,
-      topTracks,
-      topArtists,
-      topAlbums,
-      listeningOverTime,
-      hourlyData,
-      platformData,
-      heatmapData,
-    ] = await Promise.all([
-      getTotalListeningTime(params).catch((e) => {
-        console.warn("[stats] getTotalListeningTime", e);
-        return { total_ms: 0, play_count: 0, session_count: 0 };
+    const heatmapYear =
+      year != null && Number.isFinite(year)
+        ? year
+        : currentCalendarYearChile();
+
+    const [bundle, heatmapData] = await Promise.all([
+      getDashboardBundlePayload(params, 50).catch((e) => {
+        console.warn("[stats] get_dashboard_bundle", e);
+        return null;
       }),
-      getTopTracks(params, 50).catch((e) => {
-        console.warn("[stats] getTopTracks", e);
-        return [];
-      }),
-      getTopArtists(params, 50).catch((e) => {
-        console.warn("[stats] getTopArtists", e);
-        return [];
-      }),
-      getTopAlbums(params, 50).catch((e) => {
-        console.warn("[stats] getTopAlbums", e);
-        return [];
-      }),
-      getListeningOverTime(params).catch((e) => {
-        console.warn("[stats] getListeningOverTime", e);
-        return [];
-      }),
-      getHourlyDistribution(params).catch((e) => {
-        console.warn("[stats] getHourlyDistribution", e);
-        return [];
-      }),
-      getPlatformBreakdown(params).catch((e) => {
-        console.warn("[stats] getPlatformBreakdown", e);
-        return [];
-      }),
-      getHeatmapData(year || new Date().getFullYear()).catch((e) => {
+      getHeatmapData(heatmapYear).catch((e) => {
         console.warn("[stats] getHeatmapData", e);
         return [];
       }),
     ]);
 
+    if (!bundle) {
+      return NextResponse.json(
+        { error: "Failed to fetch stats" },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json({
-      totalMs: totalListening.total_ms,
-      playCount: totalListening.play_count,
-      sessionCount: totalListening.session_count,
-      topTracks,
-      topArtists,
-      topAlbums,
-      listeningOverTime,
-      hourlyData,
-      platformData,
+      totalMs: bundle.totalMs,
+      playCount: bundle.playCount,
+      sessionCount: bundle.sessionCount,
+      topTracks: bundle.topTracks,
+      topArtists: bundle.topArtists,
+      topAlbums: bundle.topAlbums,
+      listeningOverTime: bundle.listeningOverTime,
+      hourlyData: bundle.hourlyData,
+      platformData: bundle.platformData,
+      monthsTop: bundle.monthsTop,
+      yearsBreakdown: bundle.yearsBreakdown,
       heatmapData,
     });
   } catch (error) {

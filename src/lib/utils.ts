@@ -10,10 +10,27 @@ export function formatMs(ms: number): string {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
+  if (hours >= 48) {
+    const days = Math.floor(ms / 86400000);
+    const remH = Math.floor((ms % 86400000) / 3600000);
+    return `${days}d ${remH}h`;
+  }
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
+}
+
+/** Subtítulo para KPI de tiempo total: prioriza días si hay muchas horas acumuladas. */
+export function formatListeningTimeSubtitle(ms: number): string {
+  const hours = ms / 3600000;
+  if (hours >= 48) {
+    const days = ms / 86400000;
+    const label =
+      days >= 10 ? `${Math.round(days)} días` : `${Math.round(days * 10) / 10} días`;
+    return `≈ ${label} de escucha`;
+  }
+  return `${Math.round(hours)} h de escucha`;
 }
 
 export function formatMsToHours(ms: number): string {

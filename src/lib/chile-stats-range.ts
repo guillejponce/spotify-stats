@@ -1,4 +1,4 @@
-import { addDays } from "date-fns";
+import { addDays, subMonths } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
 import type { TimeFilterParams } from "@/types/database";
@@ -43,6 +43,22 @@ export function buildDateFilterChile(params: TimeFilterParams): {
   const now = new Date();
 
   switch (params.filter) {
+    case "last_week": {
+      const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return { start: start.toISOString(), end: now.toISOString() };
+    }
+    case "last_month": {
+      return {
+        start: subMonths(now, 1).toISOString(),
+        end: now.toISOString(),
+      };
+    }
+    case "last_6_months": {
+      return {
+        start: subMonths(now, 6).toISOString(),
+        end: now.toISOString(),
+      };
+    }
     case "year": {
       const y =
         params.year ??

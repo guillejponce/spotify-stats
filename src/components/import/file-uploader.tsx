@@ -8,8 +8,10 @@ import { Upload, FileJson, CheckCircle2, AlertCircle, Loader2 } from "lucide-rea
 import { cn, getProgressPercentage } from "@/lib/utils";
 import type { Import } from "@/types/database";
 
-/** Menos requests a Vercel; el servidor agrupa en lotes de 500 y pocos round-trips a Supabase. */
-const IMPORT_CHUNK_RECORDS = 6000;
+/**
+ * Chunks pequeños para Vercel Hobby (~10s). Archivos grandes: `npm run import:streaming`.
+ */
+const IMPORT_CHUNK_RECORDS = 600;
 const IMPORT_CHUNK_RETRIES = 4;
 
 function sleep(ms: number): Promise<void> {
@@ -225,7 +227,10 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
         <CardHeader>
           <CardTitle>Import Listening History</CardTitle>
           <CardDescription>
-            Upload your Spotify Extended Streaming History JSON files
+            Upload your Spotify Extended Streaming History JSON files. Reimports do not duplicate plays
+            (same track + time). Large exports often time out on Vercel Hobby — use{" "}
+            <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">npm run import:streaming</code>{" "}
+            locally instead.
           </CardDescription>
         </CardHeader>
         <CardContent>

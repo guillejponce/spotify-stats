@@ -96,6 +96,20 @@ export interface HourlyData {
   play_count: number;
 }
 
+/** Mes civil Chile `YYYY-MM` (p. ej. meses con más reproducciones en el rango). */
+export interface MonthBucket {
+  period: string;
+  ms_played: number;
+  play_count: number;
+}
+
+/** Año civil Chile con totales en el rango. */
+export interface YearBucket {
+  year: number;
+  ms_played: number;
+  play_count: number;
+}
+
 export interface DayOfWeekData {
   day: number;
   day_name: string;
@@ -103,7 +117,15 @@ export interface DayOfWeekData {
   play_count: number;
 }
 
-export type TimeFilter = "all" | "year" | "month" | "week" | "day";
+export type TimeFilter =
+  | "all"
+  | "last_6_months"
+  | "last_month"
+  | "last_week"
+  | "year"
+  | "month"
+  | "week"
+  | "day";
 
 export interface TimeFilterParams {
   filter: TimeFilter;

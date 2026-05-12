@@ -1,3 +1,5 @@
+import { formatInTimeZone } from "date-fns-tz";
+
 /** Zona mostrada en la app (reproducciones agrupadas y etiquetas). */
 export const DISPLAY_TIME_ZONE = "America/Santiago";
 
@@ -72,6 +74,22 @@ export const CHILE_WEEKDAY_ROWS = [
 ] as const;
 
 export const CHILE_TIMEZONE_LABEL = "Chile (America/Santiago)";
+
+/** Año civil actual en Chile (heatmap / etiquetas cuando no hay selector). */
+export function currentCalendarYearChile(reference = new Date()): number {
+  return Number(formatInTimeZone(reference, DISPLAY_TIME_ZONE, "yyyy"));
+}
+
+/** `YYYY-MM` (bucket Chile) → etiqueta corta localizada. */
+export function formatChileMonthPeriod(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m || m < 1 || m > 12) return period;
+  const d = new Date(Date.UTC(y, m - 1, 1, 12, 0, 0));
+  return new Intl.DateTimeFormat(
+    "es-CL",
+    chileDate({ month: "short", year: "numeric" }),
+  ).format(d);
+}
 
 /** Días del año civil (para alinear celdas del heatmap con `YYYY-MM-DD` del servidor). */
 export function* eachYmdInGregorianYear(year: number): Generator<string> {

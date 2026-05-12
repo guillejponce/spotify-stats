@@ -8,6 +8,8 @@ import type { TimeFilter, TimeFilterParams } from "@/types/database";
 interface TimeFilterControlProps {
   value: TimeFilterParams;
   onChange: (params: TimeFilterParams) => void;
+  /** Dashboard: solo períodos rolantes rápidos. Artistas/Álbumes: calendario completo. */
+  variant?: "full" | "dashboard";
 }
 
 const currentYear = new Date().getFullYear();
@@ -27,7 +29,11 @@ const months = [
   "Diciembre",
 ];
 
-export function TimeFilterControl({ value, onChange }: TimeFilterControlProps) {
+export function TimeFilterControl({
+  value,
+  onChange,
+  variant = "full",
+}: TimeFilterControlProps) {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
 
@@ -37,11 +43,12 @@ export function TimeFilterControl({ value, onChange }: TimeFilterControlProps) {
   }, [value.year, value.month]);
 
   const handleFilterChange = (filter: string) => {
-    const params: TimeFilterParams = { filter: filter as TimeFilter };
+    const f = filter as TimeFilter;
+    const params: TimeFilterParams = { filter: f };
 
-    if (filter === "year") {
+    if (f === "year") {
       params.year = selectedYear;
-    } else if (filter === "month") {
+    } else if (f === "month") {
       params.year = selectedYear;
       params.month = selectedMonth;
     }
@@ -65,10 +72,29 @@ export function TimeFilterControl({ value, onChange }: TimeFilterControlProps) {
     }
   };
 
+  if (variant === "dashboard") {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <Tabs
+          defaultValue="all"
+          value={value.filter}
+          onValueChange={handleFilterChange}
+        >
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
+            <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
+            <TabsTrigger value="last_month">Último mes</TabsTrigger>
+            <TabsTrigger value="last_week">Última semana</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Tabs defaultValue="all" value={value.filter} onValueChange={handleFilterChange}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="all">Todo</TabsTrigger>
           <TabsTrigger value="year">Año</TabsTrigger>
           <TabsTrigger value="month">Mes</TabsTrigger>
