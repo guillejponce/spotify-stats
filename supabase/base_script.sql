@@ -37,6 +37,22 @@ create table tracks (
   created_at timestamptz default now()
 );
 
+-- IMPORTS (registro de cada archivo subido) — debe coincidir con src/app/api/import/route.ts
+create table imports (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null default 'default',
+  filename text not null,
+  status text default 'pending', -- pending | processing | completed | failed
+  total_records integer,
+  processed_records integer default 0,
+  skipped_records integer default 0,
+  error_message text,
+  date_range_start timestamptz,
+  date_range_end timestamptz,
+  created_at timestamptz default now(),
+  completed_at timestamptz
+);
+
 -- HISTORIAL DE REPRODUCCIONES (core de todo)
 create table plays (
   id uuid primary key default gen_random_uuid(),
@@ -52,6 +68,7 @@ create table plays (
   shuffle boolean,
   offline boolean,
   platform text,     -- android | ios | web | etc.
+  import_id uuid references imports(id),
   created_at timestamptz default now()
 );
 
@@ -71,19 +88,4 @@ create table now_playing (
   progress_ms integer default 0,
   updated_at timestamptz default now(),
   constraint singleton check (id = 1)
-);
-
--- IMPORTS (registro de cada archivo subido)
-create table imports (
-  id uuid primary key default gen_random_uuid(),
-  filename text not null,
-  status text default 'pending', -- pending | processing | done | error
-  total_rows integer,
-  imported_rows integer,
-  skipped_rows integer,
-  error_message text,
-  date_range_start timestamptz,
-  date_range_end timestamptz,
-  created_at timestamptz default now(),
-  finished_at timestamptz
 );

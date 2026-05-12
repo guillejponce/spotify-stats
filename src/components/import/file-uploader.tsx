@@ -8,6 +8,99 @@ import { Upload, FileJson, CheckCircle2, AlertCircle, Loader2 } from "lucide-rea
 import { cn, getProgressPercentage } from "@/lib/utils";
 import type { Import } from "@/types/database";
 
+/** ~3MB JSON típico sigue bajo límites de Vercel/serverless; Spotify manda archivos anuales enormes. */
+const IMPORT_CHUNK_RECORDS = 2000;
+
+async function parseResponseBody(res: Response): Promise<{ json?: unknown; text: string }> {
+  const text = await res.text();
+  try {
+    return { json: JSON.parse(text), text };
+  } catch {
+    return { text };
+  }
+}
+
+async function importRecordsChunked(
+  filename: string,
+  records: Record<string, unknown>[]
+): Promise<{ import: Import; processed: number; skipped: number }> {
+  const total = records.length;
+  let importId: string | undefined;
+  let lastProcessed = 0;
+  let lastSkipped = 0;
+  let lastImport: Import | null = null;
+
+  const postChunk = async (payload: Record<string, unknown>) => {
+    const response = await fetch("/api/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const { json, text } = await parseResponseBody(response);
+
+    if (!response.ok) {
+      const msg =
+        typeof json === "object" &&
+        json !== null &&
+        "error" in json &&
+        typeof (json as { error: unknown }).error === "string"
+          ? (json as { error: string }).error
+          : text.slice(0, 500) || `HTTP ${response.status}`;
+      throw new Error(msg);
+    }
+
+    const result = json as {
+      import?: Import;
+      processed?: number;
+      skipped?: number;
+    };
+    if (!result.import) {
+      throw new Error(text.slice(0, 200) || "Invalid import response");
+    }
+
+    lastImport = result.import;
+    lastProcessed = result.processed ?? 0;
+    lastSkipped = result.skipped ?? 0;
+    importId = result.import.id;
+  };
+
+  if (total === 0) {
+    await postChunk({
+      filename,
+      records: [],
+      total_records: 0,
+      finalize: true,
+    });
+    if (!lastImport) throw new Error("Invalid import response");
+    return { import: lastImport, processed: 0, skipped: 0 };
+  }
+
+  for (let start = 0; start < total; start += IMPORT_CHUNK_RECORDS) {
+    const chunk = records.slice(start, start + IMPORT_CHUNK_RECORDS);
+    const isLast = start + chunk.length >= total;
+
+    const payload: Record<string, unknown> = {
+      filename,
+      records: chunk,
+      finalize: isLast,
+      ...(importId ? { import_id: importId } : { total_records: total }),
+    };
+
+    await postChunk(payload);
+  }
+
+  if (!lastImport) {
+    throw new Error("Import finished without result");
+  }
+
+  return {
+    import: lastImport,
+    processed: lastProcessed,
+    skipped: lastSkipped,
+  };
+}
+
 interface FileUploaderProps {
   onImportComplete?: () => void;
 }
@@ -72,27 +165,15 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
     for (const file of files) {
       try {
         const text = await file.text();
-        const records = JSON.parse(text);
+        const records = JSON.parse(text) as Record<string, unknown>[];
 
         if (!Array.isArray(records)) {
           setError(`${file.name}: File must contain a JSON array`);
           continue;
         }
 
-        const response = await fetch("/api/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, records }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json();
-          setError(err.error || `Failed to import ${file.name}`);
-          continue;
-        }
-
-        const result = await response.json();
-        setImports((prev) => [...prev, result.import]);
+        const { import: imp } = await importRecordsChunked(file.name, records);
+        setImports((prev) => [...prev, imp]);
       } catch (err) {
         setError(`Error processing ${file.name}: ${(err as Error).message}`);
       }
