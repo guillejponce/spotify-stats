@@ -346,13 +346,13 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.plays_in_range_with_sessions(
   timestamptz, timestamptz, interval
-) TO service_role;
+) TO anon, authenticated, service_role;
 
-GRANT EXECUTE ON FUNCTION public.get_total_listening_time(timestamptz, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_top_tracks(timestamptz, timestamptz, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_top_artists(timestamptz, timestamptz, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_top_albums(timestamptz, timestamptz, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_listening_over_time(timestamptz, timestamptz, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_hourly_distribution(timestamptz, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_platform_breakdown(timestamptz, timestamptz) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_heatmap_data(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_total_listening_time(timestamptz, timestamptz) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_top_tracks(timestamptz, timestamptz, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_top_artists(timestamptz, timestamptz, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_top_albums(timestamptz, timestamptz, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_listening_over_time(timestamptz, timestamptz, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_hourly_distribution(timestamptz, timestamptz) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_platform_breakdown(timestamptz, timestamptz) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_heatmap_data(integer) TO anon, authenticated, service_role;

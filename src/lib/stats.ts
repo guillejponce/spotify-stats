@@ -60,12 +60,117 @@ function mapTopItemRow(r: Record<string, unknown>): TopItem {
   };
 }
 
-function parseDashboardBundleJson(blob: unknown): DashboardBundlePayload {
-  const root =
-    blob && typeof blob === "object"
-      ? (blob as Record<string, unknown>)
-      : {};
+/** PostgREST a veces devuelve jsonb como string; en otros casos como objeto o fila única. */
+function normalizeDashboardRpcPayload(data: unknown): Record<string, unknown> | null {
+  if (data == null) return null;
 
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      if (parsed != null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  if (typeof data === "object" && !Array.isArray(data)) {
+    return data as Record<string, unknown>;
+  }
+
+  if (
+    Array.isArray(data) &&
+    data.length === 1 &&
+    data[0] != null &&
+    typeof data[0] === "object" &&
+    !Array.isArray(data[0])
+  ) {
+    return data[0] as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function rollupMonthsTopFromDays(days: ListeningTimeData[]): MonthBucket[] {
+  const map = new Map<string, { ms: number; count: number }>();
+  for (const d of days) {
+    if (!d.date || d.date.length < 7) continue;
+    const period = d.date.slice(0, 7);
+    const prev = map.get(period) ?? { ms: 0, count: 0 };
+    prev.ms += d.ms_played;
+    prev.count += d.play_count;
+    map.set(period, prev);
+  }
+  return Array.from(map.entries())
+    .map(([period, v]) => ({
+      period,
+      ms_played: v.ms,
+      play_count: v.count,
+    }))
+    .sort((a, b) => b.play_count - a.play_count)
+    .slice(0, 36);
+}
+
+function rollupYearsFromDays(days: ListeningTimeData[]): YearBucket[] {
+  const map = new Map<number, { ms: number; count: number }>();
+  for (const d of days) {
+    if (!d.date || d.date.length < 4) continue;
+    const y = Number(d.date.slice(0, 4));
+    if (!Number.isFinite(y)) continue;
+    const prev = map.get(y) ?? { ms: 0, count: 0 };
+    prev.ms += d.ms_played;
+    prev.count += d.play_count;
+    map.set(y, prev);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([year, v]) => ({
+      year,
+      ms_played: v.ms,
+      play_count: v.count,
+    }));
+}
+
+async function getDashboardLegacyPayload(
+  params: TimeFilterParams,
+  limit: number,
+): Promise<DashboardBundlePayload> {
+  const [
+    totalListening,
+    topTracks,
+    topArtists,
+    topAlbums,
+    listeningOverTime,
+    hourlyData,
+    platformData,
+  ] = await Promise.all([
+    getTotalListeningTime(params),
+    getTopTracks(params, limit),
+    getTopArtists(params, limit),
+    getTopAlbums(params, limit),
+    getListeningOverTime(params, "day"),
+    getHourlyDistribution(params),
+    getPlatformBreakdown(params),
+  ]);
+
+  return {
+    totalMs: totalListening.total_ms,
+    playCount: totalListening.play_count,
+    sessionCount: totalListening.session_count,
+    topTracks,
+    topArtists,
+    topAlbums,
+    listeningOverTime,
+    hourlyData,
+    platformData,
+    monthsTop: rollupMonthsTopFromDays(listeningOverTime),
+    yearsBreakdown: rollupYearsFromDays(listeningOverTime),
+  };
+}
+
+function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundlePayload {
   const totalRaw =
     root.total && typeof root.total === "object"
       ? (root.total as Record<string, unknown>)
@@ -132,21 +237,78 @@ function parseDashboardBundleJson(blob: unknown): DashboardBundlePayload {
   };
 }
 
+const PG_STATEMENT_TIMEOUT = "57014";
+
 export async function getDashboardBundlePayload(
   params: TimeFilterParams,
   limit: number = 50,
 ): Promise<DashboardBundlePayload> {
   const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
-
-  const { data, error } = await supabase.rpc("get_dashboard_bundle", {
+  const rpcArgs = {
     start_date: start,
     end_date: end,
     result_limit: limit,
-  });
+  };
 
-  if (error) throw error;
-  return parseDashboardBundleJson(data);
+  let data: unknown = null;
+  let error: { message: string; code?: string; details?: string; hint?: string } | null =
+    null;
+
+  ({ data, error } = await supabase.rpc("get_dashboard_bundle", rpcArgs));
+
+  if (error?.code === PG_STATEMENT_TIMEOUT) {
+    console.warn(
+      "[stats] get_dashboard_bundle: timeout (57014) → get_dashboard_bundle_fast",
+    );
+    ({ data, error } = await supabase.rpc("get_dashboard_bundle_fast", rpcArgs));
+  }
+
+  if (!error) {
+    const normalized = normalizeDashboardRpcPayload(data);
+    if (normalized) {
+      try {
+        return parseDashboardBundleJson(normalized);
+      } catch (parseErr) {
+        console.warn("[stats] bundle JSON parse failed", parseErr);
+      }
+    } else if (data != null) {
+      console.warn("[stats] bundle RPC shape inesperado:", typeof data);
+    }
+  } else {
+    console.warn(
+      "[stats] dashboard RPC:",
+      error.message,
+      error.code ?? "",
+      error.details ?? "",
+      error.hint ?? "",
+    );
+  }
+
+  const hitTimeout = error?.code === PG_STATEMENT_TIMEOUT;
+
+  /* El fallback legacy vuelve a ejecutar `plays_in_range_with_sessions` varias veces → mismo timeout. */
+  if (!hitTimeout) {
+    try {
+      return await getDashboardLegacyPayload(params, limit);
+    } catch (legacyErr) {
+      console.error("[stats] legacy dashboard failed", legacyErr);
+    }
+  }
+
+  return {
+    totalMs: 0,
+    playCount: 0,
+    sessionCount: 0,
+    topTracks: [],
+    topArtists: [],
+    topAlbums: [],
+    listeningOverTime: [],
+    hourlyData: [],
+    platformData: [],
+    monthsTop: [],
+    yearsBreakdown: [],
+  };
 }
 
 export async function getTotalListeningTime(

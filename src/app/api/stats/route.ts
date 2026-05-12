@@ -27,22 +27,12 @@ export async function GET(request: NextRequest) {
         : currentCalendarYearChile();
 
     const [bundle, heatmapData] = await Promise.all([
-      getDashboardBundlePayload(params, 50).catch((e) => {
-        console.warn("[stats] get_dashboard_bundle", e);
-        return null;
-      }),
+      getDashboardBundlePayload(params, 50),
       getHeatmapData(heatmapYear).catch((e) => {
         console.warn("[stats] getHeatmapData", e);
         return [];
       }),
     ]);
-
-    if (!bundle) {
-      return NextResponse.json(
-        { error: "Failed to fetch stats" },
-        { status: 500 },
-      );
-    }
 
     return NextResponse.json({
       totalMs: bundle.totalMs,

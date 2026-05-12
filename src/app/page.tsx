@@ -213,7 +213,7 @@ export default function DashboardPage() {
           icon={Clock}
         />
         <StatCard
-          title="Filas reproducidas"
+          title="Reproducciones"
           value={formatNumber(stats.playCount)}
           subtitle={
             stats.sessionCount > 0
