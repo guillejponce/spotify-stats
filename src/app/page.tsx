@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { NowPlayingCard } from "@/components/now-playing/now-playing-card";
 import { StatCard } from "@/components/stats/stat-card";
 import { TopItemsList } from "@/components/stats/top-items-list";
@@ -10,6 +10,7 @@ import { HourlyChart } from "@/components/charts/hourly-chart";
 import { MonthRankChart } from "@/components/charts/month-rank-chart";
 import { YearBarChart } from "@/components/charts/year-bar-chart";
 import { Heatmap } from "@/components/charts/heatmap";
+import { WeekdayChart } from "@/components/charts/weekday-chart";
 import { buttonVariants } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -42,6 +43,9 @@ import {
 } from "@/lib/chile-time";
 
 export default function DashboardPage() {
+  const statsHydratedRef = useRef(false);
+  const fetchStatsRef = useRef(async () => {});
+
   const [timeFilter, setTimeFilter] = useState<TimeFilterParams>({
     filter: "all",
   });
@@ -52,7 +56,9 @@ export default function DashboardPage() {
     reason?: string;
   } | null>(null);
   const [oauthBanner, setOauthBanner] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  /** Skeleton / bloqueo solo en la primera carga; los cambios de filtro refrescan datos sin vaciar todo. */
+  const [blockingLoad, setBlockingLoad] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({
     totalMs: 0,
     playCount: 0,
@@ -68,7 +74,9 @@ export default function DashboardPage() {
   });
 
   const fetchStats = useCallback(async () => {
-    setLoading(true);
+    const isFirstHydration = !statsHydratedRef.current;
+    if (isFirstHydration) setBlockingLoad(true);
+    else setRefreshing(true);
     try {
       const params = new URLSearchParams();
       params.set("filter", timeFilter.filter);
@@ -78,6 +86,7 @@ export default function DashboardPage() {
       const response = await fetch(`/api/stats?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
+        statsHydratedRef.current = true;
         setStats((prev) => ({
           ...prev,
           ...data,
@@ -90,22 +99,25 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to fetch stats:", err);
     } finally {
-      setLoading(false);
+      setBlockingLoad(false);
+      setRefreshing(false);
     }
   }, [timeFilter]);
 
+  fetchStatsRef.current = fetchStats;
+
   useEffect(() => {
-    fetchStats();
+    void fetchStats();
   }, [fetchStats]);
 
-  /** Periodically pull Spotify “Recently played” into `plays` (server). Complements one-time JSON import. */
+  /** Periodically pull Spotify “Recently played” into `plays` (server). Complements one-time JSON import.
+   *  No dependemos de fetchStats aquí para no reiniciar el interval ni duplicar sync al cambiar filtros.
+   */
   useEffect(() => {
     const run = async () => {
       try {
         const r = await syncSpotifyRecentFromServer();
-        if (r.ok) {
-          void fetchStats();
-        }
+        if (r.ok) void fetchStatsRef.current();
       } catch {
         // sin tokens o error temporal
       }
@@ -113,7 +125,7 @@ export default function DashboardPage() {
     void run();
     const id = window.setInterval(run, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [fetchStats]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -196,8 +208,15 @@ export default function DashboardPage() {
         <NowPlayingCard />
       </div>
 
-      <TimeFilterControl variant="dashboard" value={timeFilter} onChange={setTimeFilter} />
-      <p className="-mt-2 text-xs leading-relaxed text-spotify-light-gray/65 sm:-mt-4">
+      <section className="sticky top-0 z-20 -mx-3 rounded-b-xl border-b border-white/[0.07] bg-spotify-black/90 px-3 py-3 supports-[backdrop-filter]:bg-spotify-black/75 supports-[backdrop-filter]:backdrop-blur-md lg:static lg:z-auto lg:-mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+        <TimeFilterControl
+          variant="dashboard"
+          value={timeFilter}
+          onChange={setTimeFilter}
+          busy={refreshing}
+        />
+      </section>
+      <p className="-mt-1 text-xs leading-relaxed text-spotify-light-gray/65 sm:-mt-2">
         Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El número grande cuenta{" "}
         <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
         (segmentos de escucha)—igual que las barras por día / mes / año. Las listas Top ordenan por{" "}
@@ -207,96 +226,109 @@ export default function DashboardPage() {
         <span className="text-spotify-light-gray">año civil actual en Chile</span>.
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Tiempo de escucha"
-          value={formatMs(stats.totalMs)}
-          subtitle={formatListeningTimeSubtitle(stats.totalMs)}
-          icon={Clock}
-        />
-        <StatCard
-          title="Reproducciones"
-          value={formatReproductionCount(stats.playCount)}
-          subtitle={
-            stats.sessionCount > 0
-              ? `${formatReproductionCount(stats.sessionCount)} sesiones (~15 min mismo tema)`
-              : undefined
-          }
-          icon={Music2}
-        />
-        <StatCard
-          title="Top Artist"
-          value={stats.topArtists[0]?.name || "—"}
-          subtitle={
-            stats.topArtists[0]
-              ? `${formatReproductionCount(stats.topArtists[0].play_count)} reproducciones`
-              : undefined
-          }
-          icon={Disc3}
-        />
-        <StatCard
-          title="Top Track"
-          value={stats.topTracks[0]?.name || "—"}
-          subtitle={
-            stats.topTracks[0]
-              ? `${formatReproductionCount(stats.topTracks[0].play_count)} reproducciones`
-              : undefined
-          }
-          icon={TrendingUp}
-        />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ListeningChart
-          title="Escucha en el tiempo"
-          data={stats.listeningOverTime}
-          loading={loading}
-        />
-        <HourlyChart
-          title="Horas más activas (Chile)"
-          data={stats.hourlyData}
-          loading={loading}
-        />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <MonthRankChart
-          title="Meses con más reproducciones"
-          data={stats.monthsTop}
-          loading={loading}
-        />
-        <YearBarChart
-          title="Por año"
-          data={stats.yearsBreakdown}
-          loading={loading}
-        />
-      </div>
-
-      <Heatmap
-        title={`Mapa de escuchas ${timeFilter.year ?? currentCalendarYearChile()} (calendario Chile)`}
-        data={stats.heatmapData}
-        loading={loading}
-        year={timeFilter.year ?? currentCalendarYearChile()}
-      />
-
-      <Tabs defaultValue="tracks" className="w-full min-w-0">
-        <div className="-mx-1 max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-          <TabsList className="inline-flex w-max flex-nowrap gap-1">
-            <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
-            <TabsTrigger value="artists">Top Artists</TabsTrigger>
-            <TabsTrigger value="albums">Top Albums</TabsTrigger>
-          </TabsList>
+      <div
+        className={cn(
+          "space-y-6 duration-300 sm:space-y-8",
+          refreshing && "opacity-70 transition-opacity"
+        )}
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title="Tiempo de escucha"
+            value={formatMs(stats.totalMs)}
+            subtitle={formatListeningTimeSubtitle(stats.totalMs)}
+            icon={Clock}
+          />
+          <StatCard
+            title="Reproducciones"
+            value={formatReproductionCount(stats.playCount)}
+            subtitle={
+              stats.sessionCount > 0
+                ? `${formatReproductionCount(stats.sessionCount)} sesiones (~15 min mismo tema)`
+                : undefined
+            }
+            icon={Music2}
+          />
+          <StatCard
+            title="Top Artist"
+            value={stats.topArtists[0]?.name || "—"}
+            subtitle={
+              stats.topArtists[0]
+                ? `${formatReproductionCount(stats.topArtists[0].play_count)} reproducciones`
+                : undefined
+            }
+            icon={Disc3}
+          />
+          <StatCard
+            title="Top Track"
+            value={stats.topTracks[0]?.name || "—"}
+            subtitle={
+              stats.topTracks[0]
+                ? `${formatReproductionCount(stats.topTracks[0].play_count)} reproducciones`
+                : undefined
+            }
+            icon={TrendingUp}
+          />
         </div>
-        <TabsContent value="tracks">
-          <TopItemsList title="Top Tracks" items={stats.topTracks} loading={loading} />
-        </TabsContent>
-        <TabsContent value="artists">
-          <TopItemsList title="Top Artists" items={stats.topArtists} loading={loading} />
-        </TabsContent>
-        <TabsContent value="albums">
-          <TopItemsList title="Top Albums" items={stats.topAlbums} loading={loading} />
-        </TabsContent>
-      </Tabs>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ListeningChart
+            title="Escucha en el tiempo"
+            data={stats.listeningOverTime}
+            loading={blockingLoad}
+          />
+          <HourlyChart
+            title="Horas más activas (Chile)"
+            data={stats.hourlyData}
+            loading={blockingLoad}
+          />
+        </div>
+
+        <WeekdayChart
+          title="Días de la semana"
+          data={stats.listeningOverTime}
+          loading={blockingLoad}
+        />
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <MonthRankChart
+            title="Meses con más reproducciones"
+            data={stats.monthsTop}
+            loading={blockingLoad}
+          />
+          <YearBarChart
+            title="Por año"
+            data={stats.yearsBreakdown}
+            loading={blockingLoad}
+          />
+        </div>
+
+        <Heatmap
+          title={`Mapa de escuchas ${timeFilter.year ?? currentCalendarYearChile()} (calendario Chile)`}
+          data={stats.heatmapData}
+          loading={blockingLoad}
+          year={timeFilter.year ?? currentCalendarYearChile()}
+        />
+
+        <Tabs defaultValue="tracks" className="w-full min-w-0">
+          <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]">
+            <TabsList className="inline-flex w-max flex-nowrap gap-1">
+              <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
+              <TabsTrigger value="artists">Top Artists</TabsTrigger>
+              <TabsTrigger value="albums">Top Albums</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="tracks">
+            <TopItemsList title="Top Tracks" items={stats.topTracks} loading={blockingLoad} />
+          </TabsContent>
+          <TabsContent value="artists">
+            <TopItemsList title="Top Artists" items={stats.topArtists} loading={blockingLoad} />
+          </TabsContent>
+          <TabsContent value="albums">
+            <TopItemsList title="Top Albums" items={stats.topAlbums} loading={blockingLoad} />
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

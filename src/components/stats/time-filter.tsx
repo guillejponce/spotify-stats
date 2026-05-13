@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
 
 interface TimeFilterControlProps {
@@ -10,6 +12,8 @@ interface TimeFilterControlProps {
   onChange: (params: TimeFilterParams) => void;
   /** Dashboard: solo períodos rolantes rápidos. Artistas/Álbumes: calendario completo. */
   variant?: "full" | "dashboard";
+  /** Actualizando datos en segundo plano (evita skeleton agresivo en el dashboard). */
+  busy?: boolean;
 }
 
 const currentYear = new Date().getFullYear();
@@ -33,6 +37,7 @@ export function TimeFilterControl({
   value,
   onChange,
   variant = "full",
+  busy = false,
 }: TimeFilterControlProps) {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -75,20 +80,40 @@ export function TimeFilterControl({
   if (variant === "dashboard") {
     return (
       <div className="flex w-full min-w-0 flex-col gap-3">
-        <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch]">
-          <Tabs
-            defaultValue="all"
-            value={value.filter}
-            onValueChange={handleFilterChange}
-            className="min-w-0"
+        <div
+          className={cn(
+            "flex items-center gap-2",
+            busy && "[&>[data-slot=scroll]]:opacity-90"
+          )}
+        >
+          <div
+            data-slot="scroll"
+            className="-mx-1 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]"
           >
-            <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
-              <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
-              <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
-              <TabsTrigger value="last_month">Último mes</TabsTrigger>
-              <TabsTrigger value="last_week">Última semana</TabsTrigger>
-            </TabsList>
-          </Tabs>
+            <Tabs
+              defaultValue="all"
+              value={value.filter}
+              onValueChange={handleFilterChange}
+              className="min-w-0"
+            >
+              <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
+                <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
+                <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
+                <TabsTrigger value="last_month">Último mes</TabsTrigger>
+                <TabsTrigger value="last_week">Última semana</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          {busy && (
+            <span
+              className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-spotify-light-gray/80"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <Loader2 className="h-4 w-4 animate-spin text-spotify-green" aria-hidden />
+              <span className="hidden min-[340px]:inline">Actualizando</span>
+            </span>
+          )}
         </div>
       </div>
     );
@@ -96,7 +121,7 @@ export function TimeFilterControl({
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
-      <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch]">
+      <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]">
         <Tabs defaultValue="all" value={value.filter} onValueChange={handleFilterChange}>
           <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
             <TabsTrigger value="all">Todo</TabsTrigger>
