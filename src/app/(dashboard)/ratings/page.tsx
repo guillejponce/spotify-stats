@@ -386,7 +386,8 @@ export default function RatingsPage() {
     }
     setAlbumTracksLoading(true);
     fetch(
-      `/api/ratings/albums/${encodeURIComponent(selectedAlbum.id)}/tracks`
+      `/api/ratings/albums/${encodeURIComponent(selectedAlbum.id)}/tracks`,
+      { cache: "no-store" }
     )
       .then((r) => r.json())
       .then((d) => setAlbumTracks(d.tracks || []))
@@ -1854,7 +1855,8 @@ function ExpandableAlbumRow({
     if (!isExpanded) return;
     setLoading(true);
     fetch(
-      `/api/ratings/albums/${encodeURIComponent(album.album_id)}/tracks`
+      `/api/ratings/albums/${encodeURIComponent(album.album_id)}/tracks`,
+      { cache: "no-store" }
     )
       .then((r) => r.json())
       .then((d) => setTracks(d.tracks || []))

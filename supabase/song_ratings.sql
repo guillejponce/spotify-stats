@@ -137,47 +137,36 @@ BEGIN
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
   INTO top_albums_json
   FROM (
-    SELECT
-      l.album_id,
-      l.album_name,
-      l.artist_name,
-      l.image_url,
-      AVG(l.rating)::numeric AS avg_rating,
-      COUNT(*)::integer AS rated_tracks,
-      l.total_tracks
-    FROM (
+    WITH logical_ratings AS (
       SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
-        sr.rating,
-        t.album_id,
-        al.name AS album_name,
-        ar.name AS artist_name,
-        al.image_url,
-        al.album_type,
-        (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id)::integer AS total_tracks
+        public.rating_song_key(t.name, t.artist_id) AS song_key,
+        sr.rating
       FROM song_ratings sr
       INNER JOIN tracks t ON t.id = sr.track_id
-      INNER JOIN albums al ON al.id = t.album_id
-      LEFT JOIN artists ar ON ar.id = t.artist_id
-      WHERE t.album_id IS NOT NULL
-      ORDER BY
-        public.rating_song_key(t.name, t.artist_id),
-        CASE
-          WHEN al.album_type = 'album' THEN 0
-          WHEN al.album_type IS NULL
-               AND (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id) >= 4 THEN 0
-          WHEN al.album_type = 'compilation' THEN 1
-          WHEN al.album_type IS NULL THEN 2
-          ELSE 3
-        END,
-        sr.updated_at DESC
-    ) l
-    WHERE (
-      l.album_type = 'album'
-      OR l.album_type = 'compilation'
-      OR (l.album_type IS NULL AND l.total_tracks >= 4)
+      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
     )
-    GROUP BY l.album_id, l.album_name, l.artist_name, l.image_url, l.total_tracks
-    ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
+    SELECT
+      al.id AS album_id,
+      al.name AS album_name,
+      ar.name AS artist_name,
+      al.image_url,
+      AVG(lr.rating)::numeric AS avg_rating,
+      COUNT(lr.rating)::integer AS rated_tracks,
+      COUNT(t.id)::integer AS total_tracks
+    FROM albums al
+    LEFT JOIN artists ar ON ar.id = al.artist_id
+    INNER JOIN tracks t ON t.album_id = al.id
+    LEFT JOIN logical_ratings lr
+      ON lr.song_key = public.rating_song_key(t.name, t.artist_id)
+    WHERE (
+      al.album_type = 'album'
+      OR al.album_type = 'compilation'
+      OR (al.album_type IS NULL
+          AND (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id) >= 4)
+    )
+    GROUP BY al.id, al.name, ar.name, al.image_url
+    HAVING COUNT(lr.rating) > 0
+    ORDER BY AVG(lr.rating) DESC, COUNT(lr.rating) DESC
     LIMIT 30
   ) q;
 
