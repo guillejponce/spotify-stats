@@ -23,7 +23,46 @@ CREATE INDEX IF NOT EXISTS idx_song_ratings_updated_desc
 CREATE INDEX IF NOT EXISTS idx_song_ratings_track_id
   ON song_ratings (track_id);
 
--- 3) RPC: Dashboard de ratings (una sola query, todo el cálculo en DB)
+-- Clave lógica de canción (artista principal + título normalizado)
+CREATE OR REPLACE FUNCTION public.rating_song_key(track_name text, artist_id text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT lower(trim(track_name)) || '|' || COALESCE(artist_id, '');
+$$;
+
+-- IDs de todas las versiones (single / álbum) de la misma canción
+CREATE OR REPLACE FUNCTION public.get_equivalent_track_ids(p_track_id text)
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT COALESCE(array_agg(t2.id ORDER BY t2.id), ARRAY[]::text[])
+  FROM tracks t1
+  INNER JOIN tracks t2
+    ON public.rating_song_key(t2.name, t2.artist_id) = public.rating_song_key(t1.name, t1.artist_id)
+  WHERE t1.id = p_track_id;
+$$;
+
+-- Rating vigente para una canción lógica (cualquier track_id equivalente)
+CREATE OR REPLACE FUNCTION public.get_logical_track_rating(p_track_name text, p_artist_id text)
+RETURNS smallint
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT sr.rating
+  FROM song_ratings sr
+  INNER JOIN tracks t ON t.id = sr.track_id
+  WHERE public.rating_song_key(t.name, t.artist_id) = public.rating_song_key(p_track_name, p_artist_id)
+  ORDER BY sr.updated_at DESC
+  LIMIT 1;
+$$;
+
+-- 3) RPC: Dashboard de ratings (deduplica por canción lógica)
 CREATE OR REPLACE FUNCTION public.get_ratings_dashboard()
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -40,110 +79,171 @@ DECLARE
   recent_json jsonb;
   distribution_json jsonb;
 BEGIN
+  WITH logical AS (
+    SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+      sr.track_id,
+      sr.rating,
+      sr.updated_at,
+      t.name AS track_name,
+      t.artist_id,
+      t.album_id,
+      ar.name AS artist_name,
+      al.name AS album_name,
+      COALESCE(al.image_url, ar.image_url) AS image_url
+    FROM song_ratings sr
+    INNER JOIN tracks t ON t.id = sr.track_id
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    LEFT JOIN albums al ON al.id = t.album_id
+    ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+  )
   SELECT COUNT(*), COALESCE(ROUND(AVG(rating)::numeric, 1), 0)
   INTO total_rated, avg_rating
-  FROM song_ratings;
+  FROM logical;
 
-  -- Top canciones (las mejor puntuadas)
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
   INTO top_tracks_json
   FROM (
     SELECT
-      sr.track_id,
-      sr.rating,
-      sr.updated_at,
-      t.name AS track_name,
-      ar.name AS artist_name,
-      al.name AS album_name,
-      t.album_id,
-      t.artist_id,
-      COALESCE(al.image_url, ar.image_url) AS image_url
-    FROM song_ratings sr
-    INNER JOIN tracks t ON t.id = sr.track_id
-    LEFT JOIN artists ar ON ar.id = t.artist_id
-    LEFT JOIN albums al ON al.id = t.album_id
-    ORDER BY sr.rating DESC, sr.updated_at DESC
+      l.track_id,
+      l.rating,
+      l.updated_at,
+      l.track_name,
+      l.artist_name,
+      l.album_name,
+      l.album_id,
+      l.artist_id,
+      l.image_url
+    FROM (
+      SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+        sr.track_id,
+        sr.rating,
+        sr.updated_at,
+        t.name AS track_name,
+        ar.name AS artist_name,
+        al.name AS album_name,
+        t.album_id,
+        t.artist_id,
+        COALESCE(al.image_url, ar.image_url) AS image_url
+      FROM song_ratings sr
+      INNER JOIN tracks t ON t.id = sr.track_id
+      LEFT JOIN artists ar ON ar.id = t.artist_id
+      LEFT JOIN albums al ON al.id = t.album_id
+      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.rating DESC, sr.updated_at DESC
+    ) l
+    ORDER BY l.rating DESC, l.updated_at DESC
     LIMIT 20
   ) q;
 
-  -- Top álbumes (promedio de canciones)
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
   INTO top_albums_json
   FROM (
     SELECT
-      t.album_id,
-      al.name AS album_name,
-      ar.name AS artist_name,
-      al.image_url,
-      ROUND(AVG(sr.rating)::numeric, 1) AS avg_rating,
+      l.album_id,
+      l.album_name,
+      l.artist_name,
+      l.image_url,
+      ROUND(AVG(l.rating)::numeric, 1) AS avg_rating,
       COUNT(*)::integer AS rated_tracks
-    FROM song_ratings sr
-    INNER JOIN tracks t ON t.id = sr.track_id
-    INNER JOIN albums al ON al.id = t.album_id
-    LEFT JOIN artists ar ON ar.id = t.artist_id
-    WHERE t.album_id IS NOT NULL
-    GROUP BY t.album_id, al.name, ar.name, al.image_url
-    ORDER BY AVG(sr.rating) DESC, COUNT(*) DESC
+    FROM (
+      SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+        sr.rating,
+        t.album_id,
+        al.name AS album_name,
+        ar.name AS artist_name,
+        al.image_url
+      FROM song_ratings sr
+      INNER JOIN tracks t ON t.id = sr.track_id
+      INNER JOIN albums al ON al.id = t.album_id
+      LEFT JOIN artists ar ON ar.id = t.artist_id
+      WHERE t.album_id IS NOT NULL
+      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+    ) l
+    GROUP BY l.album_id, l.album_name, l.artist_name, l.image_url
+    ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
     LIMIT 20
   ) q;
 
-  -- Top artistas (promedio de canciones)
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
   INTO top_artists_json
   FROM (
     SELECT
-      t.artist_id,
-      ar.name AS artist_name,
-      COALESCE(ar.image_url, cover.fallback_img) AS image_url,
-      ROUND(AVG(sr.rating)::numeric, 1) AS avg_rating,
+      l.artist_id,
+      l.artist_name,
+      l.image_url,
+      ROUND(AVG(l.rating)::numeric, 1) AS avg_rating,
       COUNT(*)::integer AS rated_tracks
-    FROM song_ratings sr
-    INNER JOIN tracks t ON t.id = sr.track_id
-    INNER JOIN artists ar ON ar.id = t.artist_id
-    LEFT JOIN LATERAL (
-      SELECT al2.image_url AS fallback_img
-      FROM albums al2
-      WHERE al2.artist_id = ar.id AND al2.image_url IS NOT NULL
-      LIMIT 1
-    ) cover ON TRUE
-    WHERE t.artist_id IS NOT NULL
-    GROUP BY t.artist_id, ar.name, COALESCE(ar.image_url, cover.fallback_img)
-    ORDER BY AVG(sr.rating) DESC, COUNT(*) DESC
+    FROM (
+      SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+        sr.rating,
+        t.artist_id,
+        ar.name AS artist_name,
+        COALESCE(ar.image_url, cover.fallback_img) AS image_url
+      FROM song_ratings sr
+      INNER JOIN tracks t ON t.id = sr.track_id
+      INNER JOIN artists ar ON ar.id = t.artist_id
+      LEFT JOIN LATERAL (
+        SELECT al2.image_url AS fallback_img
+        FROM albums al2
+        WHERE al2.artist_id = ar.id AND al2.image_url IS NOT NULL
+        LIMIT 1
+      ) cover ON TRUE
+      WHERE t.artist_id IS NOT NULL
+      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+    ) l
+    GROUP BY l.artist_id, l.artist_name, l.image_url
+    ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
     LIMIT 20
   ) q;
 
-  -- Últimas valoraciones
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
   INTO recent_json
   FROM (
     SELECT
-      sr.track_id,
-      sr.rating,
-      sr.updated_at,
-      t.name AS track_name,
-      ar.name AS artist_name,
-      al.name AS album_name,
-      t.album_id,
-      t.artist_id,
-      COALESCE(al.image_url, ar.image_url) AS image_url
-    FROM song_ratings sr
-    INNER JOIN tracks t ON t.id = sr.track_id
-    LEFT JOIN artists ar ON ar.id = t.artist_id
-    LEFT JOIN albums al ON al.id = t.album_id
-    ORDER BY sr.updated_at DESC
+      l.track_id,
+      l.rating,
+      l.updated_at,
+      l.track_name,
+      l.artist_name,
+      l.album_name,
+      l.album_id,
+      l.artist_id,
+      l.image_url
+    FROM (
+      SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+        sr.track_id,
+        sr.rating,
+        sr.updated_at,
+        t.name AS track_name,
+        ar.name AS artist_name,
+        al.name AS album_name,
+        t.album_id,
+        t.artist_id,
+        COALESCE(al.image_url, ar.image_url) AS image_url
+      FROM song_ratings sr
+      INNER JOIN tracks t ON t.id = sr.track_id
+      LEFT JOIN artists ar ON ar.id = t.artist_id
+      LEFT JOIN albums al ON al.id = t.album_id
+      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+    ) l
+    ORDER BY l.updated_at DESC
     LIMIT 10
   ) q;
 
-  -- Distribución 1-10
   SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY q.rating), '[]'::jsonb)
   INTO distribution_json
   FROM (
     SELECT gs.r AS rating, COALESCE(c.cnt, 0)::integer AS count
     FROM generate_series(1, 10) gs(r)
     LEFT JOIN (
-      SELECT rating, COUNT(*)::integer AS cnt
-      FROM song_ratings
-      GROUP BY rating
+      SELECT l.rating, COUNT(*)::integer AS cnt
+      FROM (
+        SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+          sr.rating
+        FROM song_ratings sr
+        INNER JOIN tracks t ON t.id = sr.track_id
+        ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+      ) l
+      GROUP BY l.rating
     ) c ON c.rating = gs.r
     ORDER BY gs.r
   ) q;
@@ -160,7 +260,7 @@ BEGIN
 END;
 $$;
 
--- 4) RPC: Listar ratings paginados con sort
+-- 4) RPC: Listar ratings paginados (una fila por canción lógica)
 CREATE OR REPLACE FUNCTION public.get_rated_tracks(
   sort_mode text DEFAULT 'rating_desc',
   result_offset integer DEFAULT 0,
@@ -182,32 +282,53 @@ LANGUAGE sql
 STABLE
 SET search_path = public
 AS $$
+  WITH logical AS (
+    SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+      sr.track_id,
+      sr.rating,
+      sr.created_at,
+      sr.updated_at,
+      t.name AS track_name,
+      ar.name AS artist_name,
+      al.name AS album_name,
+      t.album_id,
+      t.artist_id,
+      COALESCE(al.image_url, ar.image_url) AS image_url
+    FROM song_ratings sr
+    INNER JOIN tracks t ON t.id = sr.track_id
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    LEFT JOIN albums al ON al.id = t.album_id
+    ORDER BY
+      public.rating_song_key(t.name, t.artist_id),
+      sr.updated_at DESC
+  )
   SELECT
-    sr.track_id,
-    sr.rating,
-    sr.created_at,
-    sr.updated_at,
-    t.name AS track_name,
-    ar.name AS artist_name,
-    al.name AS album_name,
-    t.album_id,
-    t.artist_id,
-    COALESCE(al.image_url, ar.image_url) AS image_url
-  FROM song_ratings sr
-  INNER JOIN tracks t ON t.id = sr.track_id
-  LEFT JOIN artists ar ON ar.id = t.artist_id
-  LEFT JOIN albums al ON al.id = t.album_id
+    l.track_id,
+    l.rating,
+    l.created_at,
+    l.updated_at,
+    l.track_name,
+    l.artist_name,
+    l.album_name,
+    l.album_id,
+    l.artist_id,
+    l.image_url
+  FROM logical l
   ORDER BY
-    CASE WHEN sort_mode = 'rating_desc' THEN sr.rating END DESC NULLS LAST,
-    CASE WHEN sort_mode = 'rating_asc' THEN sr.rating END ASC NULLS LAST,
-    CASE WHEN sort_mode = 'recent' THEN sr.updated_at END DESC NULLS LAST,
-    CASE WHEN sort_mode = 'name' THEN t.name END ASC NULLS LAST,
-    sr.updated_at DESC
+    CASE WHEN sort_mode = 'rating_desc' THEN l.rating END DESC NULLS LAST,
+    CASE WHEN sort_mode = 'rating_asc' THEN l.rating END ASC NULLS LAST,
+    CASE WHEN sort_mode = 'recent' THEN l.updated_at END DESC NULLS LAST,
+    CASE WHEN sort_mode = 'name' THEN l.track_name END ASC NULLS LAST,
+    l.updated_at DESC
   OFFSET greatest(result_offset, 0)
   LIMIT greatest(least(result_limit, 200), 1);
 $$;
 
--- 5) RPC: Buscar tracks para valorar (con rating actual si existe)
+-- Migración: Postgres no permite cambiar RETURNS TABLE con CREATE OR REPLACE
+DROP FUNCTION IF EXISTS public.search_tracks_for_rating(text, integer);
+DROP FUNCTION IF EXISTS public.get_album_tracks_for_rating(text, integer);
+
+-- 5) RPC: Buscar tracks para valorar (deduplicado + rating lógico)
 CREATE OR REPLACE FUNCTION public.search_tracks_for_rating(
   search_query text,
   result_limit integer DEFAULT 20
@@ -215,6 +336,93 @@ CREATE OR REPLACE FUNCTION public.search_tracks_for_rating(
 RETURNS TABLE (
   id text,
   name text,
+  artist_id text,
+  artist_name text,
+  album_name text,
+  image_url text,
+  current_rating smallint
+)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  WITH candidates AS (
+    SELECT
+      t.id,
+      t.name,
+      t.artist_id,
+      ar.name AS artist_name,
+      al.name AS album_name,
+      COALESCE(al.image_url, ar.image_url) AS image_url,
+      public.get_logical_track_rating(t.name, t.artist_id) AS current_rating
+    FROM tracks t
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    LEFT JOIN albums al ON al.id = t.album_id
+    WHERE t.name ILIKE '%' || trim(search_query) || '%'
+       OR ar.name ILIKE '%' || trim(search_query) || '%'
+  ),
+  deduped AS (
+    SELECT DISTINCT ON (public.rating_song_key(c.name, c.artist_id))
+      c.id,
+      c.name,
+      c.artist_id,
+      c.artist_name,
+      c.album_name,
+      c.image_url,
+      c.current_rating
+    FROM candidates c
+    ORDER BY
+      public.rating_song_key(c.name, c.artist_id),
+      (c.current_rating IS NOT NULL) DESC,
+      c.name ASC
+  )
+  SELECT d.id, d.name, d.artist_id, d.artist_name, d.album_name, d.image_url, d.current_rating
+  FROM deduped d
+  ORDER BY (d.current_rating IS NOT NULL) DESC, d.name ASC
+  LIMIT greatest(least(result_limit, 50), 1);
+$$;
+
+-- 6) RPC: Buscar álbumes para valorar
+CREATE OR REPLACE FUNCTION public.search_albums_for_rating(
+  search_query text,
+  result_limit integer DEFAULT 20
+)
+RETURNS TABLE (
+  id text,
+  name text,
+  artist_name text,
+  image_url text,
+  track_count bigint
+)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT
+    al.id,
+    al.name,
+    ar.name AS artist_name,
+    al.image_url,
+    COUNT(t.id)::bigint AS track_count
+  FROM albums al
+  LEFT JOIN artists ar ON ar.id = al.artist_id
+  LEFT JOIN tracks t ON t.album_id = al.id
+  WHERE al.name ILIKE '%' || trim(search_query) || '%'
+     OR ar.name ILIKE '%' || trim(search_query) || '%'
+  GROUP BY al.id, al.name, ar.name, al.image_url
+  ORDER BY al.name ASC
+  LIMIT greatest(least(result_limit, 40), 1);
+$$;
+
+-- 7) RPC: Tracklist de un álbum para valorar
+CREATE OR REPLACE FUNCTION public.get_album_tracks_for_rating(
+  p_album_id text,
+  result_limit integer DEFAULT 200
+)
+RETURNS TABLE (
+  id text,
+  name text,
+  artist_id text,
   artist_name text,
   album_name text,
   image_url text,
@@ -227,24 +435,26 @@ AS $$
   SELECT
     t.id,
     t.name,
+    t.artist_id,
     ar.name AS artist_name,
     al.name AS album_name,
     COALESCE(al.image_url, ar.image_url) AS image_url,
-    sr.rating AS current_rating
+    public.get_logical_track_rating(t.name, t.artist_id) AS current_rating
   FROM tracks t
+  INNER JOIN albums al ON al.id = t.album_id
   LEFT JOIN artists ar ON ar.id = t.artist_id
-  LEFT JOIN albums al ON al.id = t.album_id
-  LEFT JOIN song_ratings sr ON sr.track_id = t.id
-  WHERE t.name ILIKE '%' || trim(search_query) || '%'
-     OR ar.name ILIKE '%' || trim(search_query) || '%'
-  ORDER BY
-    (sr.rating IS NOT NULL) DESC,
-    t.name ASC
-  LIMIT greatest(least(result_limit, 50), 1);
+  WHERE t.album_id = p_album_id
+  ORDER BY t.name ASC
+  LIMIT greatest(least(result_limit, 300), 1);
 $$;
 
--- 6) PERMISOS
+-- 8) PERMISOS
 GRANT ALL ON song_ratings TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.rating_song_key(text, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_equivalent_track_ids(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_logical_track_rating(text, text) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_ratings_dashboard() TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_rated_tracks(text, integer, integer) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.search_tracks_for_rating(text, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.search_albums_for_rating(text, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_album_tracks_for_rating(text, integer) TO anon, authenticated, service_role;

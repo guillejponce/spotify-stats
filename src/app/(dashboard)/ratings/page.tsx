@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
+import { ratingSongKey } from "@/lib/rating-identity";
 
 interface SongRating {
   track_id: string;
@@ -64,7 +65,25 @@ interface SearchTrack {
   album_name: string | null;
   image_url: string | null;
   current_rating: number | null;
+  artist_id?: string | null;
 }
+
+interface AlbumSearchResult {
+  id: string;
+  name: string;
+  artist_name: string | null;
+  image_url: string | null;
+  track_count: number;
+}
+
+interface SelectedAlbum {
+  id: string;
+  name: string;
+  artist_name: string | null;
+  image_url: string | null;
+}
+
+type RateMode = "track" | "album";
 
 function StarRating({
   value,
@@ -141,10 +160,16 @@ export default function RatingsPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [dashLoading, setDashLoading] = useState(true);
 
+  const [rateMode, setRateMode] = useState<RateMode>("track");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchTrack[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [albumResults, setAlbumResults] = useState<AlbumSearchResult[]>([]);
+  const [albumSearchLoading, setAlbumSearchLoading] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState<SelectedAlbum | null>(null);
+  const [albumTracks, setAlbumTracks] = useState<SearchTrack[]>([]);
+  const [albumTracksLoading, setAlbumTracksLoading] = useState(false);
   const [savingTrack, setSavingTrack] = useState<string | null>(null);
 
   const [ratedList, setRatedList] = useState<SongRating[]>([]);
@@ -171,7 +196,7 @@ export default function RatingsPage() {
   }, [search]);
 
   useEffect(() => {
-    if (debouncedSearch.length < 2) {
+    if (rateMode !== "track" || debouncedSearch.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -181,7 +206,43 @@ export default function RatingsPage() {
       .then((d) => setSearchResults(d.tracks || []))
       .catch(() => setSearchResults([]))
       .finally(() => setSearchLoading(false));
-  }, [debouncedSearch]);
+  }, [debouncedSearch, rateMode]);
+
+  useEffect(() => {
+    if (rateMode !== "album" || debouncedSearch.length < 2) {
+      setAlbumResults([]);
+      return;
+    }
+    setAlbumSearchLoading(true);
+    fetch(`/api/ratings/albums/search?q=${encodeURIComponent(debouncedSearch)}`)
+      .then((r) => r.json())
+      .then((d) => setAlbumResults(d.albums || []))
+      .catch(() => setAlbumResults([]))
+      .finally(() => setAlbumSearchLoading(false));
+  }, [debouncedSearch, rateMode]);
+
+  useEffect(() => {
+    if (!selectedAlbum) {
+      setAlbumTracks([]);
+      return;
+    }
+    setAlbumTracksLoading(true);
+    fetch(`/api/ratings/albums/${encodeURIComponent(selectedAlbum.id)}/tracks`)
+      .then((r) => r.json())
+      .then((d) => setAlbumTracks(d.tracks || []))
+      .catch(() => setAlbumTracks([]))
+      .finally(() => setAlbumTracksLoading(false));
+  }, [selectedAlbum]);
+
+  function syncRatingInLists(track: SearchTrack, rating: number) {
+    const key = ratingSongKey(track.name, track.artist_id ?? null);
+    const apply = (t: SearchTrack) =>
+      ratingSongKey(t.name, t.artist_id ?? null) === key
+        ? { ...t, current_rating: rating }
+        : t;
+    setSearchResults((prev) => prev.map(apply));
+    setAlbumTracks((prev) => prev.map(apply));
+  }
 
   const loadRated = useCallback(async (offset: number, append: boolean) => {
     if (!append) setRatedLoading(true);
@@ -201,23 +262,31 @@ export default function RatingsPage() {
 
   useEffect(() => { void loadRated(0, false); }, [loadRated]);
 
-  async function handleRate(trackId: string, rating: number) {
-    setSavingTrack(trackId);
+  async function handleRate(track: SearchTrack, rating: number) {
+    setSavingTrack(track.id);
     try {
       const res = await fetch("/api/ratings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId, rating }),
+        body: JSON.stringify({ trackId: track.id, rating }),
       });
       if (res.ok) {
-        setSearchResults((prev) =>
-          prev.map((t) => (t.id === trackId ? { ...t, current_rating: rating } : t))
-        );
+        syncRatingInLists(track, rating);
         void fetchDashboard();
         void loadRated(0, false);
       }
     } catch { /* ignore */ }
     finally { setSavingTrack(null); }
+  }
+
+  function switchRateMode(mode: RateMode) {
+    setRateMode(mode);
+    setSearch("");
+    setDebouncedSearch("");
+    setSearchResults([]);
+    setAlbumResults([]);
+    setSelectedAlbum(null);
+    setAlbumTracks([]);
   }
 
   async function handleDelete(trackId: string) {
@@ -240,7 +309,7 @@ export default function RatingsPage() {
           Valoraciones
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Rateá tus canciones del 1 al 10. Los álbumes y artistas se puntúan con el promedio de sus canciones.
+          Rateá tus canciones del 1 al 10. La misma canción en single y en álbum comparte nota. Los rankings de álbum y artista usan el promedio por canción única.
         </p>
       </div>
 
@@ -259,81 +328,196 @@ export default function RatingsPage() {
 
         <TabsContent value="rate">
           <div className="space-y-4">
+            <div className="inline-flex rounded-full border border-white/10 bg-spotify-dark-gray p-1">
+              <button
+                type="button"
+                onClick={() => switchRateMode("track")}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                  rateMode === "track"
+                    ? "bg-spotify-green text-black"
+                    : "text-spotify-light-gray hover:text-white"
+                )}
+              >
+                Por canción
+              </button>
+              <button
+                type="button"
+                onClick={() => switchRateMode("album")}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                  rateMode === "album"
+                    ? "bg-spotify-green text-black"
+                    : "text-spotify-light-gray hover:text-white"
+                )}
+              >
+                Por álbum
+              </button>
+            </div>
+
             <div className="relative w-full max-w-none sm:max-w-lg">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/50" />
               <input
                 type="search"
-                placeholder="Buscá una canción para valorar…"
+                placeholder={
+                  rateMode === "track"
+                    ? "Buscá una canción para valorar…"
+                    : "Buscá un álbum para valorar sus canciones…"
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-full border border-white/10 bg-spotify-dark-gray py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/50 focus:border-spotify-green/50 focus:outline-none focus:ring-1 focus:ring-spotify-green/30"
               />
             </div>
 
-            {searchLoading && (
-              <div className="flex items-center gap-2 py-4 text-sm text-spotify-light-gray">
-                <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
-              </div>
+            {rateMode === "track" && (
+              <>
+                {searchLoading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-spotify-light-gray">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
+                  </div>
+                )}
+
+                {!searchLoading && debouncedSearch.length >= 2 && searchResults.length === 0 && (
+                  <p className="py-6 text-center text-sm text-spotify-light-gray">
+                    No se encontraron canciones con &ldquo;{debouncedSearch}&rdquo;.
+                  </p>
+                )}
+
+                {searchResults.length > 0 && (
+                  <TrackRatingList
+                    tracks={searchResults}
+                    savingTrack={savingTrack}
+                    onRate={handleRate}
+                  />
+                )}
+
+                {debouncedSearch.length < 2 && (
+                  <RateEmptyState
+                    icon={Star}
+                    text="Escribí el nombre de una canción para buscarla y valorarla."
+                  />
+                )}
+              </>
             )}
 
-            {!searchLoading && debouncedSearch.length >= 2 && searchResults.length === 0 && (
-              <p className="py-6 text-center text-sm text-spotify-light-gray">
-                No se encontraron canciones con &ldquo;{debouncedSearch}&rdquo;.
-              </p>
-            )}
-
-            {searchResults.length > 0 && (
-              <Card>
-                <CardContent className="divide-y divide-white/5 px-3 py-2 sm:px-4">
-                  {searchResults.map((track) => (
-                    <div
-                      key={track.id}
-                      className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
-                          {track.image_url ? (
-                            <Image src={track.image_url} alt="" fill className="object-cover" />
-                          ) : (
-                            <div className="flex h-full items-center justify-center">
-                              <Music2 className="h-4 w-4 text-spotify-light-gray" />
-                            </div>
-                          )}
+            {rateMode === "album" && (
+              <>
+                {selectedAlbum && (
+                  <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-spotify-dark-gray/80 p-3">
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
+                      {selectedAlbum.image_url ? (
+                        <Image src={selectedAlbum.image_url} alt="" fill className="object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <Disc3 className="h-5 w-5 text-spotify-light-gray" />
                         </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">{track.name}</p>
-                          <p className="truncate text-xs text-spotify-light-gray">
-                            {track.artist_name}
-                            {track.album_name && (
-                              <span className="text-spotify-light-gray/50"> · {track.album_name}</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 pl-13 sm:pl-0">
-                        {savingTrack === track.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />
-                        ) : (
-                          <StarRating
-                            value={track.current_rating ?? 0}
-                            onChange={(v) => void handleRate(track.id, v)}
-                            size="sm"
-                          />
-                        )}
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-white">{selectedAlbum.name}</p>
+                      <p className="truncate text-xs text-spotify-light-gray">{selectedAlbum.artist_name}</p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => {
+                        setSelectedAlbum(null);
+                        setAlbumTracks([]);
+                      }}
+                    >
+                      Cambiar álbum
+                    </Button>
+                  </div>
+                )}
 
-            {debouncedSearch.length < 2 && (
-              <div className="flex flex-col items-center gap-3 py-16 text-center">
-                <Star className="h-12 w-12 text-spotify-green/30" />
-                <p className="text-sm text-spotify-light-gray">
-                  Escribí el nombre de una canción para buscarla y valorarla.
-                </p>
-              </div>
+                {!selectedAlbum && albumSearchLoading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-spotify-light-gray">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Buscando álbumes…
+                  </div>
+                )}
+
+                {!selectedAlbum &&
+                  !albumSearchLoading &&
+                  debouncedSearch.length >= 2 &&
+                  albumResults.length === 0 && (
+                    <p className="py-6 text-center text-sm text-spotify-light-gray">
+                      No se encontraron álbumes con &ldquo;{debouncedSearch}&rdquo;.
+                    </p>
+                  )}
+
+                {!selectedAlbum && albumResults.length > 0 && (
+                  <Card>
+                    <CardContent className="divide-y divide-white/5 px-3 py-2 sm:px-4">
+                      {albumResults.map((album) => (
+                        <button
+                          key={album.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedAlbum({
+                              id: album.id,
+                              name: album.name,
+                              artist_name: album.artist_name,
+                              image_url: album.image_url,
+                            })
+                          }
+                          className="flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-white/5"
+                        >
+                          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
+                            {album.image_url ? (
+                              <Image src={album.image_url} alt="" fill className="object-cover" />
+                            ) : (
+                              <div className="flex h-full items-center justify-center">
+                                <Disc3 className="h-4 w-4 text-spotify-light-gray" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">{album.name}</p>
+                            <p className="truncate text-xs text-spotify-light-gray">
+                              {album.artist_name}
+                              {album.track_count > 0 && (
+                                <span className="text-spotify-light-gray/50">
+                                  {" "}
+                                  · {album.track_count} canción{album.track_count === 1 ? "" : "es"}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {selectedAlbum && albumTracksLoading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-spotify-light-gray">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Cargando canciones…
+                  </div>
+                )}
+
+                {selectedAlbum && !albumTracksLoading && albumTracks.length === 0 && (
+                  <p className="py-6 text-center text-sm text-spotify-light-gray">
+                    No hay canciones de este álbum en tu biblioteca local.
+                  </p>
+                )}
+
+                {selectedAlbum && albumTracks.length > 0 && (
+                  <TrackRatingList
+                    tracks={albumTracks}
+                    savingTrack={savingTrack}
+                    onRate={handleRate}
+                  />
+                )}
+
+                {!selectedAlbum && debouncedSearch.length < 2 && (
+                  <RateEmptyState
+                    icon={Disc3}
+                    text="Buscá un álbum por nombre y elegí uno para valorar todas sus canciones."
+                  />
+                )}
+              </>
             )}
           </div>
         </TabsContent>
@@ -381,7 +565,20 @@ export default function RatingsPage() {
                     <div className="flex items-center gap-2 pl-13 sm:pl-0">
                       <StarRating
                         value={r.rating}
-                        onChange={(v) => void handleRate(r.track_id, v)}
+                        onChange={(v) =>
+                          void handleRate(
+                            {
+                              id: r.track_id,
+                              name: r.track_name,
+                              artist_name: r.artist_name,
+                              album_name: r.album_name,
+                              image_url: r.image_url,
+                              current_rating: r.rating,
+                              artist_id: r.artist_id,
+                            },
+                            v
+                          )
+                        }
                         size="sm"
                       />
                       <button
@@ -418,6 +615,76 @@ export default function RatingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function RateEmptyState({
+  icon: Icon,
+  text,
+}: {
+  icon: typeof Star;
+  text: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-16 text-center">
+      <Icon className="h-12 w-12 text-spotify-green/30" />
+      <p className="max-w-sm text-sm text-spotify-light-gray">{text}</p>
+    </div>
+  );
+}
+
+function TrackRatingList({
+  tracks,
+  savingTrack,
+  onRate,
+}: {
+  tracks: SearchTrack[];
+  savingTrack: string | null;
+  onRate: (track: SearchTrack, rating: number) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="divide-y divide-white/5 px-3 py-2 sm:px-4">
+        {tracks.map((track) => (
+          <div
+            key={track.id}
+            className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
+                {track.image_url ? (
+                  <Image src={track.image_url} alt="" fill className="object-cover" />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <Music2 className="h-4 w-4 text-spotify-light-gray" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">{track.name}</p>
+                <p className="truncate text-xs text-spotify-light-gray">
+                  {track.artist_name}
+                  {track.album_name && (
+                    <span className="text-spotify-light-gray/50"> · {track.album_name}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pl-13 sm:pl-0">
+              {savingTrack === track.id ? (
+                <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />
+              ) : (
+                <StarRating
+                  value={track.current_rating ?? 0}
+                  onChange={(v) => void onRate(track, v)}
+                  size="sm"
+                />
+              )}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
