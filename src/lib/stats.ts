@@ -92,15 +92,14 @@ function normalizeDashboardRpcPayload(data: unknown): Record<string, unknown> | 
   return null;
 }
 
-function rollupMonthsTopFromDays(days: ListeningTimeData[]): MonthBucket[] {
+function aggregateByMonthNumber(buckets: MonthBucket[]): MonthBucket[] {
   const map = new Map<string, { ms: number; count: number }>();
-  for (const d of days) {
-    if (!d.date || d.date.length < 7) continue;
-    const period = d.date.slice(0, 7);
-    const prev = map.get(period) ?? { ms: 0, count: 0 };
-    prev.ms += d.ms_played;
-    prev.count += d.play_count;
-    map.set(period, prev);
+  for (const b of buckets) {
+    const monthNum = b.period.length >= 7 ? b.period.slice(5, 7) : b.period;
+    const prev = map.get(monthNum) ?? { ms: 0, count: 0 };
+    prev.ms += b.ms_played;
+    prev.count += b.play_count;
+    map.set(monthNum, prev);
   }
   return Array.from(map.entries())
     .map(([period, v]) => ({
@@ -108,8 +107,26 @@ function rollupMonthsTopFromDays(days: ListeningTimeData[]): MonthBucket[] {
       ms_played: v.ms,
       play_count: v.count,
     }))
-    .sort((a, b) => b.play_count - a.play_count)
-    .slice(0, 36);
+    .sort((a, b) => Number(a.period) - Number(b.period));
+}
+
+function rollupMonthsTopFromDays(days: ListeningTimeData[]): MonthBucket[] {
+  const map = new Map<string, { ms: number; count: number }>();
+  for (const d of days) {
+    if (!d.date || d.date.length < 7) continue;
+    const monthNum = d.date.slice(5, 7);
+    const prev = map.get(monthNum) ?? { ms: 0, count: 0 };
+    prev.ms += d.ms_played;
+    prev.count += d.play_count;
+    map.set(monthNum, prev);
+  }
+  return Array.from(map.entries())
+    .map(([period, v]) => ({
+      period,
+      ms_played: v.ms,
+      play_count: v.count,
+    }))
+    .sort((a, b) => Number(a.period) - Number(b.period));
 }
 
 function rollupYearsFromDays(days: ListeningTimeData[]): YearBucket[] {
@@ -188,13 +205,14 @@ function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundl
     }),
   );
 
-  const monthsTop = asRpcRows<Record<string, unknown>>(root.months_top).map(
+  const rawMonths = asRpcRows<Record<string, unknown>>(root.months_top).map(
     (r) => ({
       period: String(r.period ?? ""),
       ms_played: numeric(r.ms_played),
       play_count: numeric(r.play_count),
     }),
   );
+  const monthsTop = aggregateByMonthNumber(rawMonths);
 
   const yearsBreakdown = asRpcRows<Record<string, unknown>>(root.years).map(
     (r) => ({

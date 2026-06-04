@@ -19,7 +19,18 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { MonthBucket } from "@/types/database";
-import { CHILE_TIMEZONE_LABEL, formatChileMonthPeriod } from "@/lib/chile-time";
+import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
+
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+] as const;
+
+function formatMonthLabel(period: string): string {
+  const num = Number(period);
+  if (num >= 1 && num <= 12) return MONTH_NAMES[num - 1];
+  return period;
+}
 
 interface MonthRankChartProps {
   title: string;
@@ -62,7 +73,7 @@ export function MonthRankChart({
 
   const formatted = data.map((d) => ({
       ...d,
-      label: formatChileMonthPeriod(d.period),
+      label: formatMonthLabel(d.period),
       hours: msToHours(d.ms_played),
     }));
 
@@ -71,7 +82,7 @@ export function MonthRankChart({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Meses con más reproducciones en el período filtrado (zona {CHILE_TIMEZONE_LABEL}).
+          Reproducciones agrupadas por mes del año (todos los años combinados, zona {CHILE_TIMEZONE_LABEL}).
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -292,7 +292,7 @@ export default function DashboardPage() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <MonthRankChart
-            title="Meses con más reproducciones"
+            title="Meses del año con más reproducciones"
             data={stats.monthsTop}
             loading={blockingLoad}
           />

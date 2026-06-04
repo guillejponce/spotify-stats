@@ -18,6 +18,7 @@ import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/tracks", label: "Canciones", icon: Music2 },
   { href: "/artists", label: "Artistas", icon: Users },
   { href: "/albums", label: "Álbumes", icon: Library },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
