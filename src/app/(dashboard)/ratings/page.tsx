@@ -1164,6 +1164,9 @@ export default function RatingsPage() {
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────
 
+const DASH_PREVIEW = 10;
+const DASH_EXPANDED = 100;
+
 function DashboardTab({
   data,
   loading,
@@ -1171,6 +1174,9 @@ function DashboardTab({
   data: DashboardData | null;
   loading: boolean;
 }) {
+  const [showAllTracks, setShowAllTracks] = useState(false);
+  const [showAllAlbums, setShowAllAlbums] = useState(false);
+  const [showAllArtists, setShowAllArtists] = useState(false);
   if (loading) {
     return (
       <div className="space-y-6">
@@ -1252,11 +1258,14 @@ function DashboardTab({
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-4 w-4 text-spotify-green" />
               Top canciones
+              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/50">
+                {data.topTracks.length}
+              </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-[420px] overflow-y-auto px-3 pb-4 pt-0">
+          <CardContent className={cn("overflow-y-auto px-3 pb-2 pt-0", showAllTracks ? "max-h-[600px]" : "max-h-[420px]")}>
             <ul className="divide-y divide-white/5">
-              {data.topTracks.slice(0, 15).map((t, idx) => (
+              {data.topTracks.slice(0, showAllTracks ? DASH_EXPANDED : DASH_PREVIEW).map((t, idx) => (
                 <li
                   key={t.track_id}
                   className="flex items-center gap-2.5 py-2"
@@ -1276,6 +1285,15 @@ function DashboardTab({
               ))}
             </ul>
           </CardContent>
+          {data.topTracks.length > DASH_PREVIEW && (
+            <button
+              type="button"
+              onClick={() => setShowAllTracks((p) => !p)}
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+            >
+              {showAllTracks ? "Ver menos" : `Ver las ${data.topTracks.length}`}
+            </button>
+          )}
         </Card>
 
         <Card>
@@ -1303,14 +1321,14 @@ function DashboardTab({
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-[420px] overflow-y-auto px-3 pb-4 pt-0">
+          <CardContent className={cn("overflow-y-auto px-3 pb-2 pt-0", showAllAlbums ? "max-h-[600px]" : "max-h-[420px]")}>
             {data.topAlbums.length === 0 ? (
               <p className="py-6 text-center text-sm text-spotify-light-gray">
                 Valorá canciones de álbumes para ver rankings acá.
               </p>
             ) : (
               <ul className="divide-y divide-white/5">
-                {data.topAlbums.slice(0, 15).map((a, idx) => (
+                {data.topAlbums.slice(0, showAllAlbums ? DASH_EXPANDED : DASH_PREVIEW).map((a, idx) => (
                   <li
                     key={a.album_id}
                     className="flex items-center gap-2.5 py-2"
@@ -1331,6 +1349,15 @@ function DashboardTab({
               </ul>
             )}
           </CardContent>
+          {data.topAlbums.length > DASH_PREVIEW && (
+            <button
+              type="button"
+              onClick={() => setShowAllAlbums((p) => !p)}
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+            >
+              {showAllAlbums ? "Ver menos" : `Ver los ${data.topAlbums.length}`}
+            </button>
+          )}
         </Card>
 
         <Card>
@@ -1343,14 +1370,14 @@ function DashboardTab({
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="max-h-[420px] overflow-y-auto px-3 pb-4 pt-0">
+          <CardContent className={cn("overflow-y-auto px-3 pb-2 pt-0", showAllArtists ? "max-h-[600px]" : "max-h-[420px]")}>
             {data.topArtists.length === 0 ? (
               <p className="py-6 text-center text-sm text-spotify-light-gray">
                 Valorá canciones para ver los promedios por artista.
               </p>
             ) : (
               <ul className="divide-y divide-white/5">
-                {data.topArtists.slice(0, 15).map((a, idx) => (
+                {data.topArtists.slice(0, showAllArtists ? DASH_EXPANDED : DASH_PREVIEW).map((a, idx) => (
                   <li
                     key={a.artist_id}
                     className="flex items-center gap-2.5 py-2"
@@ -1378,6 +1405,15 @@ function DashboardTab({
               </ul>
             )}
           </CardContent>
+          {data.topArtists.length > DASH_PREVIEW && (
+            <button
+              type="button"
+              onClick={() => setShowAllArtists((p) => !p)}
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+            >
+              {showAllArtists ? "Ver menos" : `Ver los ${data.topArtists.length}`}
+            </button>
+          )}
         </Card>
       </div>
 

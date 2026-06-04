@@ -131,7 +131,7 @@ BEGIN
       ORDER BY public.rating_song_key(t.name, t.artist_id), sr.rating DESC, sr.updated_at DESC
     ) l
     ORDER BY l.rating DESC, l.updated_at DESC
-    LIMIT 20
+    LIMIT 100
   ) q;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
@@ -184,7 +184,7 @@ BEGIN
     GROUP BY al.id, al.name, ar.name, al.image_url
     HAVING COUNT(lr.rating) = COUNT(t.id)
     ORDER BY AVG(lr.rating) DESC, COUNT(lr.rating) DESC
-    LIMIT 30
+    LIMIT 100
   ) q;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
@@ -216,7 +216,7 @@ BEGIN
     ) l
     GROUP BY l.artist_id, l.artist_name, l.image_url
     ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
-    LIMIT 20
+    LIMIT 100
   ) q;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
