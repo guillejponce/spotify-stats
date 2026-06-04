@@ -164,8 +164,25 @@ BEGIN
       OR (al.album_type IS NULL
           AND (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id) >= 4)
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM albums bigger
+      WHERE bigger.id != al.id
+        AND bigger.artist_id = al.artist_id
+        AND (SELECT COUNT(*) FROM tracks tb WHERE tb.album_id = bigger.id)
+            > (SELECT COUNT(*) FROM tracks ts WHERE ts.album_id = al.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM tracks sub_t
+          WHERE sub_t.album_id = al.id
+            AND NOT EXISTS (
+              SELECT 1 FROM tracks sup_t
+              WHERE sup_t.album_id = bigger.id
+                AND public.rating_song_key(sup_t.name, sup_t.artist_id)
+                    = public.rating_song_key(sub_t.name, sub_t.artist_id)
+            )
+        )
+    )
     GROUP BY al.id, al.name, ar.name, al.image_url
-    HAVING COUNT(lr.rating) > 0
+    HAVING COUNT(lr.rating) = COUNT(t.id)
     ORDER BY AVG(lr.rating) DESC, COUNT(lr.rating) DESC
     LIMIT 30
   ) q;

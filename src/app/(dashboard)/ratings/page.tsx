@@ -1437,9 +1437,12 @@ function DiscoverTab({
     async (excludeIds: string[] = []) => {
       setLoading(true);
       try {
-        const exclude = [...excludeIds, ...Array.from(ratedIds)].join(",");
+        const allExclude = new Set(excludeIds);
+        ratedIds.forEach((id) => allExclude.add(id));
+        const exclude = Array.from(allExclude).join(",");
         const res = await fetch(
-          `/api/ratings/discover?limit=15&exclude=${encodeURIComponent(exclude)}`
+          `/api/ratings/discover?limit=15&exclude=${encodeURIComponent(exclude)}&_t=${Date.now()}`,
+          { cache: "no-store" }
         );
         if (res.ok) {
           const data = await res.json();
@@ -1465,12 +1468,15 @@ function DiscoverTab({
     });
   }, [fetchBatch, fetchedOnce]);
 
-  const current = queue[currentIdx] ?? null;
-  const totalInQueue = queue.length;
+  const pending = useMemo(
+    () => queue.filter((t) => !ratedIds.has(t.id)),
+    [queue, ratedIds]
+  );
+  const current = pending[currentIdx] ?? null;
   const ratedCount = ratedIds.size;
 
   function goNext() {
-    if (currentIdx < queue.length - 1) {
+    if (currentIdx < pending.length - 1) {
       setCurrentIdx((i) => i + 1);
     }
   }
@@ -1494,13 +1500,6 @@ function DiscoverTab({
     onRate(searchTrack, rating);
     setRatedIds((prev) => new Set(prev).add(track.id));
     setRatedMap((prev) => new Map(prev).set(track.id, rating));
-
-    // Auto-advance after a short delay
-    setTimeout(() => {
-      if (currentIdx < queue.length - 1) {
-        setCurrentIdx((i) => i + 1);
-      }
-    }, 600);
   }
 
   async function loadMore() {
@@ -1508,15 +1507,29 @@ function DiscoverTab({
     const newTracks = await fetchBatch(existingIds);
     if (newTracks.length > 0) {
       setQueue((prev) => [...prev, ...newTracks]);
-      setCurrentIdx(queue.length);
+      setCurrentIdx(0);
     }
   }
 
   async function shuffleNew() {
+    const allExclude = Array.from(ratedIds);
     setQueue([]);
     setCurrentIdx(0);
-    const newTracks = await fetchBatch(Array.from(ratedIds));
-    setQueue(newTracks);
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/ratings/discover?limit=15&exclude=${encodeURIComponent(allExclude.join(","))}&_t=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setQueue(data.tracks || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
     setCurrentIdx(0);
   }
 
@@ -1531,19 +1544,35 @@ function DiscoverTab({
     );
   }
 
-  if (!loading && queue.length === 0) {
+  if (!loading && pending.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <div className="flex h-20 w-20 items-center justify-center rounded-full bg-spotify-green/10">
           <Check className="h-10 w-10 text-spotify-green/60" />
         </div>
         <p className="text-lg font-medium text-white">
-          ¡Todas valoradas!
+          {ratedCount > 0
+            ? `¡${ratedCount} valorada${ratedCount === 1 ? "" : "s"} esta sesión!`
+            : "¡Todas valoradas!"}
         </p>
         <p className="max-w-sm text-sm text-spotify-light-gray">
-          No quedan canciones escuchadas sin valorar. Seguí escuchando música y
-          volvé después.
+          {ratedCount > 0
+            ? "Podés cargar más canciones o mezclar para seguir valorando."
+            : "No quedan canciones escuchadas sin valorar. Seguí escuchando música y volvé después."}
         </p>
+        {ratedCount > 0 && (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void shuffleNew()}
+              className="gap-1"
+            >
+              <Shuffle className="h-4 w-4" />
+              Cargar más
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -1556,7 +1585,7 @@ function DiscoverTab({
       {/* Progress and controls header */}
       <div className="flex w-full max-w-md items-center justify-between">
         <p className="text-xs text-spotify-light-gray/70">
-          {currentIdx + 1} / {totalInQueue}
+          {pending.length > 0 ? `${currentIdx + 1} / ${pending.length}` : "—"}
           {ratedCount > 0 && (
             <span className="ml-2 text-spotify-green">
               · {ratedCount} valorada{ratedCount === 1 ? "" : "s"} esta sesión
@@ -1668,7 +1697,7 @@ function DiscoverTab({
               Anterior
             </Button>
 
-            {currentIdx >= queue.length - 3 ? (
+            {currentIdx >= pending.length - 3 ? (
               <Button
                 variant="secondary"
                 size="sm"
@@ -1689,7 +1718,7 @@ function DiscoverTab({
               variant="secondary"
               size="sm"
               onClick={goNext}
-              disabled={currentIdx >= queue.length - 1}
+              disabled={currentIdx >= pending.length - 1}
               className="gap-1"
             >
               Siguiente
