@@ -95,7 +95,8 @@ export default function TracksPage() {
           Canciones
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Ranking de canciones por reproducciones en el período elegido ({CHILE_TIMEZONE_LABEL}).
+          Ranking por reproducciones registradas (segmentos en la base), igual que el dashboard
+          ({CHILE_TIMEZONE_LABEL}).
         </p>
       </div>
 

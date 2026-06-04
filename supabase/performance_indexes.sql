@@ -17,7 +17,7 @@ CREATE INDEX IF NOT EXISTS idx_plays_track_played_at
   ON plays (track_id, played_at)
   WHERE track_id IS NOT NULL;
 
--- Leaderboard por track EXCLUYENDO skips (ms_played >= 30s)
+-- Opcional: consultas que excluyan skips (< 30s); el leaderboard /tracks usa todos los segmentos
 CREATE INDEX IF NOT EXISTS idx_plays_track_played_at_no_skip
   ON plays (track_id, played_at)
   WHERE track_id IS NOT NULL AND ms_played >= 30000;
@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_plays_played_at_covering
   ON plays (played_at)
   INCLUDE (track_id, artist_id, album_id, ms_played);
 
--- Covering index solo plays significativos (>= 30s) — para tracks leaderboard
+-- Covering index solo plays >= 30s (consultas opcionales, no el leaderboard /tracks)
 CREATE INDEX IF NOT EXISTS idx_plays_played_at_no_skip_covering
   ON plays (played_at)
   INCLUDE (track_id, ms_played)
