@@ -94,6 +94,27 @@ export async function getRatedTracks(options: {
   const supabase = createServerSupabaseClient();
   const { search, offset = 0, limit = 36, sortBy = "rating_desc" } = options;
 
+  // Try RPC (much faster: single SQL with proper indexes)
+  if (!search) {
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_rated_tracks", {
+      sort_mode: sortBy,
+      result_offset: offset,
+      result_limit: limit,
+    });
+
+    if (!rpcError && rpcData) {
+      const rows = Array.isArray(rpcData) ? rpcData : [];
+      const tracks: SongRating[] = rows.map((r: Record<string, unknown>) => mapRpcSongRating(r));
+
+      const { count } = await supabase
+        .from("song_ratings")
+        .select("*", { count: "exact", head: true });
+
+      return { tracks, total: count ?? rows.length };
+    }
+  }
+
+  // Fallback: PostgREST query
   let query = supabase
     .from("song_ratings")
     .select(
@@ -154,6 +175,66 @@ export async function getRatedTracks(options: {
 }
 
 export async function getRatingsDashboard(): Promise<RatingsDashboard> {
+  const supabase = createServerSupabaseClient();
+
+  // Try optimized RPC first
+  const { data: rpcData, error: rpcError } = await supabase.rpc("get_ratings_dashboard");
+
+  if (!rpcError && rpcData) {
+    const d = (typeof rpcData === "string" ? JSON.parse(rpcData) : rpcData) as Record<string, unknown>;
+    return {
+      totalRated: numeric(d.totalRated),
+      avgRating: numeric(d.avgRating),
+      topTracks: asRpcArray(d.topTracks).map(mapRpcSongRating),
+      topAlbums: asRpcArray(d.topAlbums).map((r) => ({
+        album_id: String(r.album_id ?? ""),
+        album_name: String(r.album_name ?? ""),
+        artist_name: r.artist_name ? String(r.artist_name) : null,
+        image_url: r.image_url ? String(r.image_url) : null,
+        avg_rating: numeric(r.avg_rating),
+        rated_tracks: numeric(r.rated_tracks),
+        total_tracks: numeric(r.rated_tracks),
+      })),
+      topArtists: asRpcArray(d.topArtists).map((r) => ({
+        artist_id: String(r.artist_id ?? ""),
+        artist_name: String(r.artist_name ?? ""),
+        image_url: r.image_url ? String(r.image_url) : null,
+        avg_rating: numeric(r.avg_rating),
+        rated_tracks: numeric(r.rated_tracks),
+      })),
+      recentRatings: asRpcArray(d.recentRatings).map(mapRpcSongRating),
+      distribution: asRpcArray(d.distribution).map((r) => ({
+        rating: numeric(r.rating),
+        count: numeric(r.count),
+      })),
+    };
+  }
+
+  // Fallback: compute in JS
+  return getRatingsDashboardFallback();
+}
+
+function asRpcArray(data: unknown): Record<string, unknown>[] {
+  if (data == null) return [];
+  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+}
+
+function mapRpcSongRating(r: Record<string, unknown>): SongRating {
+  return {
+    track_id: String(r.track_id ?? ""),
+    rating: numeric(r.rating),
+    track_name: String(r.track_name ?? ""),
+    artist_name: r.artist_name ? String(r.artist_name) : null,
+    album_name: r.album_name ? String(r.album_name) : null,
+    album_id: r.album_id ? String(r.album_id) : null,
+    artist_id: r.artist_id ? String(r.artist_id) : null,
+    image_url: r.image_url ? String(r.image_url) : null,
+    created_at: String(r.created_at ?? ""),
+    updated_at: String(r.updated_at ?? ""),
+  };
+}
+
+async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
   const supabase = createServerSupabaseClient();
 
   const { data: allRatings, error } = await supabase
@@ -274,6 +355,24 @@ export async function searchTracksForRating(
 ): Promise<{ id: string; name: string; artist_name: string | null; album_name: string | null; image_url: string | null; current_rating: number | null }[]> {
   const supabase = createServerSupabaseClient();
 
+  // Try RPC (single query with LEFT JOIN to song_ratings, uses indexes)
+  const { data: rpcData, error: rpcError } = await supabase.rpc("search_tracks_for_rating", {
+    search_query: query,
+    result_limit: limit,
+  });
+
+  if (!rpcError && rpcData) {
+    return (Array.isArray(rpcData) ? rpcData : []).map((r: Record<string, unknown>) => ({
+      id: String(r.id ?? ""),
+      name: String(r.name ?? ""),
+      artist_name: r.artist_name ? String(r.artist_name) : null,
+      album_name: r.album_name ? String(r.album_name) : null,
+      image_url: r.image_url ? String(r.image_url) : null,
+      current_rating: r.current_rating != null ? numeric(r.current_rating) : null,
+    }));
+  }
+
+  // Fallback: two queries
   const { data, error } = await supabase
     .from("tracks")
     .select(
