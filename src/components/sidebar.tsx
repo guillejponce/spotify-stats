@@ -13,6 +13,7 @@ import {
   X,
   Users,
   Library,
+  Star,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/tracks", label: "Canciones", icon: Music2 },
   { href: "/artists", label: "Artistas", icon: Users },
   { href: "/albums", label: "Álbumes", icon: Library },
+  { href: "/ratings", label: "Valoraciones", icon: Star },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },
