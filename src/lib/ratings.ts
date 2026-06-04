@@ -345,7 +345,7 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
 
   const topTracks = [...logical]
     .sort((a, b) => b.rating - a.rating || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-    .slice(0, 20);
+    .slice(0, 100);
 
   const recentRatings = [...logical]
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
@@ -404,7 +404,7 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
       total_tracks: albumMeta.get(album_id)?.total_tracks ?? v.count,
     }))
     .sort((a, b) => b.avg_rating - a.avg_rating || b.rated_tracks - a.rated_tracks)
-    .slice(0, 30);
+    .slice(0, 100);
 
   const artistMap = new Map<string, { sum: number; count: number; name: string; image: string | null }>();
   for (const r of logical) {
@@ -415,6 +415,7 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
     artistMap.set(r.artist_id, prev);
   }
   const topArtists: RatedArtist[] = Array.from(artistMap.entries())
+    .filter(([, v]) => v.count > 10)
     .map(([artist_id, v]) => ({
       artist_id,
       artist_name: v.name,
@@ -423,7 +424,7 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
       rated_tracks: v.count,
     }))
     .sort((a, b) => b.avg_rating - a.avg_rating || b.rated_tracks - a.rated_tracks)
-    .slice(0, 20);
+    .slice(0, 100);
 
   return {
     totalRated,

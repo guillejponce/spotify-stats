@@ -215,6 +215,7 @@ BEGIN
       ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
     ) l
     GROUP BY l.artist_id, l.artist_name, l.image_url
+    HAVING COUNT(*) > 10
     ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
     LIMIT 100
   ) q;
