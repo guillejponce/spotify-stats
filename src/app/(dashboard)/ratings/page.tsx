@@ -24,7 +24,7 @@ import {
   Check,
   BarChart3,
 } from "lucide-react";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn, formatNumber, formatReproductionCount } from "@/lib/utils";
 import { ratingSongKey } from "@/lib/rating-identity";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -93,9 +93,22 @@ interface SelectedAlbum {
   image_url: string | null;
 }
 
+interface TrackPlayRecord {
+  id: string;
+  played_at: string;
+  ms_played: number;
+  platform: string | null;
+}
+
 type RateMode = "track" | "album";
 type RankingView = "songs" | "albums" | "artists";
 type SortOption = "rating_desc" | "rating_asc" | "recent" | "name";
+
+function fmtAvg(v: number): string {
+  if (Number.isInteger(v)) return String(v);
+  const s = v.toFixed(3);
+  return s.replace(/\.?0+$/, "");
+}
 
 // ─── Small reusable components ──────────────────────────────────────────────
 
@@ -196,9 +209,11 @@ function RankBadge({ rank }: { rank: number }) {
 function RatingBadge({
   value,
   size = "sm",
+  count,
 }: {
   value: number;
   size?: "sm" | "md";
+  count?: number;
 }) {
   const color =
     value >= 8
@@ -214,7 +229,10 @@ function RatingBadge({
         size === "md" ? "px-2.5 py-1 text-sm" : "px-2 py-0.5 text-xs"
       )}
     >
-      {value}
+      {fmtAvg(value)}
+      {count != null && (
+        <span className="ml-0.5 font-normal opacity-60">({count})</span>
+      )}
     </span>
   );
 }
@@ -283,6 +301,10 @@ export default function RatingsPage() {
   const [ratedSort, setRatedSort] = useState<SortOption>("rating_desc");
   const [deletingTrack, setDeletingTrack] = useState<string | null>(null);
   const [expandedAlbum, setExpandedAlbum] = useState<string | null>(null);
+  const [expandedTrack, setExpandedTrack] = useState<string | null>(null);
+  const [trackPlays, setTrackPlays] = useState<TrackPlayRecord[]>([]);
+  const [trackPlaysLoading, setTrackPlaysLoading] = useState(false);
+  const [trackPlaysTotal, setTrackPlaysTotal] = useState(0);
 
   // Compare
   const [compareAlbums, setCompareAlbums] = useState<RatedAlbum[]>([]);
@@ -380,6 +402,26 @@ export default function RatingsPage() {
     void loadRated(0, false);
   }, [loadRated]);
 
+  useEffect(() => {
+    if (!expandedTrack) {
+      setTrackPlays([]);
+      setTrackPlaysTotal(0);
+      return;
+    }
+    setTrackPlaysLoading(true);
+    fetch(`/api/ratings/tracks/${encodeURIComponent(expandedTrack)}/plays`)
+      .then((r) => r.json())
+      .then((d) => {
+        setTrackPlays(d.plays || []);
+        setTrackPlaysTotal(d.total ?? 0);
+      })
+      .catch(() => {
+        setTrackPlays([]);
+        setTrackPlaysTotal(0);
+      })
+      .finally(() => setTrackPlaysLoading(false));
+  }, [expandedTrack]);
+
   // ── handlers ──────────────────────────────────────────────────
 
   function syncRatingInLists(track: SearchTrack, rating: number) {
@@ -464,11 +506,7 @@ export default function RatingsPage() {
     const rated = albumTracks.filter((t) => t.current_rating != null);
     const avg =
       rated.length > 0
-        ? Math.round(
-            (rated.reduce((s, t) => s + (t.current_rating ?? 0), 0) /
-              rated.length) *
-              10
-          ) / 10
+        ? rated.reduce((s, t) => s + (t.current_rating ?? 0), 0) / rated.length
         : 0;
     return { rated: rated.length, total: albumTracks.length, avg };
   }, [albumTracks]);
@@ -596,7 +634,7 @@ export default function RatingsPage() {
                               </span>
                               {albumProgress.avg > 0 && (
                                 <span className="font-semibold text-spotify-green">
-                                  Promedio: {albumProgress.avg}
+                                  Promedio: {fmtAvg(albumProgress.avg)}
                                 </span>
                               )}
                             </div>
@@ -784,65 +822,158 @@ export default function RatingsPage() {
                     Aún no valoraste ninguna canción.
                   </EmptyState>
                 ) : (
-                  <ul className="divide-y divide-white/5">
-                    {ratedList.map((r, idx) => (
-                      <li
-                        key={r.track_id}
-                        className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center"
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <RankBadge rank={idx + 1} />
-                          <Thumb url={r.image_url} fallback={Music2} />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-white">
-                              {r.track_name}
-                            </p>
-                            <p className="truncate text-xs text-spotify-light-gray">
-                              {r.artist_name}
-                              {r.album_name && (
-                                <span className="text-spotify-light-gray/50">
-                                  {" · "}
-                                  {r.album_name}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 pl-13 sm:pl-0">
-                          <StarRating
-                            value={r.rating}
-                            onChange={(v) =>
-                              void handleRate(
-                                {
-                                  id: r.track_id,
-                                  name: r.track_name,
-                                  artist_name: r.artist_name,
-                                  album_name: r.album_name,
-                                  image_url: r.image_url,
-                                  current_rating: r.rating,
-                                  artist_id: r.artist_id,
-                                },
-                                v
-                              )
-                            }
-                            size="sm"
-                          />
+                  <div className="space-y-1">
+                    {ratedList.map((r, idx) => {
+                      const isOpen = expandedTrack === r.track_id;
+                      return (
+                        <Card
+                          key={r.track_id}
+                          className={cn(
+                            "overflow-hidden transition-colors",
+                            isOpen && "border-spotify-green/30"
+                          )}
+                        >
                           <button
                             type="button"
-                            onClick={() => void handleDelete(r.track_id)}
-                            disabled={deletingTrack === r.track_id}
-                            className="ml-2 rounded-md p-1.5 text-spotify-light-gray/50 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                            onClick={() =>
+                              setExpandedTrack(isOpen ? null : r.track_id)
+                            }
+                            className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/5"
                           >
-                            {deletingTrack === r.track_id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                            <RankBadge rank={idx + 1} />
+                            <Thumb url={r.image_url} fallback={Music2} />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-white">
+                                {r.track_name}
+                              </p>
+                              <p className="truncate text-xs text-spotify-light-gray">
+                                {r.artist_name}
+                                {r.album_name && (
+                                  <span className="text-spotify-light-gray/50">
+                                    {" · "}
+                                    {r.album_name}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <RatingBadge value={r.rating} size="md" />
+                            {isOpen ? (
+                              <ChevronUp className="h-4 w-4 shrink-0 text-spotify-light-gray/50" />
                             ) : (
-                              <Trash2 className="h-4 w-4" />
+                              <ChevronDown className="h-4 w-4 shrink-0 text-spotify-light-gray/50" />
                             )}
                           </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+
+                          {isOpen && (
+                            <div className="border-t border-white/5 bg-white/[0.02] px-4 pb-4 pt-3">
+                              {/* rating controls */}
+                              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-spotify-light-gray">
+                                    Tu valoración:
+                                  </span>
+                                  <StarRating
+                                    value={r.rating}
+                                    onChange={(v) =>
+                                      void handleRate(
+                                        {
+                                          id: r.track_id,
+                                          name: r.track_name,
+                                          artist_name: r.artist_name,
+                                          album_name: r.album_name,
+                                          image_url: r.image_url,
+                                          current_rating: r.rating,
+                                          artist_id: r.artist_id,
+                                        },
+                                        v
+                                      )
+                                    }
+                                    size="sm"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleDelete(r.track_id);
+                                  }}
+                                  disabled={deletingTrack === r.track_id}
+                                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-spotify-light-gray/50 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                                >
+                                  {deletingTrack === r.track_id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  )}
+                                  Eliminar
+                                </button>
+                              </div>
+
+                              {/* play history */}
+                              <div>
+                                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-spotify-light-gray">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  Historial de reproducciones
+                                  {!trackPlaysLoading && (
+                                    <span className="font-normal text-spotify-light-gray/50">
+                                      ({formatReproductionCount(trackPlaysTotal)})
+                                    </span>
+                                  )}
+                                </p>
+                                {trackPlaysLoading ? (
+                                  <LoadingLine text="Cargando reproducciones…" />
+                                ) : trackPlays.length === 0 ? (
+                                  <p className="py-3 text-center text-xs text-spotify-light-gray/50">
+                                    Sin reproducciones registradas.
+                                  </p>
+                                ) : (
+                                  <ul className="max-h-60 space-y-1 overflow-y-auto">
+                                    {trackPlays.map((p) => (
+                                      <li
+                                        key={p.id}
+                                        className="flex items-center justify-between rounded-md bg-white/[0.03] px-3 py-1.5 text-xs"
+                                      >
+                                        <span className="text-white">
+                                          {new Date(
+                                            p.played_at
+                                          ).toLocaleDateString("es-CL", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                          })}
+                                          {" · "}
+                                          {new Date(
+                                            p.played_at
+                                          ).toLocaleTimeString("es-CL", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
+                                        </span>
+                                        <span className="text-spotify-light-gray/50">
+                                          {Math.round(p.ms_played / 1000 / 60)}
+                                          :{String(
+                                            Math.round(
+                                              (p.ms_played / 1000) % 60
+                                            )
+                                          ).padStart(2, "0")}{" "}
+                                          min
+                                          {p.platform && (
+                                            <span className="ml-2">
+                                              {p.platform}
+                                            </span>
+                                          )}
+                                        </span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </div>
                 )}
                 {ratedHasMore && !ratedLoading && (
                   <div className="flex justify-center">
@@ -966,7 +1097,7 @@ export default function RatingsPage() {
                               {a.rated_tracks === 1 ? "" : "s"}
                             </p>
                           </div>
-                          <RatingBadge value={a.avg_rating} />
+                          <RatingBadge value={a.avg_rating} count={a.rated_tracks} />
                           <button
                             type="button"
                             onClick={() => toggleCompareArtist(a)}
@@ -1061,13 +1192,17 @@ function DashboardTab({
         />
         <StatCard
           icon={Disc3}
-          value={bestAlbum ? String(bestAlbum.avg_rating) : "—"}
+          value={bestAlbum ? fmtAvg(bestAlbum.avg_rating) : "—"}
           label={bestAlbum ? bestAlbum.album_name : "Mejor álbum"}
-          sublabel={bestAlbum?.artist_name ?? undefined}
+          sublabel={
+            bestAlbum
+              ? `${bestAlbum.artist_name} (${bestAlbum.rated_tracks})`
+              : undefined
+          }
         />
         <StatCard
           icon={Users}
-          value={bestArtist ? String(bestArtist.avg_rating) : "—"}
+          value={bestArtist ? fmtAvg(bestArtist.avg_rating) : "—"}
           label={bestArtist ? bestArtist.artist_name : "Mejor artista"}
           sublabel={
             bestArtist
@@ -1154,8 +1289,7 @@ function DashboardTab({
                         {a.album_name}
                       </p>
                       <p className="truncate text-[11px] text-spotify-light-gray/70">
-                        {a.artist_name} · {a.rated_tracks} canción
-                        {a.rated_tracks === 1 ? "" : "es"}
+                        {a.artist_name} ({a.rated_tracks})
                       </p>
                     </div>
                     <RatingBadge value={a.avg_rating} />
@@ -1200,7 +1334,7 @@ function DashboardTab({
                         {a.artist_name}
                       </p>
                       <p className="truncate text-[11px] text-spotify-light-gray/70">
-                        {a.rated_tracks} canción
+                        ({a.rated_tracks}) canción
                         {a.rated_tracks === 1 ? "" : "es"} valorada
                         {a.rated_tracks === 1 ? "" : "s"}
                       </p>
@@ -1388,11 +1522,7 @@ function ExpandableAlbumRow({
   const rated = tracks.filter((t) => t.current_rating != null);
   const avg =
     rated.length > 0
-      ? Math.round(
-          (rated.reduce((s, t) => s + (t.current_rating ?? 0), 0) /
-            rated.length) *
-            10
-        ) / 10
+      ? rated.reduce((s, t) => s + (t.current_rating ?? 0), 0) / rated.length
       : 0;
 
   return (
@@ -1418,7 +1548,7 @@ function ExpandableAlbumRow({
             {album.rated_tracks === 1 ? "" : "es"}
           </p>
         </div>
-        <RatingBadge value={album.avg_rating} size="md" />
+        <RatingBadge value={album.avg_rating} size="md" count={album.rated_tracks} />
         <button
           type="button"
           onClick={(e) => {
@@ -1473,7 +1603,7 @@ function ExpandableAlbumRow({
                     />
                   </div>
                   <span className="font-semibold text-spotify-green">
-                    {avg}
+                    {fmtAvg(avg)}
                   </span>
                 </div>
               )}
@@ -1567,7 +1697,7 @@ function ComparePanel({
                 <div className="mt-1 flex items-center gap-1">
                   <Star className="h-3.5 w-3.5 fill-spotify-green text-spotify-green" />
                   <span className="text-lg font-bold text-spotify-green">
-                    {item.avg_rating}
+                    {fmtAvg(item.avg_rating)}
                   </span>
                   <span className="text-[11px] text-spotify-light-gray/50">
                     ({item.count} canción{item.count === 1 ? "" : "es"})
@@ -1589,7 +1719,7 @@ function ComparePanel({
             <span className="font-semibold text-white">{winner.name}</span>{" "}
             supera por{" "}
             <span className="font-semibold text-spotify-green">
-              {diff.toFixed(1)}
+              {fmtAvg(diff)}
             </span>{" "}
             puntos
           </div>
@@ -1598,7 +1728,7 @@ function ComparePanel({
           <div className="mt-3 rounded-lg bg-white/5 px-3 py-2 text-center text-xs text-spotify-light-gray">
             Empate perfecto en{" "}
             <span className="font-semibold text-spotify-green">
-              {a.avg_rating}
+              {fmtAvg(a.avg_rating)}
             </span>
           </div>
         )}
