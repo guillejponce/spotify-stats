@@ -70,6 +70,8 @@ async function fetchTracksLeaderboardFallback(
   const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
+  // get_top_tracks uses sessions (15min gap grouping) which inherently
+  // reduces noise from short plays, but still includes ms from skips in totals.
   const { data, error } = await supabase.rpc("get_top_tracks", {
     start_date: start,
     end_date: end,

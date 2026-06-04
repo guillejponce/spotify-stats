@@ -17,6 +17,11 @@ CREATE INDEX IF NOT EXISTS idx_plays_track_played_at
   ON plays (track_id, played_at)
   WHERE track_id IS NOT NULL;
 
+-- Leaderboard por track EXCLUYENDO skips (ms_played >= 30s)
+CREATE INDEX IF NOT EXISTS idx_plays_track_played_at_no_skip
+  ON plays (track_id, played_at)
+  WHERE track_id IS NOT NULL AND ms_played >= 30000;
+
 -- Leaderboard por artista dentro de rango temporal
 CREATE INDEX IF NOT EXISTS idx_plays_artist_played_at
   ON plays (artist_id, played_at)
@@ -31,6 +36,12 @@ CREATE INDEX IF NOT EXISTS idx_plays_album_played_at
 CREATE INDEX IF NOT EXISTS idx_plays_played_at_covering
   ON plays (played_at)
   INCLUDE (track_id, artist_id, album_id, ms_played);
+
+-- Covering index solo plays significativos (>= 30s) — para tracks leaderboard
+CREATE INDEX IF NOT EXISTS idx_plays_played_at_no_skip_covering
+  ON plays (played_at)
+  INCLUDE (track_id, ms_played)
+  WHERE ms_played >= 30000;
 
 -- Heatmap / hourly: bucket por fecha Chile (expresión precalculada)
 CREATE INDEX IF NOT EXISTS idx_plays_chile_date
