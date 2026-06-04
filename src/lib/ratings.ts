@@ -222,7 +222,7 @@ async function countLogicalRatedTracks(
   if (error) return 0;
   const keys = new Set<string>();
   for (const row of data || []) {
-    const track = row.tracks as { name: string; artist_id: string | null } | null;
+    const track = row.tracks as unknown as { name: string; artist_id: string | null } | null;
     if (!track) continue;
     keys.add(ratingSongKey(String(track.name), track.artist_id ? String(track.artist_id) : null));
   }
@@ -483,20 +483,19 @@ export async function searchTracksForRating(
     const artistId = row.artist_id ? String(row.artist_id) : null;
     const key = ratingSongKey(name, artistId);
 
-    let current_rating: number | null = null;
-    for (const [tid, r] of ratingsMap) {
-      const t = (data || []).find((x: Record<string, unknown>) => String(x.id) === tid);
-      if (!t) continue;
-      const tKey = ratingSongKey(
-        String(t.name ?? ""),
-        t.artist_id ? String(t.artist_id) : null
-      );
-      if (tKey === key) {
-        current_rating = r;
-        break;
-      }
+    let current_rating: number | null = ratingsMap.get(trackId) ?? null;
+    if (current_rating == null) {
+      ratingsMap.forEach((r, tid) => {
+        if (current_rating != null) return;
+        const t = (data || []).find((x: Record<string, unknown>) => String(x.id) === tid);
+        if (!t) return;
+        const tKey = ratingSongKey(
+          String(t.name ?? ""),
+          t.artist_id ? String(t.artist_id) : null
+        );
+        if (tKey === key) current_rating = r;
+      });
     }
-    if (current_rating == null) current_rating = ratingsMap.get(trackId) ?? null;
 
     return {
       id: trackId,
@@ -630,7 +629,7 @@ export async function getAlbumTracksForRating(
 
   const logicalRatings = new Map<string, number>();
   for (const r of existingRatings || []) {
-    const track = r.tracks as { name: string; artist_id: string | null };
+    const track = r.tracks as unknown as { name: string; artist_id: string | null };
     const key = ratingSongKey(String(track.name), track.artist_id ? String(track.artist_id) : null);
     logicalRatings.set(key, numeric(r.rating));
   }
