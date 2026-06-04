@@ -5,10 +5,12 @@ import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatMs } from "@/lib/utils";
-import { Music2, Pause, Play } from "lucide-react";
+import { formatMs, cn } from "@/lib/utils";
+import { Music2, Pause, Play, Star, Loader2 } from "lucide-react";
 
 interface NowPlayingData {
+  track_id: string | null;
+  artist_id: string | null;
   track_name: string;
   artist_name: string;
   album_name: string;
@@ -16,11 +18,14 @@ interface NowPlayingData {
   duration_ms: number;
   progress_ms: number;
   is_playing: boolean;
+  current_rating: number | null;
 }
 
 export function NowPlayingCard() {
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingRating, setSavingRating] = useState(false);
+  const [hoverStar, setHoverStar] = useState(0);
 
   const fetchNowPlaying = useCallback(async () => {
     try {
@@ -35,6 +40,25 @@ export function NowPlayingCard() {
       setLoading(false);
     }
   }, []);
+
+  async function handleRate(rating: number) {
+    if (!nowPlaying?.track_id || savingRating) return;
+    setSavingRating(true);
+    try {
+      const res = await fetch("/api/ratings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackId: nowPlaying.track_id, rating }),
+      });
+      if (res.ok) {
+        setNowPlaying((prev) => (prev ? { ...prev, current_rating: rating } : prev));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSavingRating(false);
+    }
+  }
 
   useEffect(() => {
     fetchNowPlaying();
@@ -125,6 +149,45 @@ export function NowPlayingCard() {
             </p>
           </div>
         </div>
+
+        {nowPlaying.track_id && (
+          <div className="flex items-center gap-2 px-4 pb-2">
+            <Star className="h-3.5 w-3.5 shrink-0 text-spotify-green/60" />
+            <div className="flex items-center gap-0.5">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  disabled={savingRating}
+                  onMouseEnter={() => setHoverStar(star)}
+                  onMouseLeave={() => setHoverStar(0)}
+                  onClick={() => void handleRate(star)}
+                  className="cursor-pointer transition-transform hover:scale-110"
+                >
+                  <Star
+                    className={cn(
+                      "h-4 w-4 transition-colors",
+                      (hoverStar || nowPlaying.current_rating || 0) >= star
+                        ? "fill-spotify-green text-spotify-green"
+                        : "fill-transparent text-white/20"
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+            {savingRating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-spotify-green" />
+            ) : nowPlaying.current_rating ? (
+              <span className="ml-1 text-xs font-semibold text-spotify-green">
+                {nowPlaying.current_rating}/10
+              </span>
+            ) : (
+              <span className="ml-1 text-[10px] text-spotify-light-gray/40">
+                Valorar
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="px-4 pb-4">
           <Progress value={progressPercent} />

@@ -23,6 +23,11 @@ import {
   Plus,
   Check,
   BarChart3,
+  Shuffle,
+  SkipForward,
+  ChevronLeft,
+  ChevronRight,
+  Headphones,
 } from "lucide-react";
 import { cn, formatNumber, formatReproductionCount } from "@/lib/utils";
 import { ratingSongKey } from "@/lib/rating-identity";
@@ -48,6 +53,7 @@ interface RatedAlbum {
   image_url: string | null;
   avg_rating: number;
   rated_tracks: number;
+  total_tracks: number;
 }
 
 interface RatedArtist {
@@ -98,6 +104,16 @@ interface TrackPlayRecord {
   played_at: string;
   ms_played: number;
   platform: string | null;
+}
+
+interface DiscoverTrack {
+  id: string;
+  name: string;
+  artist_id: string | null;
+  artist_name: string | null;
+  album_name: string | null;
+  image_url: string | null;
+  play_count: number;
 }
 
 type RateMode = "track" | "album";
@@ -315,7 +331,7 @@ export default function RatingsPage() {
   const fetchDashboard = useCallback(async () => {
     setDashLoading(true);
     try {
-      const res = await fetch("/api/ratings/dashboard");
+      const res = await fetch("/api/ratings/dashboard", { cache: "no-store" });
       if (res.ok) setDashboard(await res.json());
     } catch {
       /* ignore */
@@ -327,6 +343,10 @@ export default function RatingsPage() {
   useEffect(() => {
     void fetchDashboard();
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    if (activeTab === "dashboard") void fetchDashboard();
+  }, [activeTab, fetchDashboard]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -379,7 +399,8 @@ export default function RatingsPage() {
       if (!append) setRatedLoading(true);
       try {
         const res = await fetch(
-          `/api/ratings?offset=${offset}&limit=37&sort=${ratedSort}`
+          `/api/ratings?offset=${offset}&limit=37&sort=${ratedSort}`,
+          { cache: "no-store" }
         );
         const data = await res.json();
         const list: SongRating[] = data.tracks || [];
@@ -401,6 +422,10 @@ export default function RatingsPage() {
   useEffect(() => {
     void loadRated(0, false);
   }, [loadRated]);
+
+  useEffect(() => {
+    if (activeTab === "rankings") void loadRated(0, false);
+  }, [activeTab, loadRated]);
 
   useEffect(() => {
     if (!expandedTrack) {
@@ -533,6 +558,7 @@ export default function RatingsPage() {
         <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1">
           <TabsList className="inline-flex w-max flex-nowrap gap-1">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="discover">Descubrir</TabsTrigger>
             <TabsTrigger value="rate">Valorar</TabsTrigger>
             <TabsTrigger value="rankings">Rankings</TabsTrigger>
           </TabsList>
@@ -541,6 +567,11 @@ export default function RatingsPage() {
         {/* ────────────── DASHBOARD ────────────── */}
         <TabsContent value="dashboard">
           <DashboardTab data={dashboard} loading={dashLoading} />
+        </TabsContent>
+
+        {/* ────────────── DISCOVER ────────────── */}
+        <TabsContent value="discover">
+          <DiscoverTab onRate={handleRate} savingTrack={savingTrack} />
         </TabsContent>
 
         {/* ────────────── RATE ────────────── */}
@@ -1002,6 +1033,7 @@ export default function RatingsPage() {
                       image_url: a.image_url,
                       avg_rating: a.avg_rating,
                       count: a.rated_tracks,
+                      total: a.total_tracks,
                     }))}
                     onRemove={(id) =>
                       setCompareAlbums((p) =>
@@ -1196,7 +1228,7 @@ function DashboardTab({
           label={bestAlbum ? bestAlbum.album_name : "Mejor álbum"}
           sublabel={
             bestAlbum
-              ? `${bestAlbum.artist_name} (${bestAlbum.rated_tracks})`
+              ? `${bestAlbum.artist_name} (${bestAlbum.rated_tracks}/${bestAlbum.total_tracks})`
               : undefined
           }
         />
@@ -1289,7 +1321,7 @@ function DashboardTab({
                         {a.album_name}
                       </p>
                       <p className="truncate text-[11px] text-spotify-light-gray/70">
-                        {a.artist_name} ({a.rated_tracks})
+                        {a.artist_name} ({a.rated_tracks}/{a.total_tracks})
                       </p>
                     </div>
                     <RatingBadge value={a.avg_rating} />
@@ -1379,6 +1411,329 @@ function DashboardTab({
             </ul>
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Discover Tab ────────────────────────────────────────────────────────────
+
+function DiscoverTab({
+  onRate,
+  savingTrack,
+}: {
+  onRate: (track: SearchTrack, rating: number) => void;
+  savingTrack: string | null;
+}) {
+  const [queue, setQueue] = useState<DiscoverTrack[]>([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [ratedIds, setRatedIds] = useState<Set<string>>(new Set());
+  const [ratedMap, setRatedMap] = useState<Map<string, number>>(new Map());
+  const [fetchedOnce, setFetchedOnce] = useState(false);
+
+  const fetchBatch = useCallback(
+    async (excludeIds: string[] = []) => {
+      setLoading(true);
+      try {
+        const exclude = [...excludeIds, ...Array.from(ratedIds)].join(",");
+        const res = await fetch(
+          `/api/ratings/discover?limit=15&exclude=${encodeURIComponent(exclude)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const tracks: DiscoverTrack[] = data.tracks || [];
+          return tracks;
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+      return [];
+    },
+    [ratedIds]
+  );
+
+  useEffect(() => {
+    if (fetchedOnce) return;
+    setFetchedOnce(true);
+    void fetchBatch().then((tracks) => {
+      setQueue(tracks);
+      setCurrentIdx(0);
+    });
+  }, [fetchBatch, fetchedOnce]);
+
+  const current = queue[currentIdx] ?? null;
+  const totalInQueue = queue.length;
+  const ratedCount = ratedIds.size;
+
+  function goNext() {
+    if (currentIdx < queue.length - 1) {
+      setCurrentIdx((i) => i + 1);
+    }
+  }
+
+  function goPrev() {
+    if (currentIdx > 0) {
+      setCurrentIdx((i) => i - 1);
+    }
+  }
+
+  async function handleDiscover(track: DiscoverTrack, rating: number) {
+    const searchTrack: SearchTrack = {
+      id: track.id,
+      name: track.name,
+      artist_name: track.artist_name,
+      album_name: track.album_name,
+      image_url: track.image_url,
+      current_rating: rating,
+      artist_id: track.artist_id,
+    };
+    onRate(searchTrack, rating);
+    setRatedIds((prev) => new Set(prev).add(track.id));
+    setRatedMap((prev) => new Map(prev).set(track.id, rating));
+
+    // Auto-advance after a short delay
+    setTimeout(() => {
+      if (currentIdx < queue.length - 1) {
+        setCurrentIdx((i) => i + 1);
+      }
+    }, 600);
+  }
+
+  async function loadMore() {
+    const existingIds = queue.map((t) => t.id);
+    const newTracks = await fetchBatch(existingIds);
+    if (newTracks.length > 0) {
+      setQueue((prev) => [...prev, ...newTracks]);
+      setCurrentIdx(queue.length);
+    }
+  }
+
+  async function shuffleNew() {
+    setQueue([]);
+    setCurrentIdx(0);
+    const newTracks = await fetchBatch(Array.from(ratedIds));
+    setQueue(newTracks);
+    setCurrentIdx(0);
+  }
+
+  if (loading && queue.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-spotify-green" />
+        <p className="text-sm text-spotify-light-gray">
+          Buscando canciones sin valorar…
+        </p>
+      </div>
+    );
+  }
+
+  if (!loading && queue.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-16 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-spotify-green/10">
+          <Check className="h-10 w-10 text-spotify-green/60" />
+        </div>
+        <p className="text-lg font-medium text-white">
+          ¡Todas valoradas!
+        </p>
+        <p className="max-w-sm text-sm text-spotify-light-gray">
+          No quedan canciones escuchadas sin valorar. Seguí escuchando música y
+          volvé después.
+        </p>
+      </div>
+    );
+  }
+
+  const trackRating = current ? (ratedMap.get(current.id) ?? null) : null;
+  const isRated = current ? ratedIds.has(current.id) : false;
+
+  return (
+    <div className="flex flex-col items-center gap-6">
+      {/* Progress and controls header */}
+      <div className="flex w-full max-w-md items-center justify-between">
+        <p className="text-xs text-spotify-light-gray/70">
+          {currentIdx + 1} / {totalInQueue}
+          {ratedCount > 0 && (
+            <span className="ml-2 text-spotify-green">
+              · {ratedCount} valorada{ratedCount === 1 ? "" : "s"} esta sesión
+            </span>
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => void shuffleNew()}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-spotify-light-gray transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <Shuffle className="h-3.5 w-3.5" />
+          Mezclar
+        </button>
+      </div>
+
+      {/* Main card */}
+      {current && (
+        <div className="w-full max-w-md">
+          <Card
+            className={cn(
+              "overflow-hidden transition-all duration-300",
+              isRated && "border-spotify-green/30"
+            )}
+          >
+            <CardContent className="p-0">
+              {/* Album art */}
+              <div className="relative aspect-square w-full overflow-hidden bg-spotify-medium-gray">
+                {current.image_url ? (
+                  <Image
+                    src={current.image_url}
+                    alt={current.name}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 448px) 100vw, 448px"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <Music2 className="h-20 w-20 text-spotify-light-gray/20" />
+                  </div>
+                )}
+
+                {/* Overlay gradient */}
+                <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
+
+                {/* Track info overlay */}
+                <div className="absolute inset-x-0 bottom-0 p-5">
+                  <p className="text-lg font-bold text-white drop-shadow-lg sm:text-xl">
+                    {current.name}
+                  </p>
+                  <p className="mt-0.5 text-sm text-white/80 drop-shadow-lg">
+                    {current.artist_name}
+                  </p>
+                  {current.album_name && (
+                    <p className="mt-0.5 text-xs text-white/50 drop-shadow-lg">
+                      {current.album_name}
+                    </p>
+                  )}
+                </div>
+
+                {/* Play count badge */}
+                {current.play_count > 0 && (
+                  <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white/80 backdrop-blur-sm">
+                    <Headphones className="h-3 w-3" />
+                    {current.play_count} reproducción
+                    {current.play_count === 1 ? "" : "es"}
+                  </div>
+                )}
+
+                {/* Rated overlay */}
+                {isRated && (
+                  <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-spotify-green/90 px-2.5 py-1 text-xs font-bold text-black backdrop-blur-sm">
+                    <Star className="h-3 w-3 fill-black" />
+                    {trackRating}/10
+                  </div>
+                )}
+              </div>
+
+              {/* Rating section */}
+              <div className="space-y-3 p-5">
+                <p className="text-center text-xs text-spotify-light-gray/60">
+                  {isRated ? "Valoración guardada" : "¿Qué nota le das?"}
+                </p>
+                <div className="flex justify-center">
+                  {savingTrack === current.id ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-spotify-green" />
+                  ) : (
+                    <DiscoverStarRating
+                      value={trackRating ?? 0}
+                      onChange={(v) => void handleDiscover(current, v)}
+                    />
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Navigation */}
+          <div className="mt-4 flex items-center justify-between">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={goPrev}
+              disabled={currentIdx === 0}
+              className="gap-1"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+
+            {currentIdx >= queue.length - 3 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void loadMore()}
+                disabled={loading}
+                className="gap-1"
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Cargar más
+              </Button>
+            ) : null}
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={goNext}
+              disabled={currentIdx >= queue.length - 1}
+              className="gap-1"
+            >
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiscoverStarRating({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="flex items-center gap-1">
+      {Array.from({ length: 10 }, (_, i) => i + 1).map((star) => (
+        <button
+          key={star}
+          type="button"
+          onMouseEnter={() => setHover(star)}
+          onMouseLeave={() => setHover(0)}
+          onClick={() => onChange(star)}
+          className="cursor-pointer transition-transform hover:scale-125"
+        >
+          <Star
+            className={cn(
+              "h-6 w-6 transition-colors sm:h-7 sm:w-7",
+              (hover || value) >= star
+                ? "fill-spotify-green text-spotify-green"
+                : "fill-transparent text-white/20"
+            )}
+          />
+        </button>
+      ))}
+      {value > 0 && (
+        <span className="ml-2 text-lg font-bold text-spotify-green">
+          {value}/10
+        </span>
       )}
     </div>
   );
@@ -1544,8 +1899,8 @@ function ExpandableAlbumRow({
             {album.album_name}
           </p>
           <p className="truncate text-[11px] text-spotify-light-gray/70">
-            {album.artist_name} · {album.rated_tracks} canción
-            {album.rated_tracks === 1 ? "" : "es"}
+            {album.artist_name} · {album.rated_tracks}/{album.total_tracks} canción
+            {album.total_tracks === 1 ? "" : "es"}
           </p>
         </div>
         <RatingBadge value={album.avg_rating} size="md" count={album.rated_tracks} />
@@ -1653,6 +2008,7 @@ function ComparePanel({
     image_url: string | null;
     avg_rating: number;
     count: number;
+    total?: number;
   }[];
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -1700,7 +2056,7 @@ function ComparePanel({
                     {fmtAvg(item.avg_rating)}
                   </span>
                   <span className="text-[11px] text-spotify-light-gray/50">
-                    ({item.count} canción{item.count === 1 ? "" : "es"})
+                    ({item.count}{item.total ? `/${item.total}` : ""} canción{(item.total || item.count) === 1 ? "" : "es"})
                   </span>
                 </div>
               </div>

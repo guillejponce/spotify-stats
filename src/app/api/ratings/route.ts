@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRatedTracks, upsertRating } from "@/lib/ratings";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0",
+  "Pragma": "no-cache",
+} as const;
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +22,7 @@ export async function GET(request: NextRequest) {
       | "name";
 
     const result = await getRatedTracks({ search, offset, limit, sortBy });
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
   } catch (e) {
     console.error("[api/ratings GET]", e);
     return NextResponse.json(

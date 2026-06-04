@@ -142,25 +142,43 @@ BEGIN
       l.album_name,
       l.artist_name,
       l.image_url,
-      ROUND(AVG(l.rating)::numeric, 1) AS avg_rating,
-      COUNT(*)::integer AS rated_tracks
+      AVG(l.rating)::numeric AS avg_rating,
+      COUNT(*)::integer AS rated_tracks,
+      l.total_tracks
     FROM (
       SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
         sr.rating,
         t.album_id,
         al.name AS album_name,
         ar.name AS artist_name,
-        al.image_url
+        al.image_url,
+        al.album_type,
+        (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id)::integer AS total_tracks
       FROM song_ratings sr
       INNER JOIN tracks t ON t.id = sr.track_id
       INNER JOIN albums al ON al.id = t.album_id
       LEFT JOIN artists ar ON ar.id = t.artist_id
       WHERE t.album_id IS NOT NULL
-      ORDER BY public.rating_song_key(t.name, t.artist_id), sr.updated_at DESC
+      ORDER BY
+        public.rating_song_key(t.name, t.artist_id),
+        CASE
+          WHEN al.album_type = 'album' THEN 0
+          WHEN al.album_type IS NULL
+               AND (SELECT COUNT(*) FROM tracks t2 WHERE t2.album_id = al.id) >= 4 THEN 0
+          WHEN al.album_type = 'compilation' THEN 1
+          WHEN al.album_type IS NULL THEN 2
+          ELSE 3
+        END,
+        sr.updated_at DESC
     ) l
-    GROUP BY l.album_id, l.album_name, l.artist_name, l.image_url
+    WHERE (
+      l.album_type = 'album'
+      OR l.album_type = 'compilation'
+      OR (l.album_type IS NULL AND l.total_tracks >= 4)
+    )
+    GROUP BY l.album_id, l.album_name, l.artist_name, l.image_url, l.total_tracks
     ORDER BY AVG(l.rating) DESC, COUNT(*) DESC
-    LIMIT 20
+    LIMIT 30
   ) q;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)
@@ -448,7 +466,54 @@ AS $$
   LIMIT greatest(least(result_limit, 300), 1);
 $$;
 
--- 8) PERMISOS
+-- 8) Descubrir: canciones aleatorias escuchadas pero no valoradas
+CREATE OR REPLACE FUNCTION public.get_unrated_random_tracks(
+  result_limit integer DEFAULT 10,
+  p_exclude_ids text[] DEFAULT ARRAY['__none__']::text[]
+)
+RETURNS TABLE(
+  id text,
+  name text,
+  artist_id text,
+  artist_name text,
+  album_name text,
+  image_url text,
+  play_count bigint
+)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    t.id::text,
+    t.name,
+    t.artist_id::text,
+    ar.name AS artist_name,
+    al.name AS album_name,
+    COALESCE(al.image_url, ar.image_url) AS image_url,
+    COUNT(p.id) AS play_count
+  FROM plays p
+  JOIN tracks t ON t.id = p.track_id
+  LEFT JOIN artists ar ON ar.id = t.artist_id
+  LEFT JOIN albums al ON al.id = t.album_id
+  LEFT JOIN song_ratings sr ON sr.track_id = t.id
+  WHERE sr.track_id IS NULL
+    AND t.id::text != ALL(p_exclude_ids)
+  GROUP BY t.id, t.name, t.artist_id, ar.name, al.name, al.image_url, ar.image_url
+  ORDER BY random()
+  LIMIT result_limit;
+$$;
+
+-- 9) Obtener rating actual de un track por track_id
+CREATE OR REPLACE FUNCTION public.get_track_rating(p_track_id text)
+RETURNS integer
+LANGUAGE sql STABLE
+AS $$
+  SELECT sr.rating
+  FROM song_ratings sr
+  WHERE sr.track_id = p_track_id
+  LIMIT 1;
+$$;
+
+-- 10) PERMISOS
 GRANT ALL ON song_ratings TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.rating_song_key(text, text) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_equivalent_track_ids(text) TO anon, authenticated, service_role;
@@ -458,3 +523,5 @@ GRANT EXECUTE ON FUNCTION public.get_rated_tracks(text, integer, integer) TO ano
 GRANT EXECUTE ON FUNCTION public.search_tracks_for_rating(text, integer) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.search_albums_for_rating(text, integer) TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_album_tracks_for_rating(text, integer) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_unrated_random_tracks(integer, text[]) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_track_rating(text) TO anon, authenticated, service_role;

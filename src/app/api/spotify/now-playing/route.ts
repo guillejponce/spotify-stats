@@ -124,8 +124,20 @@ export async function GET() {
       { onConflict: "id" }
     );
 
+    let currentRating: number | null = null;
+    if (dbTrackId) {
+      const { data: ratingRow } = await supabase
+        .from("song_ratings")
+        .select("rating")
+        .eq("track_id", dbTrackId)
+        .maybeSingle();
+      if (ratingRow) currentRating = ratingRow.rating as number;
+    }
+
     return NextResponse.json({
       nowPlaying: {
+        track_id: dbTrackId,
+        artist_id: artistDbId,
         track_name: track.name,
         artist_name: track.artists?.map((a: { name: string }) => a.name).join(", "),
         album_name: track.album?.name,
@@ -133,6 +145,7 @@ export async function GET() {
         duration_ms: track.duration_ms,
         progress_ms: data.progress_ms || 0,
         is_playing: data.is_playing,
+        current_rating: currentRating,
       },
     });
   } catch (error) {

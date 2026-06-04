@@ -260,7 +260,7 @@ export async function getRatingsDashboard(): Promise<RatingsDashboard> {
         image_url: r.image_url ? String(r.image_url) : null,
         avg_rating: numeric(r.avg_rating),
         rated_tracks: numeric(r.rated_tracks),
-        total_tracks: numeric(r.rated_tracks),
+        total_tracks: numeric(r.total_tracks, numeric(r.rated_tracks)),
       })),
       topArtists: asRpcArray(d.topArtists).map((r) => ({
         artist_id: String(r.artist_id ?? ""),
@@ -356,9 +356,38 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
     distribution.push({ rating: r, count: logical.filter((x) => x.rating === r).length });
   }
 
+  // Fetch album metadata (album_type + total track count) for filtering
+  const albumIdSet = new Set<string>();
+  for (const r of logical) { if (r.album_id) albumIdSet.add(r.album_id); }
+  const albumIds = Array.from(albumIdSet);
+  const albumMeta = new Map<string, { album_type: string | null; total_tracks: number }>();
+  if (albumIds.length > 0) {
+    const { data: albumRows } = await supabase
+      .from("albums")
+      .select("id, album_type")
+      .in("id", albumIds);
+    for (const a of albumRows || []) {
+      albumMeta.set(String(a.id), { album_type: a.album_type as string | null, total_tracks: 0 });
+    }
+    const { data: trackCountRows } = await supabase
+      .from("tracks")
+      .select("album_id")
+      .in("album_id", albumIds);
+    for (const t of trackCountRows || []) {
+      const aid = String(t.album_id);
+      const m = albumMeta.get(aid);
+      if (m) m.total_tracks += 1;
+    }
+  }
+
   const albumMap = new Map<string, { sum: number; count: number; name: string; artist: string | null; image: string | null }>();
   for (const r of logical) {
     if (!r.album_id) continue;
+    const meta = albumMeta.get(r.album_id);
+    const atype = meta?.album_type;
+    const totalTracks = meta?.total_tracks ?? 0;
+    if (atype === "single") continue;
+    if (atype == null && totalTracks < 4) continue;
     const prev = albumMap.get(r.album_id) ?? { sum: 0, count: 0, name: r.album_name ?? "", artist: r.artist_name, image: r.image_url };
     prev.sum += r.rating;
     prev.count += 1;
@@ -370,12 +399,12 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
       album_name: v.name,
       artist_name: v.artist,
       image_url: v.image,
-      avg_rating: Math.round((v.sum / v.count) * 10) / 10,
+      avg_rating: v.sum / v.count,
       rated_tracks: v.count,
-      total_tracks: v.count,
+      total_tracks: albumMeta.get(album_id)?.total_tracks ?? v.count,
     }))
     .sort((a, b) => b.avg_rating - a.avg_rating || b.rated_tracks - a.rated_tracks)
-    .slice(0, 20);
+    .slice(0, 30);
 
   const artistMap = new Map<string, { sum: number; count: number; name: string; image: string | null }>();
   for (const r of logical) {
