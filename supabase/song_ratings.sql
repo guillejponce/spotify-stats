@@ -151,8 +151,8 @@ BEGIN
       ar.name AS artist_name,
       al.image_url,
       AVG(lr.rating)::numeric AS avg_rating,
-      COUNT(lr.rating)::integer AS rated_tracks,
-      COUNT(t.id)::integer AS total_tracks
+      COUNT(DISTINCT CASE WHEN lr.rating IS NOT NULL THEN lr.song_key END)::integer AS rated_tracks,
+      COUNT(DISTINCT public.rating_song_key(t.name, t.artist_id))::integer AS total_tracks
     FROM albums al
     LEFT JOIN artists ar ON ar.id = al.artist_id
     INNER JOIN tracks t ON t.album_id = al.id
@@ -182,8 +182,9 @@ BEGIN
         )
     )
     GROUP BY al.id, al.name, ar.name, al.image_url
-    HAVING COUNT(lr.rating) = COUNT(t.id)
-    ORDER BY AVG(lr.rating) DESC, COUNT(lr.rating) DESC
+    HAVING COUNT(DISTINCT CASE WHEN lr.rating IS NOT NULL THEN lr.song_key END)
+         = COUNT(DISTINCT public.rating_song_key(t.name, t.artist_id))
+    ORDER BY AVG(lr.rating) DESC, COUNT(DISTINCT CASE WHEN lr.rating IS NOT NULL THEN lr.song_key END) DESC
     LIMIT 100
   ) q;
 
@@ -407,7 +408,7 @@ AS $$
   LIMIT greatest(least(result_limit, 50), 1);
 $$;
 
--- 6) RPC: Buscar álbumes para valorar
+-- 6) RPC: Buscar álbumes para valorar (track_count deduplicado)
 CREATE OR REPLACE FUNCTION public.search_albums_for_rating(
   search_query text,
   result_limit integer DEFAULT 20
@@ -428,7 +429,7 @@ AS $$
     al.name,
     ar.name AS artist_name,
     al.image_url,
-    COUNT(t.id)::bigint AS track_count
+    COUNT(DISTINCT public.rating_song_key(t.name, t.artist_id))::bigint AS track_count
   FROM albums al
   LEFT JOIN artists ar ON ar.id = al.artist_id
   LEFT JOIN tracks t ON t.album_id = al.id
@@ -439,7 +440,7 @@ AS $$
   LIMIT greatest(least(result_limit, 40), 1);
 $$;
 
--- 7) RPC: Tracklist de un álbum para valorar
+-- 7) RPC: Tracklist de un álbum para valorar (deduplicado por canción lógica)
 CREATE OR REPLACE FUNCTION public.get_album_tracks_for_rating(
   p_album_id text,
   result_limit integer DEFAULT 200
@@ -457,19 +458,23 @@ LANGUAGE sql
 STABLE
 SET search_path = public
 AS $$
-  SELECT
-    t.id,
-    t.name,
-    t.artist_id,
-    ar.name AS artist_name,
-    al.name AS album_name,
-    COALESCE(al.image_url, ar.image_url) AS image_url,
-    public.get_logical_track_rating(t.name, t.artist_id) AS current_rating
-  FROM tracks t
-  INNER JOIN albums al ON al.id = t.album_id
-  LEFT JOIN artists ar ON ar.id = t.artist_id
-  WHERE t.album_id = p_album_id
-  ORDER BY t.name ASC
+  SELECT d.id, d.name, d.artist_id, d.artist_name, d.album_name, d.image_url, d.current_rating
+  FROM (
+    SELECT DISTINCT ON (public.rating_song_key(t.name, t.artist_id))
+      t.id,
+      t.name,
+      t.artist_id,
+      ar.name AS artist_name,
+      al.name AS album_name,
+      COALESCE(al.image_url, ar.image_url) AS image_url,
+      public.get_logical_track_rating(t.name, t.artist_id) AS current_rating
+    FROM tracks t
+    INNER JOIN albums al ON al.id = t.album_id
+    LEFT JOIN artists ar ON ar.id = t.artist_id
+    WHERE t.album_id = p_album_id
+    ORDER BY public.rating_song_key(t.name, t.artist_id), t.id
+  ) d
+  ORDER BY d.name ASC
   LIMIT greatest(least(result_limit, 300), 1);
 $$;
 

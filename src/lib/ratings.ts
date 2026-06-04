@@ -590,16 +590,20 @@ export async function searchAlbumsForRating(
   for (const row of data || []) {
     const artist = row.artists as { name: string } | { name: string }[] | null;
     const artistName = Array.isArray(artist) ? artist[0]?.name : artist?.name;
-    const { count } = await supabase
+    const { data: trackRows } = await supabase
       .from("tracks")
-      .select("*", { count: "exact", head: true })
+      .select("name, artist_id")
       .eq("album_id", row.id);
+    const uniqueKeys = new Set<string>();
+    for (const t of trackRows || []) {
+      uniqueKeys.add(ratingSongKey(String(t.name), t.artist_id ? String(t.artist_id) : null));
+    }
     results.push({
       id: String(row.id),
       name: String(row.name ?? ""),
       artist_name: artistName ? String(artistName) : null,
       image_url: row.image_url ? String(row.image_url) : null,
-      track_count: count ?? 0,
+      track_count: uniqueKeys.size,
     });
   }
   return results;
@@ -664,7 +668,7 @@ export async function getAlbumTracksForRating(
     logicalRatings.set(key, numeric(r.rating));
   }
 
-  return (data || []).map((row: Record<string, unknown>) => {
+  const mapped = (data || []).map((row: Record<string, unknown>) => {
     const artist = row.artists as Record<string, unknown> | null;
     const album = row.albums as Record<string, unknown> | null;
     const name = String(row.name ?? "");
@@ -680,5 +684,13 @@ export async function getAlbumTracksForRating(
       image_url: (album?.image_url as string | null) ?? (artist?.image_url as string | null) ?? null,
       current_rating: logicalRatings.get(key) ?? null,
     };
+  });
+
+  const seen = new Set<string>();
+  return mapped.filter((t) => {
+    const key = ratingSongKey(t.name, t.artist_id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
