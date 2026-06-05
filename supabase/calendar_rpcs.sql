@@ -60,15 +60,16 @@ BEGIN
     END IF;
   END IF;
 
-  -- Summary
+  -- Summary (join tracks to count artists reliably even when plays.artist_id is NULL)
   SELECT jsonb_build_object(
     'play_count',     COUNT(*)::bigint,
     'total_ms',       COALESCE(SUM(p.ms_played), 0)::bigint,
     'unique_tracks',  COUNT(DISTINCT p.track_id)::bigint,
-    'unique_artists', COUNT(DISTINCT p.artist_id)::bigint
+    'unique_artists', COUNT(DISTINCT tr.artist_id)::bigint
   )
   INTO v_summary
   FROM plays p
+  LEFT JOIN tracks tr ON tr.id = p.track_id
   WHERE p.played_at >= period_start AND p.played_at < period_end;
 
   -- Top tracks
@@ -95,7 +96,7 @@ BEGIN
     LIMIT greatest(least(result_limit, 50), 1)
   ) t;
 
-  -- Top artists
+  -- Top artists (join through tracks so plays with NULL artist_id still resolve)
   SELECT COALESCE(jsonb_agg(row_to_json(a)::jsonb), '[]'::jsonb)
   INTO v_artists
   FROM (
@@ -107,10 +108,12 @@ BEGIN
       COUNT(*)::bigint                     AS play_count,
       COALESCE(SUM(p.ms_played), 0)::bigint AS total_ms_played
     FROM plays p
-    JOIN artists ar ON ar.id = p.artist_id
+    JOIN tracks  tr ON tr.id = p.track_id
+    JOIN artists ar ON ar.id = tr.artist_id
     WHERE p.played_at >= period_start
       AND p.played_at < period_end
-      AND p.artist_id IS NOT NULL
+      AND p.track_id IS NOT NULL
+      AND tr.artist_id IS NOT NULL
     GROUP BY ar.id, ar.name, ar.image_url, ar.spotify_url
     ORDER BY COUNT(*) DESC, SUM(p.ms_played) DESC, ar.name ASC
     LIMIT greatest(least(result_limit, 50), 1)
