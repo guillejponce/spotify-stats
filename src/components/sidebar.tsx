@@ -14,6 +14,7 @@ import {
   Users,
   Library,
   Star,
+  CalendarDays,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/artists", label: "Artistas", icon: Users },
   { href: "/albums", label: "Álbumes", icon: Library },
   { href: "/ratings", label: "Valoraciones", icon: Star },
+  { href: "/calendar", label: "Calendario", icon: CalendarDays },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },

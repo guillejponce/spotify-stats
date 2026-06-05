@@ -117,6 +117,56 @@ export interface DayOfWeekData {
   play_count: number;
 }
 
+/* ── Calendar / Memories ── */
+
+export interface CalendarSummary {
+  play_count: number;
+  total_ms: number;
+  unique_tracks: number;
+  unique_artists: number;
+}
+
+export interface CalendarTrack {
+  id: string;
+  name: string;
+  image_url: string | null;
+  artist_name: string | null;
+  spotify_url: string | null;
+  play_count: number;
+  total_ms_played: number;
+}
+
+export interface CalendarArtist {
+  id: string;
+  name: string;
+  image_url: string | null;
+  spotify_url: string | null;
+  play_count: number;
+  total_ms_played: number;
+}
+
+export interface CalendarAlbum {
+  id: string;
+  name: string;
+  image_url: string | null;
+  artist_name: string | null;
+  spotify_url: string | null;
+  play_count: number;
+  total_ms_played: number;
+}
+
+export interface CalendarMemories {
+  summary: CalendarSummary;
+  tracks: CalendarTrack[];
+  artists: CalendarArtist[];
+  albums: CalendarAlbum[];
+}
+
+export interface CalendarYearEntry {
+  year: number;
+  play_count: number;
+}
+
 export type TimeFilter =
   | "all"
   | "last_6_months"
