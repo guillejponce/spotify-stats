@@ -17,6 +17,21 @@ export const metadata: Metadata = {
   title: "Spotify Stats - Your Music Dashboard",
   description:
     "Personal Spotify companion dashboard showing live and historical listening data.",
+  manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icons/icon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/icon-180x180.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Statsify",
+  },
 };
 
 export default function RootLayout({
