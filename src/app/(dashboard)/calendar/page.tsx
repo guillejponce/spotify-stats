@@ -247,6 +247,7 @@ export default function CalendarPage() {
         : `Hace ${yearsAgo} años`;
 
   return (
+    <>
     <div className="flex min-h-[calc(100dvh-6rem)] flex-col space-y-6 pb-28 sm:space-y-8">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -473,24 +474,26 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Year Wheel - fixed at bottom */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.07] bg-spotify-black/90 supports-[backdrop-filter]:bg-spotify-black/80 supports-[backdrop-filter]:backdrop-blur-lg lg:left-64">
-        {yearsLoading ? (
-          <div className="flex items-center justify-center py-6">
-            <Skeleton className="h-8 w-48" />
-          </div>
-        ) : yearsArray.length > 0 && selectedYear != null ? (
-          <YearWheel
-            years={yearsArray}
-            selectedYear={selectedYear}
-            onChange={setSelectedYear}
-          />
-        ) : (
-          <p className="py-6 text-center text-sm text-spotify-light-gray/50">
-            No hay años con datos de escucha
-          </p>
-        )}
-      </div>
     </div>
+
+    {/* Year Wheel — outside the scrollable content, truly fixed */}
+    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/[0.07] bg-spotify-black/95 supports-[backdrop-filter]:bg-spotify-black/80 supports-[backdrop-filter]:backdrop-blur-xl lg:left-64">
+      {yearsLoading ? (
+        <div className="flex items-center justify-center py-6">
+          <Skeleton className="h-8 w-48" />
+        </div>
+      ) : yearsArray.length > 0 && selectedYear != null ? (
+        <YearWheel
+          years={yearsArray}
+          selectedYear={selectedYear}
+          onChange={setSelectedYear}
+        />
+      ) : (
+        <p className="py-6 text-center text-sm text-spotify-light-gray/50">
+          No hay años con datos de escucha
+        </p>
+      )}
+    </div>
+    </>
   );
 }
