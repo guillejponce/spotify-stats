@@ -121,10 +121,14 @@ export async function syncRecentPlaysFromSpotify(
 
     const artistName = primaryArtist.name || "Unknown";
 
+    // Recently Played casi nunca trae images del artista; usamos portada del álbum.
+    const artistImage =
+      primaryArtist.images?.[0]?.url ?? album?.images?.[0]?.url ?? null;
+
     const artistDbId = await upsertArtistAndGetDbId(supabase, {
       spotifyArtistId: spotifyArtistKey,
       name: artistName,
-      image_url: primaryArtist.images?.[0]?.url ?? null,
+      image_url: artistImage,
       spotify_url: primaryArtist.external_urls?.spotify ?? null,
     });
 

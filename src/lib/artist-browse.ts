@@ -136,11 +136,27 @@ export async function fetchArtistProfile(
 
   if (error || !data) return null;
 
+  let imageUrl = (data.image_url as string | null) ?? null;
+  if (!imageUrl) {
+    const { findAlbumCoverForArtist } = await import(
+      "@/lib/enrich-artist-images"
+    );
+    imageUrl = await findAlbumCoverForArtist(supabase, artistId);
+    if (imageUrl) {
+      // Persistir para próximas visitas / listados
+      void supabase
+        .from("artists")
+        .update({ image_url: imageUrl })
+        .eq("id", artistId)
+        .is("image_url", null);
+    }
+  }
+
   const g = data.genres as string[] | null;
   return {
     id: data.id as string,
     name: data.name as string,
-    image_url: (data.image_url as string | null) ?? null,
+    image_url: imageUrl,
     spotify_url: (data.spotify_url as string | null) ?? null,
     genres: Array.isArray(g) ? g : null,
   };

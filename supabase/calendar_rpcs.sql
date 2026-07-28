@@ -103,7 +103,26 @@ BEGIN
     SELECT
       ar.id,
       ar.name,
-      ar.image_url,
+      COALESCE(
+        ar.image_url,
+        (
+          SELECT al2.image_url
+          FROM public.plays p2
+          INNER JOIN public.tracks t2 ON t2.id = p2.track_id
+          INNER JOIN public.albums al2 ON al2.id = t2.album_id
+          WHERE COALESCE(p2.artist_id, t2.artist_id) = ar.id
+            AND al2.image_url IS NOT NULL
+          ORDER BY p2.played_at DESC
+          LIMIT 1
+        ),
+        (
+          SELECT al3.image_url
+          FROM public.albums al3
+          WHERE al3.artist_id = ar.id
+            AND al3.image_url IS NOT NULL
+          LIMIT 1
+        )
+      ) AS image_url,
       ar.spotify_url,
       COUNT(*)::bigint                     AS play_count,
       COALESCE(SUM(p.ms_played), 0)::bigint AS total_ms_played

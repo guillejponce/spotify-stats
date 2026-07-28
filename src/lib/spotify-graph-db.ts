@@ -3,6 +3,7 @@ import { normalizeSpotifyAlbumReleaseDate } from "@/lib/utils";
 
 /**
  * Match `/api/import` artist rows: unique on `name`, then fall back to Spotify id PK (base_script).
+ * `image_url` solo se escribe si la fila aún no tiene foto (no pisar con portada de álbum).
  */
 export async function upsertArtistAndGetDbId(
   supabase: SupabaseClient,
@@ -15,22 +16,27 @@ export async function upsertArtistAndGetDbId(
 ): Promise<string | null> {
   if (!payload.name) return null;
 
-  const extras: { image_url?: string; spotify_url?: string } = {};
-  if (payload.image_url) extras.image_url = payload.image_url;
-  if (payload.spotify_url) extras.spotify_url = payload.spotify_url;
-
-  const row = {
-    name: payload.name,
-    ...extras,
-  };
-
   const byName = await supabase
     .from("artists")
-    .upsert(row, { onConflict: "name" })
-    .select("id")
+    .upsert(
+      {
+        name: payload.name,
+        ...(payload.spotify_url ? { spotify_url: payload.spotify_url } : {}),
+      },
+      { onConflict: "name" }
+    )
+    .select("id, image_url")
     .maybeSingle();
 
-  if (!byName.error && byName.data?.id) return byName.data.id;
+  if (!byName.error && byName.data?.id) {
+    await fillArtistImageIfMissing(
+      supabase,
+      byName.data.id as string,
+      byName.data.image_url as string | null,
+      payload.image_url
+    );
+    return byName.data.id as string;
+  }
 
   const legacy = await supabase
     .from("artists")
@@ -38,16 +44,38 @@ export async function upsertArtistAndGetDbId(
       {
         id: payload.spotifyArtistId,
         name: payload.name,
-        ...extras,
+        ...(payload.spotify_url ? { spotify_url: payload.spotify_url } : {}),
       },
       { onConflict: "id" }
     )
-    .select("id")
+    .select("id, image_url")
     .maybeSingle();
 
-  if (!legacy.error && legacy.data?.id) return legacy.data.id;
+  if (!legacy.error && legacy.data?.id) {
+    await fillArtistImageIfMissing(
+      supabase,
+      legacy.data.id as string,
+      legacy.data.image_url as string | null,
+      payload.image_url
+    );
+    return legacy.data.id as string;
+  }
   console.error("[artists-db] upsert", byName.error, legacy.error);
   return null;
+}
+
+async function fillArtistImageIfMissing(
+  supabase: SupabaseClient,
+  id: string,
+  current: string | null,
+  next: string | null
+): Promise<void> {
+  if (current || !next) return;
+  await supabase
+    .from("artists")
+    .update({ image_url: next })
+    .eq("id", id)
+    .is("image_url", null);
 }
 
 /**

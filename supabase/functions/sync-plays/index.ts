@@ -342,21 +342,27 @@ Deno.serve(async (req) => {
     for (const it of items) {
       const track = it.track as SpotifyTrack;
       const primaryArtist = track.artists?.[0];
+      const album = track.album!;
+      const albumCover = album.images?.[0]?.url ?? null;
       if (primaryArtist?.id && primaryArtist.name) {
+        // Recently Played no trae foto del artista; usar portada del álbum/single.
+        const existing = artistRowsMap.get(primaryArtist.id);
         artistRowsMap.set(primaryArtist.id, {
           id: primaryArtist.id,
           name: primaryArtist.name,
-          image_url: null,
+          image_url:
+            (existing?.image_url as string | null | undefined) ??
+            albumCover ??
+            null,
           spotify_url: primaryArtist.external_urls?.spotify ?? null,
         });
       }
-      const album = track.album!;
       const primaryArtistId = album.artists?.[0]?.id!;
       albumRowsMap.set(album.id!, {
         id: album.id,
         name: album.name,
         artist_id: primaryArtistId,
-        image_url: album.images?.[0]?.url ?? null,
+        image_url: albumCover,
         release_date: parseReleaseDate(album.release_date),
         album_type: album.album_type ?? null,
         spotify_url: album.external_urls?.spotify ?? null,

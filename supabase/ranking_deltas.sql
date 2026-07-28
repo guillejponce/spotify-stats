@@ -128,14 +128,15 @@ BEGIN
   RETURN QUERY
   WITH cur_agg AS (
     SELECT
-      p.artist_id,
+      COALESCE(p.artist_id, tr.artist_id) AS artist_id,
       COUNT(*)::bigint AS pc,
       COALESCE(SUM(p.ms_played), 0)::bigint AS ms
     FROM public.plays p
+    LEFT JOIN public.tracks tr ON tr.id = p.track_id
     WHERE p.played_at >= start_date
       AND p.played_at <= end_date
-      AND p.artist_id IS NOT NULL
-    GROUP BY p.artist_id
+      AND COALESCE(p.artist_id, tr.artist_id) IS NOT NULL
+    GROUP BY COALESCE(p.artist_id, tr.artist_id)
   ),
   cur_ranked AS (
     SELECT
@@ -147,44 +148,86 @@ BEGIN
   ),
   prev_agg AS (
     SELECT
-      p.artist_id,
+      COALESCE(p.artist_id, tr.artist_id) AS artist_id,
       COUNT(*)::bigint AS pc,
       COALESCE(SUM(p.ms_played), 0)::bigint AS ms
     FROM public.plays p
+    LEFT JOIN public.tracks tr ON tr.id = p.track_id
     WHERE p.played_at >= start_date
       AND p.played_at <= prev_end_date
-      AND p.artist_id IS NOT NULL
-    GROUP BY p.artist_id
+      AND COALESCE(p.artist_id, tr.artist_id) IS NOT NULL
+    GROUP BY COALESCE(p.artist_id, tr.artist_id)
   ),
   prev_ranked AS (
     SELECT
       p.artist_id,
       ROW_NUMBER() OVER (ORDER BY p.pc DESC, p.ms DESC, p.artist_id ASC)::bigint AS prev_rnk
     FROM prev_agg p
+  ),
+  -- Paginar antes del fallback de imagen para no escanear plays por cada artista.
+  page AS (
+    SELECT
+      cr.artist_id,
+      ar.name AS ar_name,
+      ar.image_url AS ar_img,
+      cr.pc,
+      cr.ms,
+      cr.rnk,
+      pr.prev_rnk
+    FROM cur_ranked cr
+    INNER JOIN public.artists ar ON ar.id = cr.artist_id
+    LEFT JOIN prev_ranked pr ON pr.artist_id = cr.artist_id
+    WHERE (
+      search_query IS NULL
+      OR trim(search_query) = ''
+      OR ar.name ILIKE '%' || trim(search_query) || '%'
+    )
+    ORDER BY cr.rnk ASC
+    OFFSET greatest(result_offset, 0)
+    LIMIT greatest(least(result_limit, 200), 1)
   )
   SELECT
-    cr.artist_id::text AS id,
-    ar.name::text AS name,
-    ar.image_url::text AS image_url,
-    cr.pc AS play_count,
-    cr.ms AS total_ms_played,
-    cr.rnk AS rank,
-    pr.prev_rnk AS prev_rank,
+    pg.artist_id::text AS id,
+    pg.ar_name::text AS name,
+    COALESCE(
+      pg.ar_img,
+      -- Portada del último álbum/single escuchado de ese artista
+      (
+        SELECT al2.image_url
+        FROM public.plays p2
+        INNER JOIN public.tracks t2 ON t2.id = p2.track_id
+        INNER JOIN public.albums al2 ON al2.id = t2.album_id
+        WHERE COALESCE(p2.artist_id, t2.artist_id) = pg.artist_id
+          AND al2.image_url IS NOT NULL
+        ORDER BY p2.played_at DESC
+        LIMIT 1
+      ),
+      -- Fallback: cualquier álbum del artista con imagen
+      (
+        SELECT al3.image_url
+        FROM public.albums al3
+        WHERE al3.artist_id = pg.artist_id
+          AND al3.image_url IS NOT NULL
+        LIMIT 1
+      ),
+      (
+        SELECT al4.image_url
+        FROM public.tracks t4
+        INNER JOIN public.albums al4 ON al4.id = t4.album_id
+        WHERE t4.artist_id = pg.artist_id
+          AND al4.image_url IS NOT NULL
+        LIMIT 1
+      )
+    )::text AS image_url,
+    pg.pc AS play_count,
+    pg.ms AS total_ms_played,
+    pg.rnk AS rank,
+    pg.prev_rnk AS prev_rank,
     CASE
-      WHEN pr.prev_rnk IS NULL THEN NULL
-      ELSE (pr.prev_rnk - cr.rnk)::bigint
+      WHEN pg.prev_rnk IS NULL THEN NULL
+      ELSE (pg.prev_rnk - pg.rnk)::bigint
     END AS rank_delta
-  FROM cur_ranked cr
-  INNER JOIN public.artists ar ON ar.id = cr.artist_id
-  LEFT JOIN prev_ranked pr ON pr.artist_id = cr.artist_id
-  WHERE (
-    search_query IS NULL
-    OR trim(search_query) = ''
-    OR ar.name ILIKE '%' || trim(search_query) || '%'
-  )
-  ORDER BY cr.rnk ASC
-  OFFSET greatest(result_offset, 0)
-  LIMIT greatest(least(result_limit, 200), 1);
+  FROM page pg;
 END;
 $$;
 
@@ -330,13 +373,14 @@ BEGIN
     RETURN QUERY
     WITH agg AS (
       SELECT
-        p.artist_id,
+        COALESCE(p.artist_id, tr.artist_id) AS artist_id,
         COUNT(*)::bigint AS pc,
         COALESCE(SUM(p.ms_played), 0)::bigint AS ms
       FROM public.plays p
+      LEFT JOIN public.tracks tr ON tr.id = p.track_id
       WHERE p.played_at <= as_of
-        AND p.artist_id IS NOT NULL
-      GROUP BY p.artist_id
+        AND COALESCE(p.artist_id, tr.artist_id) IS NOT NULL
+      GROUP BY COALESCE(p.artist_id, tr.artist_id)
     )
     SELECT
       a.artist_id::text,
