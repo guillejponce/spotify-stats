@@ -1,15 +1,11 @@
 import { createServerSupabaseClient } from "./supabase";
-import { buildDateFilterChile } from "./chile-stats-range";
+import {
+  asRows,
+  buildLeaderboardRangeWithPrev,
+  mapRankFields,
+  numeric,
+} from "./rank-delta";
 import type { TimeFilterParams, TopItem } from "@/types/database";
-
-function numeric(v: unknown, fallback = 0): number {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return fallback;
-}
 
 function mapTopLikeRow(r: Record<string, unknown>): TopItem {
   return {
@@ -18,12 +14,8 @@ function mapTopLikeRow(r: Record<string, unknown>): TopItem {
     image_url: r.image_url == null ? null : String(r.image_url),
     play_count: numeric(r.play_count),
     total_ms_played: numeric(r.total_ms_played),
+    ...mapRankFields(r),
   };
-}
-
-function asRows(data: unknown): Record<string, unknown>[] {
-  if (data == null) return [];
-  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
 }
 
 export type ArtistBrowseRow = TopItem;
@@ -33,7 +25,39 @@ export async function fetchArtistsLeaderboard(
   options: { search: string; offset: number; limit: number }
 ): Promise<ArtistBrowseRow[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
+  const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
+  const q = options.search.trim() || null;
+
+  const { data, error } = await supabase.rpc(
+    "get_artists_leaderboard_with_delta",
+    {
+      start_date: start,
+      end_date: end,
+      prev_end_date: prevEnd,
+      search_query: q,
+      result_offset: options.offset,
+      result_limit: options.limit,
+    }
+  );
+
+  if (error) {
+    if (
+      error.message?.includes("get_artists_leaderboard_with_delta") ||
+      error.code === "PGRST202"
+    ) {
+      return await fetchArtistsLeaderboardLegacy(params, options);
+    }
+    throw error;
+  }
+  return asRows(data).map(mapTopLikeRow);
+}
+
+async function fetchArtistsLeaderboardLegacy(
+  params: TimeFilterParams,
+  options: { search: string; offset: number; limit: number }
+): Promise<ArtistBrowseRow[]> {
+  const supabase = createServerSupabaseClient();
+  const { start, end } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_artists_leaderboard", {
@@ -45,7 +69,10 @@ export async function fetchArtistsLeaderboard(
   });
 
   if (error) throw error;
-  return asRows(data).map(mapTopLikeRow);
+  return asRows(data).map((r, i) => ({
+    ...mapTopLikeRow(r),
+    rank: options.offset + i + 1,
+  }));
 }
 
 export async function fetchArtistTracksInPeriod(
@@ -54,7 +81,7 @@ export async function fetchArtistTracksInPeriod(
   limit: number = 80
 ): Promise<TopItem[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
+  const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_artist_top_tracks_in_period", {
     artist_ref: artistId,
@@ -72,7 +99,7 @@ export async function fetchArtistPeriodStats(
   artistId: string
 ): Promise<{ play_count: number; total_ms_played: number }> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
+  const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_artist_period_stats", {
     artist_ref: artistId,

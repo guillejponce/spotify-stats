@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { TimeFilterControl } from "@/components/stats/time-filter";
+import { RankChangeBadge } from "@/components/stats/rank-change-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   Music2,
   Loader2,
   Search,
@@ -139,8 +139,9 @@ export default function ArtistsPage() {
           Artistas
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Ranking por reproducciones en el período elegido ({CHILE_TIMEZONE_LABEL}).
-          Expandí cada fila para ver tus canciones más escuchadas de ese artista.
+          Ranking por reproducciones ({CHILE_TIMEZONE_LABEL}). Las flechas muestran
+          el cambio de puesto en los últimos 7 días. Expandí cada fila para ver
+          tus canciones más escuchadas de ese artista.
         </p>
       </div>
 
@@ -187,9 +188,11 @@ export default function ArtistsPage() {
                   onClick={() => void toggleExpand(a.id)}
                   className="flex min-h-[52px] w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/5 active:bg-white/10 sm:min-h-0"
                 >
-                  <span className="w-6 text-center text-xs font-medium text-spotify-light-gray/50">
-                    {idx + 1}
-                  </span>
+                  <RankChangeBadge
+                    rank={a.rank ?? idx + 1}
+                    rankDelta={a.rank_delta}
+                    prevRank={a.prev_rank}
+                  />
                   <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
                     {a.image_url ? (
                       <Image

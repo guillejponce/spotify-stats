@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { TimeFilterControl } from "@/components/stats/time-filter";
+import { RankChangeBadge } from "@/components/stats/rank-change-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,8 +100,8 @@ export default function AlbumsPage() {
           Álbumes
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Álbumes más escuchados según el período ({CHILE_TIMEZONE_LABEL}). Tocá uno para ver el
-          tracklist completo y cuántas reproducciones llevas en el rango.
+          Álbumes más escuchados ({CHILE_TIMEZONE_LABEL}). Las flechas muestran el
+          cambio de puesto en los últimos 7 días. Tocá uno para ver el tracklist.
         </p>
       </div>
 
@@ -139,13 +140,18 @@ export default function AlbumsPage() {
             </p>
           ) : (
             <ul className="divide-y divide-white/5">
-              {rows.map((a) => (
+              {rows.map((a, idx) => (
                 <li key={a.id}>
                   <Link
                     href={`/albums/${encodeURIComponent(a.id)}?${baseQs}`}
                     className="flex min-h-[56px] flex-col gap-2 rounded-lg px-2 py-4 transition-colors hover:bg-white/5 active:bg-white/10 sm:flex-row sm:items-center sm:gap-3 sm:px-1 sm:py-3"
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <RankChangeBadge
+                        rank={a.rank ?? idx + 1}
+                        rankDelta={a.rank_delta}
+                        prevRank={a.prev_rank}
+                      />
                       <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
                         {a.image_url ? (
                           <Image

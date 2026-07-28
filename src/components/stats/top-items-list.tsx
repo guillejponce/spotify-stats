@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RankChangeBadge } from "@/components/stats/rank-change-badge";
 import { formatMs, formatReproductionCount } from "@/lib/utils";
 import { Music2 } from "lucide-react";
 import type { TopItem } from "@/types/database";
@@ -73,9 +74,18 @@ export function TopItemsList({
               className="group relative flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-white/5 active:bg-white/10 sm:rounded-lg sm:p-2"
             >
               {showIndex && (
-                <span className="w-6 shrink-0 text-right text-sm font-medium tabular-nums text-spotify-light-gray/60">
-                  {index + 1}
-                </span>
+                item.rank_delta !== undefined || item.prev_rank !== undefined ? (
+                  <RankChangeBadge
+                    rank={item.rank ?? index + 1}
+                    rankDelta={item.rank_delta}
+                    prevRank={item.prev_rank}
+                    className="shrink-0"
+                  />
+                ) : (
+                  <span className="w-6 shrink-0 text-right text-sm font-medium tabular-nums text-spotify-light-gray/60">
+                    {item.rank ?? index + 1}
+                  </span>
+                )
               )}
 
               <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md sm:h-10 sm:w-10">

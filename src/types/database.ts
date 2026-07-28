@@ -82,6 +82,12 @@ export interface TopItem {
   image_url: string | null;
   play_count: number;
   total_ms_played: number;
+  /** Puesto actual (1-based) cuando el API lo calcula. */
+  rank?: number;
+  /** Puesto hace ~7 días en el mismo rango; null = no existía. */
+  prev_rank?: number | null;
+  /** prev_rank - rank: positivo = subió, negativo = bajó. */
+  rank_delta?: number | null;
 }
 
 export interface ListeningTimeData {

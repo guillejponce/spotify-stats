@@ -17,6 +17,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { useState } from "react";
+import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -108,10 +109,13 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="border-t border-white/5 px-5 py-4 sm:px-6">
-          <p className="text-xs text-spotify-light-gray/50">
-            Spotify Companion Dashboard
-          </p>
+        <div className="border-t border-white/5 pt-2">
+          <PushNotificationsToggle />
+          <div className="px-5 pb-4 sm:px-6">
+            <p className="text-xs text-spotify-light-gray/50">
+              Spotify Companion Dashboard
+            </p>
+          </div>
         </div>
       </aside>
     </>

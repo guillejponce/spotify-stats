@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { TimeFilterControl } from "@/components/stats/time-filter";
+import { RankChangeBadge } from "@/components/stats/rank-change-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -95,8 +96,8 @@ export default function TracksPage() {
           Canciones
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Ranking por reproducciones registradas (segmentos en la base), igual que el dashboard
-          ({CHILE_TIMEZONE_LABEL}).
+          Ranking por reproducciones ({CHILE_TIMEZONE_LABEL}). Las flechas muestran
+          el cambio de puesto en los últimos 7 días.
         </p>
       </div>
 
@@ -143,9 +144,11 @@ export default function TracksPage() {
               {rows.map((t, idx) => (
                 <li key={t.id}>
                   <div className="flex min-h-[56px] items-center gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-white/5 sm:px-1">
-                    <span className="w-7 text-center text-xs font-medium text-spotify-light-gray/50">
-                      {idx + 1}
-                    </span>
+                    <RankChangeBadge
+                      rank={t.rank ?? idx + 1}
+                      rankDelta={t.rank_delta}
+                      prevRank={t.prev_rank}
+                    />
                     <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray">
                       {t.image_url ? (
                         <Image

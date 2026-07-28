@@ -1,15 +1,11 @@
 import { createServerSupabaseClient } from "./supabase";
-import { buildDateFilterChile } from "./chile-stats-range";
+import {
+  asRows,
+  buildLeaderboardRangeWithPrev,
+  mapRankFields,
+  numeric,
+} from "./rank-delta";
 import type { TimeFilterParams, TopItem } from "@/types/database";
-
-function numeric(v: unknown, fallback = 0): number {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return fallback;
-}
 
 function mapTopLikeRow(r: Record<string, unknown>): TopItem {
   return {
@@ -18,12 +14,8 @@ function mapTopLikeRow(r: Record<string, unknown>): TopItem {
     image_url: r.image_url == null ? null : String(r.image_url),
     play_count: numeric(r.play_count),
     total_ms_played: numeric(r.total_ms_played),
+    ...mapRankFields(r),
   };
-}
-
-function asRows(data: unknown): Record<string, unknown>[] {
-  if (data == null) return [];
-  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
 }
 
 export type TrackBrowseRow = TopItem & { artist_name?: string };
@@ -40,7 +32,36 @@ export async function fetchTracksLeaderboard(
   options: { search: string; offset: number; limit: number }
 ): Promise<TrackBrowseRow[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
+  const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
+  const q = options.search.trim() || null;
+
+  const { data, error } = await supabase.rpc("get_tracks_leaderboard_with_delta", {
+    start_date: start,
+    end_date: end,
+    prev_end_date: prevEnd,
+    search_query: q,
+    result_offset: options.offset,
+    result_limit: options.limit,
+  });
+
+  if (error) {
+    if (
+      error.message?.includes("get_tracks_leaderboard_with_delta") ||
+      error.code === "PGRST202"
+    ) {
+      return await fetchTracksLeaderboardLegacy(params, options);
+    }
+    throw error;
+  }
+  return asRows(data).map(mapTrackRow);
+}
+
+async function fetchTracksLeaderboardLegacy(
+  params: TimeFilterParams,
+  options: { search: string; offset: number; limit: number }
+): Promise<TrackBrowseRow[]> {
+  const supabase = createServerSupabaseClient();
+  const { start, end } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_tracks_leaderboard", {
@@ -60,7 +81,10 @@ export async function fetchTracksLeaderboard(
     }
     throw error;
   }
-  return asRows(data).map(mapTrackRow);
+  return asRows(data).map((r, i) => ({
+    ...mapTrackRow(r),
+    rank: options.offset + i + 1,
+  }));
 }
 
 async function fetchTracksLeaderboardFallback(
@@ -68,9 +92,8 @@ async function fetchTracksLeaderboardFallback(
   options: { search: string; offset: number; limit: number }
 ): Promise<TrackBrowseRow[]> {
   const supabase = createServerSupabaseClient();
-  const { start, end } = buildDateFilterChile(params);
+  const { start, end } = buildLeaderboardRangeWithPrev(params);
 
-  // Legacy: get_top_tracks agrupa por sesiones (~15 min); solo si falta get_tracks_leaderboard.
   const { data, error } = await supabase.rpc("get_top_tracks", {
     start_date: start,
     end_date: end,
@@ -90,5 +113,8 @@ async function fetchTracksLeaderboardFallback(
     );
   }
 
-  return rows.slice(options.offset, options.offset + options.limit);
+  return rows.slice(options.offset, options.offset + options.limit).map((r, i) => ({
+    ...r,
+    rank: options.offset + i + 1,
+  }));
 }
