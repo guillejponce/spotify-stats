@@ -95,6 +95,55 @@ export function buildKurtStatus(
   };
 }
 
+function asYmd(raw: unknown): string | null {
+  if (typeof raw === "string") {
+    const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatInTimeZone(parsed, DISPLAY_TIME_ZONE, "yyyy-MM-dd");
+    }
+    return null;
+  }
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    return formatInTimeZone(raw, DISPLAY_TIME_ZONE, "yyyy-MM-dd");
+  }
+  return null;
+}
+
+function hydrateKurtRpc(raw: Record<string, unknown>, now: Date): KurtStatus | null {
+  const today = asYmd(raw.today);
+  if (!today) return null;
+  const recentRaw = Array.isArray(raw.recent) ? raw.recent : [];
+  const recent: KurtDay[] = recentRaw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const date = asYmd((row as { date?: unknown }).date);
+      if (!date) return null;
+      return {
+        date,
+        listened: Boolean((row as { listened?: unknown }).listened),
+      };
+    })
+    .filter((row): row is KurtDay => row != null);
+
+  const current = Number(raw.current_streak) || 0;
+  return {
+    today,
+    listened_today: Boolean(raw.listened_today),
+    listened_yesterday: Boolean(raw.listened_yesterday),
+    current_streak: current,
+    longest_streak: Number(raw.longest_streak) || current,
+    last_listen_day: asYmd(raw.last_listen_day),
+    incidents: Number(raw.incidents) || 0,
+    total_listen_days: Number(raw.total_listen_days) || 0,
+    at_risk: Boolean(raw.at_risk),
+    kurt_down: Boolean(raw.kurt_down) || current === 0,
+    hours_left_today: Math.round(hoursUntilChileMidnight(now) * 10) / 10,
+    recent,
+  };
+}
+
 async function loadListenDaysFallback(): Promise<string[]> {
   const supabase = createServerSupabaseClient();
   const { data: years, error } = await supabase.rpc(
@@ -109,7 +158,10 @@ async function loadListenDaysFallback(): Promise<string[]> {
   const days: string[] = [];
   for (const rows of maps) {
     for (const r of rows) {
-      if (r.ms_played >= 30_000 && r.date) days.push(r.date);
+      if (r.ms_played >= 30_000 && r.date) {
+        const day = asYmd(r.date);
+        if (day) days.push(day);
+      }
     }
   }
   return days;
@@ -119,17 +171,27 @@ export async function getKurtStatus(
   now: Date = new Date(),
 ): Promise<KurtStatus> {
   const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase.rpc("get_listen_days");
-  if (!error && Array.isArray(data)) {
-    const days = data
-      .map((r: { d?: unknown }) => {
-        const raw = r.d;
-        if (typeof raw === "string") return raw.slice(0, 10);
-        return String(raw ?? "").slice(0, 10);
-      })
-      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
-    return buildKurtStatus(days, now);
+
+  const rpc = await supabase.rpc("get_kurt_status");
+  if (
+    !rpc.error &&
+    rpc.data &&
+    typeof rpc.data === "object" &&
+    !Array.isArray(rpc.data)
+  ) {
+    const hydrated = hydrateKurtRpc(rpc.data as Record<string, unknown>, now);
+    if (hydrated) return hydrated;
   }
+
+  const { data, error } = await supabase.rpc("get_listen_days");
+  // PostgREST recorta a 1000 filas: si vienen mil, son un recorte (antes, los más viejos).
+  if (!error && Array.isArray(data) && data.length > 0 && data.length < 1000) {
+    const days = data
+      .map((r: { d?: unknown }) => asYmd(r.d))
+      .filter((d): d is string => Boolean(d));
+    if (days.length) return buildKurtStatus(days, now);
+  }
+
   const fallback = await loadListenDaysFallback();
   return buildKurtStatus(fallback, now);
 }

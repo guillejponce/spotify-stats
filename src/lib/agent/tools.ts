@@ -730,6 +730,11 @@ async function getListeningGap() {
     };
   };
 
+  const kurt = await getKurtStatus().catch(() => null);
+  const listenedRecently =
+    Boolean(kurt?.listened_today) ||
+    (typeof hoursAgo === "number" && Number.isFinite(hoursAgo) && hoursAgo < 24);
+
   return {
     last_played_at: lastAt,
     last_played_chile: formatInTimeZone(
@@ -739,8 +744,12 @@ async function getListeningGap() {
     ),
     hours_ago: hoursAgo,
     days_ago: daysAgo,
-    angry_mode: hoursAgo >= 24,
-    extra_angry: hoursAgo >= 72,
+    listened_today: kurt?.listened_today ?? listenedRecently,
+    last_listen_day: kurt?.last_listen_day ?? null,
+    current_streak: kurt?.current_streak ?? null,
+    angry_mode: !listenedRecently && hoursAgo >= 24,
+    extra_angry: !listenedRecently && hoursAgo >= 72,
+    note: "Si listened_today es true o hours_ago < 24, NO digas que abandonó ni cites años viejos (2015–2020). Eso era un recorte de la racha.",
     recent: rows.map((r) => mapPlay(r as Record<string, unknown>)),
   };
 }
