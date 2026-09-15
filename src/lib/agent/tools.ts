@@ -27,6 +27,7 @@ import { getKurtStatus, kurtMood } from "@/lib/kurt";
 import {
   SpotifyPlayerError,
   controlPlayback,
+  getCatalogTrackFacts,
   getPlayerSnapshot,
 } from "@/lib/spotify-player";
 import type { TimeFilter, TimeFilterParams, TopItem } from "@/types/database";
@@ -248,7 +249,7 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: "inspect_now_playing",
       description:
-        "Lo que está sonando ahora + cómo aparece en el historial/ratings de Guille. Usar para 'saber más', datos freak, o si pregunta por el tema actual.",
+        "Lo que está sonando ahora + historial/ratings de Guille + ficha de Spotify (fecha de lanzamiento, álbum o single, pista, sello, popularidad 0-100, seguidores, otras ediciones). Usar para 'saber más' o el tema actual. Spotify NO da el total de streams: usa popularity, nunca inventes reproducciones globales.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -824,7 +825,7 @@ async function inspectNowPlayingDeep() {
   const track = snapshot.track;
   const artistQuery = track.artist.split(",")[0]?.trim() || track.artist;
 
-  const [library, artist, ratings] = await Promise.all([
+  const [library, artist, ratings, catalog] = await Promise.all([
     searchLibrary({ query: track.name, kind: "tracks", period: "all" }),
     inspectArtist({ query: artistQuery, period: "all" }),
     getRatedTracks({
@@ -833,6 +834,9 @@ async function inspectNowPlayingDeep() {
       limit: 6,
       sortBy: "rating_desc",
     }).catch(() => ({ tracks: [], total: 0 })),
+    track.id
+      ? getCatalogTrackFacts(track.id).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -845,6 +849,7 @@ async function inspectNowPlayingDeep() {
       artist: track.artist,
       album: track.album,
     },
+    spotify_catalog: catalog,
     in_your_library: library,
     artist_in_history: artist,
     your_ratings: ratings.tracks.slice(0, 6).map((t) => ({
@@ -852,6 +857,6 @@ async function inspectNowPlayingDeep() {
       artist: t.artist_name,
       rating: t.rating,
     })),
-    note: "Ancla la respuesta a estos números. El dato freak puede salir de tu conocimiento general SOLO si es real; si no estás seguro, omítelo.",
+    note: "spotify_catalog.context_es ya resume lanzamiento/álbum. Incluye popularidad 0–100 (no streams). NO inventes millones de reproducciones. Ancla plays/ratings a la data de Guille. Un dato freak REAL o nada.",
   };
 }

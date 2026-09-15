@@ -455,22 +455,22 @@ export function AgentChat({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className={cn("mb-3 flex items-start justify-between gap-3", dock && "mb-2")}>
-        <div className="flex items-center gap-3">
+      <div className={cn("mb-2 flex items-center justify-between gap-2 lg:mb-3 lg:items-start lg:gap-3", dock && "mb-2")}>
+        <div className="flex min-w-0 items-center gap-2.5 lg:gap-3">
           <div
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full text-black",
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black lg:h-10 lg:w-10",
               speaking ? "bg-white" : "bg-spotify-green",
             )}
           >
-            <Bot className="h-5 w-5" />
+            <Bot className="h-4 w-4 lg:h-5 lg:w-5" />
           </div>
-          <div>
-            <h1 className={cn("font-bold text-white", dock ? "text-base" : "text-2xl")}>
+          <div className="min-w-0">
+            <h1 className={cn("truncate font-bold text-white", dock ? "text-base" : "text-lg lg:text-2xl")}>
               Kurt CubAIn
             </h1>
             {!dock ? (
-              <p className="text-sm text-spotify-light-gray">
+              <p className="hidden text-sm text-spotify-light-gray lg:block">
                 DJ grunge. Si un día no pones música, se dispara.
               </p>
             ) : (
@@ -503,8 +503,8 @@ export function AgentChat({
             onClick={clearChat}
             className="text-spotify-light-gray"
           >
-            <Trash2 className="mr-2 h-4 w-4" />
-            {dock ? "" : "Limpiar"}
+            <Trash2 className="h-4 w-4 lg:mr-2" />
+            <span className="hidden lg:inline">{dock ? "" : "Limpiar"}</span>
           </Button>
           {onClose ? (
             <Button type="button" variant="ghost" size="sm" onClick={onClose}>
@@ -561,7 +561,7 @@ export function AgentChat({
           >
             <div
               className={cn(
-                "max-w-[min(100%,40rem)] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                "max-w-[min(100%,40rem)] whitespace-pre-wrap break-words rounded-2xl px-3 py-2.5 text-sm leading-relaxed sm:px-4 sm:py-3",
                 m.role === "user"
                   ? "bg-spotify-green text-black"
                   : "bg-spotify-medium-gray text-white",
@@ -614,7 +614,7 @@ export function AgentChat({
       ) : null}
 
       <form
-        className="mt-3 flex items-end gap-2"
+        className="mt-2 flex items-end gap-2 lg:mt-3"
         onSubmit={(e) => {
           e.preventDefault();
           void send(input);
@@ -644,14 +644,14 @@ export function AgentChat({
               void send(input);
             }
           }}
-          rows={dock ? 1 : 2}
+          rows={1}
           placeholder={
             recording
               ? "Te escucho…"
               : "Pregunta por stats, nostalgia o lo que está sonando…"
           }
           disabled={busy || recording}
-          className="min-h-[2.75rem] flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-spotify-light-gray/50 focus:border-spotify-green focus:ring-2 focus:ring-spotify-green/30 disabled:opacity-60"
+          className="min-h-[2.75rem] max-h-24 flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-spotify-light-gray/50 focus:border-spotify-green focus:ring-2 focus:ring-spotify-green/30 disabled:opacity-60 lg:py-3"
         />
         <Button type="submit" disabled={busy || recording || !input.trim()} className="h-11 px-4">
           {busy ? (

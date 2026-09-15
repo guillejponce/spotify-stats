@@ -30,7 +30,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
         <div
           className={cn(
             isAgent
-              ? "flex h-full min-h-0 flex-col px-3 pb-3 pt-[max(4.25rem,env(safe-area-inset-top)+3rem)] sm:px-4 lg:px-6 lg:py-4 lg:pt-4"
+              ? "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-[max(4.25rem,env(safe-area-inset-top)+3.25rem)] sm:px-4 lg:px-6 lg:py-4 lg:pt-4"
               : "mx-auto max-w-7xl px-3 py-6 pt-[max(4.25rem,env(safe-area-inset-top)+3rem)] sm:px-4 sm:py-8 lg:px-8 lg:pt-8",
           )}
         >
