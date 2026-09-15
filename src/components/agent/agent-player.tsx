@@ -15,7 +15,7 @@ import {
   SkipForward,
   Sparkles,
 } from "lucide-react";
-import { askKurt, KNOW_MORE_PROMPT } from "@/lib/agent/ask-kurt";
+import { askKurt, KNOW_MORE_PROMPT, KURT_PLAYER_REFRESH_EVENT } from "@/lib/agent/ask-kurt";
 
 type PlayerTrack = {
   id: string | null;
@@ -202,7 +202,15 @@ export function AgentPlayer({ className }: { className?: string }) {
   useEffect(() => {
     void load();
     const id = setInterval(() => void load(), 8000);
-    return () => clearInterval(id);
+    const onRefresh = () => {
+      void load();
+      window.setTimeout(() => void load(), 1600);
+    };
+    window.addEventListener(KURT_PLAYER_REFRESH_EVENT, onRefresh);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener(KURT_PLAYER_REFRESH_EVENT, onRefresh);
+    };
   }, [load]);
 
   const playing = Boolean(player?.is_playing && player.track);

@@ -245,6 +245,359 @@ export async function controlPlayback(
   throwIfPlayerFailed(res, body);
 }
 
+export type PlaybackDevice = {
+  id: string;
+  name: string;
+  type: string;
+  is_active: boolean;
+};
+
+export type CatalogTrack = {
+  id: string;
+  uri: string;
+  name: string;
+  artist: string;
+  album: string;
+  album_type: string | null;
+  release_year: number | null;
+  popularity: number | null;
+};
+
+export function toTrackUri(raw: string): string | null {
+  const s = raw.trim();
+  const uri = s.match(/^spotify:track:([a-zA-Z0-9]{22})$/);
+  if (uri) return s;
+  const open = s.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]{22})/);
+  if (open) return `spotify:track:${open[1]}`;
+  if (/^[a-zA-Z0-9]{22}$/.test(s)) return `spotify:track:${s}`;
+  return null;
+}
+
+export async function listPlaybackDevices(): Promise<PlaybackDevice[]> {
+  const res = await spotifyFetch("/me/player/devices");
+  const json = await readJson(res);
+  const devices = Array.isArray(json?.devices) ? json.devices : [];
+  return devices
+    .map((d) => {
+      if (!d || typeof d !== "object") return null;
+      const rec = d as {
+        id?: string;
+        name?: string;
+        type?: string;
+        is_active?: boolean;
+      };
+      if (!rec.id) return null;
+      return {
+        id: rec.id,
+        name: rec.name || "Dispositivo",
+        type: rec.type || "",
+        is_active: Boolean(rec.is_active),
+      };
+    })
+    .filter((d): d is PlaybackDevice => d != null);
+}
+
+async function pickPlaybackDevice(preferred?: string): Promise<string> {
+  if (preferred?.trim()) return preferred.trim();
+  const devices = await listPlaybackDevices();
+  const active = devices.find((d) => d.is_active) ?? devices[0];
+  if (!active) {
+    throw new SpotifyPlayerError(
+      "No hay un dispositivo de Spotify activo. Abre la app en el teléfono o la computadora y dale play una vez.",
+      404,
+      "NO_DEVICE",
+    );
+  }
+  return active.id;
+}
+
+export async function startPlayingUris(
+  uris: string[],
+  deviceId?: string,
+): Promise<void> {
+  const clean = uris.filter(Boolean).slice(0, 20);
+  if (!clean.length) {
+    throw new SpotifyPlayerError("No hay canciones para reproducir", 400, "SPOTIFY");
+  }
+  const device = await pickPlaybackDevice(deviceId);
+  const res = await spotifyFetch(
+    `/me/player/play?device_id=${encodeURIComponent(device)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ uris: clean, offset: { position: 0 } }),
+    },
+  );
+  const body = res.status === 204 ? "" : await res.text();
+  throwIfPlayerFailed(res, body);
+}
+
+export async function addUrisToQueue(uris: string[]): Promise<void> {
+  const clean = uris.filter(Boolean).slice(0, 20);
+  if (!clean.length) {
+    throw new SpotifyPlayerError("No hay canciones para la cola", 400, "SPOTIFY");
+  }
+  const device = await pickPlaybackDevice();
+  for (const uri of clean) {
+    const res = await spotifyFetch(
+      `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(device)}`,
+      { method: "POST" },
+    );
+    const body = res.status === 204 ? "" : await res.text();
+    throwIfPlayerFailed(res, body);
+  }
+}
+
+export async function searchSpotifyTracks(
+  query: string,
+  limit = 5,
+): Promise<CatalogTrack[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const res = await spotifyFetch(
+    `/search?q=${encodeURIComponent(q)}&type=track&limit=${Math.max(1, Math.min(10, limit))}`,
+  );
+  const json = await readJson(res);
+  const items =
+    json?.tracks && typeof json.tracks === "object"
+      ? (json.tracks as { items?: unknown[] }).items
+      : null;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => mapCatalogSearchItem(item))
+    .filter((t): t is CatalogTrack => t != null);
+}
+
+function mapCatalogSearchItem(item: unknown): CatalogTrack | null {
+  if (!item || typeof item !== "object") return null;
+  const rec = item as SpotifyItem & { popularity?: number };
+  if (!rec.id || !rec.name || !rec.uri) return null;
+  const mapped = mapItem(rec);
+  if (!mapped) return null;
+  return {
+    id: rec.id,
+    uri: rec.uri,
+    name: mapped.name,
+    artist: mapped.artist,
+    album: mapped.album ?? "",
+    album_type: mapped.album_type,
+    release_year: mapped.release_date
+      ? Number(mapped.release_date.slice(0, 4)) || null
+      : null,
+    popularity: mapped.popularity,
+  };
+}
+
+export async function resolveTrackQueries(
+  queries: string[],
+): Promise<{
+  resolved: CatalogTrack[];
+  missing: string[];
+}> {
+  const unique = Array.from(
+    new Set(queries.map((q) => q.trim()).filter(Boolean)),
+  ).slice(0, 15);
+
+  const results = await Promise.all(
+    unique.map(async (query) => {
+      const uri = toTrackUri(query);
+      if (uri) {
+        const id = uri.slice("spotify:track:".length);
+        const res = await spotifyFetch(`/tracks/${encodeURIComponent(id)}`);
+        const json = await readJson(res);
+        return { query, track: mapCatalogSearchItem(json) };
+      }
+      const hits = await searchSpotifyTracks(query, 3);
+      return { query, track: hits[0] ?? null };
+    }),
+  );
+
+  const resolved: CatalogTrack[] = [];
+  const missing: string[] = [];
+  for (const row of results) {
+    if (row.track) resolved.push(row.track);
+    else missing.push(row.query);
+  }
+  return { resolved, missing };
+}
+
+export async function fetchArtistDiscographyTracks(
+  artistQuery: string,
+): Promise<{ artist: { id: string; name: string }; tracks: CatalogTrack[] } | null> {
+  const q = artistQuery.trim();
+  if (!q) return null;
+  const searchRes = await spotifyFetch(
+    `/search?q=${encodeURIComponent(q)}&type=artist&limit=5`,
+  );
+  const searchJson = await readJson(searchRes);
+  const artists =
+    searchJson?.artists && typeof searchJson.artists === "object"
+      ? (searchJson.artists as { items?: { id?: string; name?: string }[] }).items
+      : null;
+  if (!Array.isArray(artists) || !artists.length) return null;
+
+  const lower = q.toLowerCase();
+  const artist =
+    artists.find((a) => (a.name ?? "").toLowerCase() === lower) ?? artists[0];
+  if (!artist?.id || !artist.name) return null;
+  const artistId = artist.id;
+  const artistName = artist.name;
+
+  type AlbumLite = {
+    id: string;
+    name: string;
+    album_type: string | null;
+    release_date: string | null;
+  };
+  const albums: AlbumLite[] = [];
+  let offset = 0;
+  for (let page = 0; page < 6; page++) {
+    const albumRes = await spotifyFetch(
+      `/artists/${encodeURIComponent(artistId)}/albums?include_groups=album,single&limit=50&offset=${offset}&market=from_token`,
+    );
+    const albumJson = await readJson(albumRes);
+    const items = Array.isArray(albumJson?.items) ? albumJson.items : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as {
+        id?: string;
+        name?: string;
+        album_type?: string;
+        release_date?: string;
+      };
+      if (!rec.id) continue;
+      albums.push({
+        id: rec.id,
+        name: rec.name ?? "",
+        album_type: rec.album_type ?? null,
+        release_date: rec.release_date ?? null,
+      });
+    }
+    const total = typeof albumJson?.total === "number" ? albumJson.total : items.length;
+    offset += items.length;
+    if (!items.length || offset >= total) break;
+  }
+
+  const byId = new Map<string, AlbumLite>();
+  for (const album of albums) byId.set(album.id, album);
+  const albumList = Array.from(byId.values());
+
+  type TrackSeed = {
+    id: string;
+    uri: string;
+    name: string;
+    artist: string;
+    album: AlbumLite;
+  };
+  const seeds: TrackSeed[] = [];
+  const albumChunks: AlbumLite[][] = [];
+  for (let i = 0; i < albumList.length; i += 20) {
+    albumChunks.push(albumList.slice(i, i + 20));
+  }
+  const albumJsons = await Promise.all(
+    albumChunks.map(async (chunk) => {
+      const res = await spotifyFetch(
+        `/albums?ids=${encodeURIComponent(chunk.map((a) => a.id).join(","))}&market=from_token`,
+      );
+      return readJson(res);
+    }),
+  );
+  for (const json of albumJsons) {
+    const albumRows = Array.isArray(json?.albums) ? json.albums : [];
+    for (const row of albumRows) {
+      if (!row || typeof row !== "object") continue;
+      const albumRec = row as {
+        id?: string;
+        name?: string;
+        album_type?: string;
+        release_date?: string;
+        tracks?: { items?: unknown[]; total?: number };
+      };
+      const albumMeta: AlbumLite = {
+        id: albumRec.id || "",
+        name: albumRec.name ?? "",
+        album_type: albumRec.album_type ?? null,
+        release_date: albumRec.release_date ?? null,
+      };
+      const trackItems = Array.isArray(albumRec.tracks?.items)
+        ? albumRec.tracks.items
+        : [];
+      for (const t of trackItems) {
+        if (!t || typeof t !== "object") continue;
+        const tr = t as {
+          id?: string;
+          uri?: string;
+          name?: string;
+          artists?: { name?: string }[];
+        };
+        if (!tr.id || !tr.uri || !tr.name) continue;
+        seeds.push({
+          id: tr.id,
+          uri: tr.uri,
+          name: tr.name,
+          artist: (tr.artists ?? [])
+            .map((a) => a.name)
+            .filter(Boolean)
+            .join(", "),
+          album: albumMeta,
+        });
+      }
+    }
+  }
+
+  const unique = new Map<string, TrackSeed>();
+  for (const seed of seeds) {
+    if (!unique.has(seed.id)) unique.set(seed.id, seed);
+  }
+
+  const tracks: CatalogTrack[] = Array.from(unique.values()).map((seed) => ({
+    id: seed.id,
+    uri: seed.uri,
+    name: seed.name,
+    artist: seed.artist || artistName,
+    album: seed.album.name,
+    album_type: seed.album.album_type,
+    release_year: seed.album.release_date
+      ? Number(seed.album.release_date.slice(0, 4)) || null
+      : null,
+    popularity: null,
+  }));
+
+  return { artist: { id: artistId, name: artistName }, tracks };
+}
+
+export async function hydrateCatalogPopularity(
+  tracks: CatalogTrack[],
+): Promise<CatalogTrack[]> {
+  if (!tracks.length) return tracks;
+  const popularity = new Map<string, number>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < tracks.length; i += 50) {
+    chunks.push(tracks.slice(i, i + 50).map((t) => t.id));
+  }
+  const jsons = await Promise.all(
+    chunks.map(async (chunk) => {
+      const res = await spotifyFetch(
+        `/tracks?ids=${encodeURIComponent(chunk.join(","))}&market=from_token`,
+      );
+      return readJson(res);
+    }),
+  );
+  for (const json of jsons) {
+    const rows = Array.isArray(json?.tracks) ? json.tracks : [];
+    for (const row of rows) {
+      if (!row || typeof row !== "object") continue;
+      const rec = row as { id?: string; popularity?: number };
+      if (rec.id && typeof rec.popularity === "number") {
+        popularity.set(rec.id, rec.popularity);
+      }
+    }
+  }
+  return tracks.map((t) => ({
+    ...t,
+    popularity: popularity.get(t.id) ?? t.popularity,
+  }));
+}
+
 function albumTypeEs(raw: string | null | undefined): string {
   const t = (raw ?? "").toLowerCase();
   if (t === "album") return "álbum";

@@ -19,7 +19,7 @@ import {
   recorderExtension,
   textForSpeech,
 } from "@/lib/agent/voice";
-import { KURT_ASK_EVENT, KNOW_MORE_PROMPT } from "@/lib/agent/ask-kurt";
+import { KURT_ASK_EVENT, KNOW_MORE_PROMPT, refreshKurtPlayer } from "@/lib/agent/ask-kurt";
 
 type ChatRole = "user" | "assistant";
 
@@ -39,6 +39,8 @@ const SUGGESTIONS = [
   "¿Hace cuánto que no escucho nada?",
   "Ármame algo nostálgico con mi data",
   "Pausa lo que está sonando",
+  "Temas de un artista que nunca puse",
+  "Ponme una cola con esto",
 ];
 
 function uid(): string {
@@ -280,10 +282,14 @@ export function AgentChat({
             type?: string;
             delta?: string;
             label?: string;
+            name?: string;
             message?: string;
           };
           if (e.type === "tool" && e.label) {
             setStatus(e.label);
+            if (e.name === "play_tracks" || e.name === "control_player") {
+              refreshKurtPlayer();
+            }
           } else if (e.type === "text" && e.delta) {
             assembled += e.delta;
             setStatus(null);

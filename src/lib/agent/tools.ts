@@ -26,9 +26,14 @@ import {
 import { getKurtStatus, kurtMood } from "@/lib/kurt";
 import {
   SpotifyPlayerError,
+  addUrisToQueue,
   controlPlayback,
+  fetchArtistDiscographyTracks,
   getCatalogTrackFacts,
   getPlayerSnapshot,
+  hydrateCatalogPopularity,
+  resolveTrackQueries,
+  startPlayingUris,
 } from "@/lib/spotify-player";
 import type { TimeFilter, TimeFilterParams, TopItem } from "@/types/database";
 
@@ -44,6 +49,8 @@ export const TOOL_LABELS: Record<string, string> = {
   get_listening_gap: "Hace cuánto no pone nada…",
   get_kurt_status: "Contando días sin disparos…",
   control_player: "Tocando el reproductor…",
+  play_tracks: "Armando la reproducción…",
+  find_unheard_tracks: "Cruzando catálogo vs tu historial…",
   inspect_now_playing: "Mirando lo que suena…",
 };
 
@@ -231,7 +238,7 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: "control_player",
       description:
-        "Controla el Spotify de Guille: play, pause, next o previous. Usar si pide pausar, reanudar, saltar, anterior, o controlar lo que suena. Requiere un dispositivo activo y Premium.",
+        "Solo transporte: play, pause, next o previous. NO sirve para poner canciones nuevas. Para reproducir o encolar temas concretos usa play_tracks.",
       parameters: {
         type: "object",
         properties: {
@@ -241,6 +248,54 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
           },
         },
         required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "play_tracks",
+      description:
+        "Reproduce o encola canciones concretas en el Spotify de Guille. Usar si pide poner un tema, armar una cola, empezar a sonar desde cero, o 'pon estos'. Resuelve nombres ('Turnstile - UNDERWATER BOI') o URIs. Requiere dispositivo activo y Premium.",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: {
+            type: "string",
+            enum: ["replace", "queue"],
+            description:
+              "replace = empieza esta lista desde cero (reemplaza lo actual). queue = las agrega a continuación. Si no hay nada sonando, queue se convierte en replace.",
+          },
+          queries: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Hasta 12: 'artista - tema', nombre del tema, o spotify:track:id / URL.",
+          },
+        },
+        required: ["mode", "queries"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_unheard_tracks",
+      description:
+        "Cruza el catálogo oficial de Spotify de un artista (álbumes + singles) con el historial de Guille y devuelve temas que NUNCA aparecen en sus plays. OBLIGATORIA si pregunta qué no ha escuchado, huecos, deep cuts, o recomendaciones de un artista que aún no puso. No adivines: esta tool es la fuente.",
+      parameters: {
+        type: "object",
+        properties: {
+          artist: {
+            type: "string",
+            description: "Nombre del artista, ej. Turnstile",
+          },
+          limit: {
+            type: "integer",
+            description: "Cuántos unheard devolver. Default 12, max 20",
+          },
+        },
+        required: ["artist"],
       },
     },
   },
@@ -344,6 +399,10 @@ async function dispatchTool(name: string, args: Record<string, unknown>) {
       return getKurtSnapshot();
     case "control_player":
       return controlPlayer(args);
+    case "play_tracks":
+      return playTracks(args);
+    case "find_unheard_tracks":
+      return findUnheardTracks(args);
     case "inspect_now_playing":
       return inspectNowPlayingDeep();
     default:
@@ -448,7 +507,7 @@ async function inspectArtist(args: Record<string, unknown>) {
   const [profile, stats, tracks] = await Promise.all([
     fetchArtistProfile(best.id),
     fetchArtistPeriodStats(params, best.id),
-    fetchArtistTracksInPeriod(params, best.id, 10),
+    fetchArtistTracksInPeriod(params, best.id, 15),
   ]);
 
   return {
@@ -462,7 +521,7 @@ async function inspectArtist(args: Record<string, unknown>) {
     period: params,
     hours: hoursFromMs(stats.total_ms_played),
     plays: stats.play_count,
-    top_tracks: compactTop(tracks, 10),
+    top_tracks: compactTop(tracks, 15),
     other_matches: compactTop(matches.slice(1), 4),
   };
 }
@@ -783,7 +842,10 @@ async function controlPlayer(args: Record<string, unknown>) {
     action !== "next" &&
     action !== "previous"
   ) {
-    return { error: "action inválida. Usa play, pause, next o previous." };
+    return {
+      error:
+        "action inválida. Para play/pause/next/previous usa control_player. Para poner canciones concretas usa play_tracks.",
+    };
   }
   try {
     await controlPlayback(action);
@@ -808,6 +870,209 @@ async function controlPlayer(args: Record<string, unknown>) {
   } catch (err) {
     return playerError(err);
   }
+}
+
+function normalizeTrackTitle(raw: string): string {
+  return raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(
+      /\b(feat\.?|ft\.?|with|remaster(ed)?|live|radio edit|version|deluxe|bonus track|single version)\b.*$/i,
+      " ",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+async function loadHeardTracksForArtist(artistId: string): Promise<
+  { id: string; name: string; spotify_id: string | null }[]
+> {
+  const supabase = createServerSupabaseClient();
+  const rows: { id: string; name: string; spotify_id: string | null }[] = [];
+
+  const pull = async (withSpotifyId: boolean) => {
+    for (let offset = 0; offset < 4000; offset += 1000) {
+      const query = withSpotifyId
+        ? supabase
+            .from("tracks")
+            .select("id, name, spotify_id")
+            .eq("artist_id", artistId)
+            .range(offset, offset + 999)
+        : supabase
+            .from("tracks")
+            .select("id, name")
+            .eq("artist_id", artistId)
+            .range(offset, offset + 999);
+      const { data, error } = await query;
+      if (error) {
+        if (withSpotifyId && /spotify_id/i.test(error.message)) {
+          return pull(false);
+        }
+        throw error;
+      }
+      const batch = (data ?? []) as unknown as Record<string, unknown>[];
+      for (const row of batch) {
+        rows.push({
+          id: String(row.id ?? ""),
+          name: String(row.name ?? ""),
+          spotify_id:
+            typeof row.spotify_id === "string" && row.spotify_id
+              ? row.spotify_id
+              : null,
+        });
+      }
+      if (batch.length < 1000) break;
+    }
+  };
+
+  await pull(true);
+  return rows.filter((r) => r.id && r.name);
+}
+
+async function playTracks(args: Record<string, unknown>) {
+  const modeRaw = String(args.mode ?? "replace");
+  let mode: "replace" | "queue" = modeRaw === "queue" ? "queue" : "replace";
+  const queries = Array.isArray(args.queries)
+    ? args.queries.map((q) => String(q ?? "").trim()).filter(Boolean)
+    : [];
+  if (!queries.length) {
+    return { error: "Pasa queries: nombres de canciones o spotify:track:id" };
+  }
+
+  try {
+    const { resolved, missing } = await resolveTrackQueries(queries);
+    const unique: typeof resolved = [];
+    const seen = new Set<string>();
+    for (const t of resolved) {
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      unique.push(t);
+    }
+    if (!unique.length) {
+      return {
+        ok: false,
+        error: "No pude resolver esas canciones en Spotify.",
+        missing,
+      };
+    }
+
+    let note: string | null = null;
+    if (mode === "queue") {
+      const snapshot = await getPlayerSnapshot().catch(() => null);
+      if (!snapshot?.track && !snapshot?.is_playing) {
+        mode = "replace";
+        note = "No había nada sonando: empecé la lista desde cero.";
+      }
+    }
+
+    const uris = unique.map((t) => t.uri);
+    if (mode === "queue") await addUrisToQueue(uris);
+    else await startPlayingUris(uris);
+
+    const after = await getPlayerSnapshot().catch(() => null);
+    return {
+      ok: true,
+      mode,
+      note,
+      played_or_queued: unique.map((t) => ({
+        name: t.name,
+        artist: t.artist,
+        album: t.album,
+        uri: t.uri,
+      })),
+      missing: missing.length ? missing : undefined,
+      now: after?.track
+        ? { name: after.track.name, artist: after.track.artist }
+        : null,
+      is_playing: after?.is_playing ?? mode === "replace",
+      device: after?.device ?? null,
+    };
+  } catch (err) {
+    return playerError(err);
+  }
+}
+
+async function findUnheardTracks(args: Record<string, unknown>) {
+  const artist = String(args.artist ?? "").trim();
+  if (!artist) return { error: "artist vacío" };
+  const limit = clampLimit(args.limit, 12, 20);
+
+  const [catalog, matches] = await Promise.all([
+    fetchArtistDiscographyTracks(artist),
+    fetchArtistsLeaderboard(
+      { filter: "all" },
+      { search: artist, offset: 0, limit: 5 },
+    ),
+  ]);
+
+  if (!catalog) {
+    return {
+      found: false,
+      artist,
+      note: "No encontré ese artista en el catálogo de Spotify.",
+    };
+  }
+
+  const catalogName = catalog.artist.name.toLowerCase();
+  const relevantArtists = matches.filter(
+    (m) => m.name.toLowerCase() === catalogName,
+  );
+  if (!relevantArtists.length && matches[0]) relevantArtists.push(matches[0]);
+
+  const heardNames = new Set<string>();
+  const heardIds = new Set<string>();
+  let heardCount = 0;
+  for (const libraryArtist of relevantArtists) {
+    const heard = await loadHeardTracksForArtist(libraryArtist.id);
+    heardCount += heard.length;
+    for (const t of heard) {
+      const norm = normalizeTrackTitle(t.name);
+      if (norm) heardNames.add(norm);
+      heardIds.add(t.id);
+      if (t.spotify_id) heardIds.add(t.spotify_id);
+    }
+  }
+
+  const catalogUnique = new Map<string, (typeof catalog.tracks)[number]>();
+  for (const t of catalog.tracks) {
+    const key = normalizeTrackTitle(t.name) || t.id;
+    const prev = catalogUnique.get(key);
+    if (!prev || (t.popularity ?? 0) > (prev.popularity ?? 0)) {
+      catalogUnique.set(key, t);
+    }
+  }
+
+  const unheard = Array.from(catalogUnique.values()).filter((t) => {
+    if (heardIds.has(t.id)) return false;
+    const norm = normalizeTrackTitle(t.name);
+    if (norm && heardNames.has(norm)) return false;
+    return true;
+  });
+  const ranked = (
+    await hydrateCatalogPopularity(unheard.slice(0, 80))
+  ).sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+
+  return {
+    found: true,
+    artist: catalog.artist.name,
+    heard_in_your_library: heardCount,
+    catalog_unique_tracks: catalogUnique.size,
+    unheard_count: unheard.length,
+    unheard: ranked.slice(0, limit).map((t) => ({
+      name: t.name,
+      album: t.album,
+      year: t.release_year,
+      popularity: t.popularity,
+      uri: t.uri,
+    })),
+    note:
+      unheard.length === 0
+        ? "Parece que ya pasó por todo el catálogo oficial (álbumes + singles). No inventes temas."
+        : "Estos NO están en el historial de Guille (ni por id ni por título). Listalos concreto. Si pide que los ponga, usa play_tracks con estos uri o 'artista - tema'.",
+  };
 }
 
 async function inspectNowPlayingDeep() {
