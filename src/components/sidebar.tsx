@@ -15,6 +15,7 @@ import {
   Library,
   Star,
   CalendarDays,
+  Lock,
 } from "lucide-react";
 import { useState } from "react";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
@@ -111,6 +112,16 @@ export function Sidebar() {
 
         <div className="border-t border-white/5 pt-2">
           <PushNotificationsToggle />
+          <form action="/api/unlock" method="POST" className="px-2 sm:px-3">
+            <input type="hidden" name="intent" value="lock" />
+            <button
+              type="submit"
+              className="flex min-h-[48px] w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-spotify-light-gray transition-colors hover:bg-white/5 hover:text-white active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5"
+            >
+              <Lock className="h-5 w-5" />
+              Bloquear
+            </button>
+          </form>
           <div className="px-5 pb-4 sm:px-6">
             <p className="text-xs text-spotify-light-gray/50">
               Spotify Companion Dashboard
