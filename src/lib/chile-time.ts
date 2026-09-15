@@ -1,4 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 /** Zona mostrada en la app (reproducciones agrupadas y etiquetas). */
 export const DISPLAY_TIME_ZONE = "America/Santiago";
@@ -78,6 +78,20 @@ export const CHILE_TIMEZONE_LABEL = "Chile (America/Santiago)";
 /** Año civil actual en Chile (heatmap / etiquetas cuando no hay selector). */
 export function currentCalendarYearChile(reference = new Date()): number {
   return Number(formatInTimeZone(reference, DISPLAY_TIME_ZONE, "yyyy"));
+}
+
+/** Próxima medianoche civil en Chile (cuando Kurt “se dispara” si hoy no hubo música). */
+export function nextChileMidnight(now = new Date()): Date {
+  const today = formatInTimeZone(now, DISPLAY_TIME_ZONE, "yyyy-MM-dd");
+  const [y, m, d] = today.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  const tomorrow = dt.toISOString().slice(0, 10);
+  return fromZonedTime(`${tomorrow}T00:00:00.000`, DISPLAY_TIME_ZONE);
+}
+
+export function msUntilChileMidnight(now = new Date()): number {
+  return Math.max(0, nextChileMidnight(now).getTime() - now.getTime());
 }
 
 /** `YYYY-MM` (bucket Chile) → etiqueta corta localizada. */

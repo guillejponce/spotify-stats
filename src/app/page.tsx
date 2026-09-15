@@ -5,6 +5,8 @@ import { NowPlayingCard } from "@/components/now-playing/now-playing-card";
 import { StatCard } from "@/components/stats/stat-card";
 import { TopItemsList } from "@/components/stats/top-items-list";
 import { TimeFilterControl } from "@/components/stats/time-filter";
+import { DashboardPeriodBar } from "@/components/stats/dashboard-period-bar";
+import { KurtStreakCard } from "@/components/kurt/kurt-streak-card";
 import { ListeningInsights } from "@/components/stats/listening-insights";
 import {
   StatsSyncBanner,
@@ -220,6 +222,8 @@ export default function DashboardPage() {
 
       <NowPlayingCard />
 
+      <KurtStreakCard />
+
       {!blockingLoad && (
         <ListeningInsights
           hourly={stats.hourlyData}
@@ -236,14 +240,14 @@ export default function DashboardPage() {
         />
       )}
 
-      <section className="sticky top-[max(4.25rem,env(safe-area-inset-top)+3.25rem)] z-20 -mx-3 rounded-b-2xl border-b border-white/[0.07] bg-spotify-black/90 px-3 py-2.5 supports-[backdrop-filter]:bg-spotify-black/80 supports-[backdrop-filter]:backdrop-blur-md lg:static lg:top-auto lg:z-auto lg:-mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+      <DashboardPeriodBar>
         <TimeFilterControl
           variant="dashboard"
           value={timeFilter}
           onChange={setTimeFilter}
           busy={refreshing || syncPhase === "refreshing"}
         />
-      </section>
+      </DashboardPeriodBar>
 
       <details className="group rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs text-spotify-light-gray/80 [&::-webkit-details-marker]:hidden">
