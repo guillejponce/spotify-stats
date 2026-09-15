@@ -44,7 +44,7 @@ export function gateCookieBase(secure: boolean) {
 function bytesToBase64Url(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 

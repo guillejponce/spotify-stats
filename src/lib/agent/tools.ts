@@ -23,6 +23,7 @@ import {
   forceRefreshSpotifyAccessToken,
   getSpotifyAccessToken,
 } from "@/lib/spotify-token";
+import { getKurtStatus, kurtMood } from "@/lib/kurt";
 import type { TimeFilter, TimeFilterParams, TopItem } from "@/types/database";
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -35,6 +36,7 @@ export const TOOL_LABELS: Record<string, string> = {
   get_ratings_snapshot: "Mirando tus valoraciones…",
   get_now_playing: "Qué está sonando…",
   get_listening_gap: "Hace cuánto no pone nada…",
+  get_kurt_status: "Contando días sin disparos…",
 };
 
 const PERIODS = [
@@ -207,6 +209,15 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_kurt_status",
+      description:
+        "Racha estilo Duolingo de Kurt CubAIn: días seguidos con música (Chile), si hoy ya escuchó, horas hasta medianoche, si Kurt está 'down' (racha 0) o en riesgo. Usar si habla de racha, disparos, días sin disparos o si Kurt se va a disparar.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
 ];
 
 function hoursFromMs(ms: number): number {
@@ -294,6 +305,8 @@ async function dispatchTool(name: string, args: Record<string, unknown>) {
       return getNowPlaying();
     case "get_listening_gap":
       return getListeningGap();
+    case "get_kurt_status":
+      return getKurtSnapshot();
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -691,5 +704,18 @@ async function getListeningGap() {
     angry_mode: hoursAgo >= 24,
     extra_angry: hoursAgo >= 72,
     recent: rows.map((r) => mapPlay(r as Record<string, unknown>)),
+  };
+}
+
+async function getKurtSnapshot() {
+  const status = await getKurtStatus();
+  const mood = kurtMood(status);
+  return {
+    ...status,
+    headline: mood.headline,
+    subtitle: mood.subtitle,
+    tone: mood.tone,
+    days_without_shots: status.current_streak,
+    note: "Un día cuenta con ≥1 play de 30s (Chile). Si no escuchó hoy, la racha sigue si ayer sí. Si kurt_down, racha 0.",
   };
 }

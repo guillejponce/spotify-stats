@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, BellOff, Loader2 } from "lucide-react";
+import { Bell, BellOff, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -13,12 +13,50 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out;
 }
 
-type Status = "loading" | "unsupported" | "disabled" | "prompt" | "subscribed" | "error";
+function isIosSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const iOS = /iPad|iPhone|iPod/.test(ua);
+  const webkit = /WebKit/.test(ua);
+  const crios = /CriOS|FxiOS/.test(ua);
+  return iOS && webkit && !crios;
+}
 
-export function PushNotificationsToggle() {
+function isStandalonePwa(): boolean {
+  if (typeof window === "undefined") return false;
+  const media = window.matchMedia("(display-mode: standalone)").matches;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return media || Boolean(nav.standalone);
+}
+
+type Status =
+  | "loading"
+  | "unsupported"
+  | "disabled"
+  | "prompt"
+  | "subscribed"
+  | "error";
+
+async function registerSw(): Promise<ServiceWorkerRegistration> {
+  const reg = await navigator.serviceWorker.register("/sw.js", {
+    scope: "/",
+    updateViaCache: "none",
+  });
+  await reg.update();
+  return navigator.serviceWorker.ready;
+}
+
+export function PushNotificationsToggle({
+  compact = false,
+}: {
+  compact?: boolean;
+}) {
   const [status, setStatus] = useState<Status>("loading");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [okMessage, setOkMessage] = useState<string | null>(null);
+  const [iosHint, setIosHint] = useState(false);
 
   const refresh = useCallback(async () => {
     if (
@@ -28,6 +66,12 @@ export function PushNotificationsToggle() {
       !("Notification" in window)
     ) {
       setStatus("unsupported");
+      if (isIosSafari() && !isStandalonePwa()) {
+        setIosHint(true);
+        setMessage(
+          "En iPhone: Compartir → Agregar a inicio, y abre Statsify desde el ícono. Safari en pestaña no recibe push.",
+        );
+      }
       return;
     }
 
@@ -35,11 +79,15 @@ export function PushNotificationsToggle() {
     const vapid = await vapidRes.json();
     if (!vapid.configured || !vapid.publicKey) {
       setStatus("disabled");
-      setMessage("Configurá las claves VAPID en el servidor.");
+      setMessage("Configura las claves VAPID en el servidor (Vercel).");
       return;
     }
 
-    await navigator.serviceWorker.register("/sw.js");
+    if (isIosSafari() && !isStandalonePwa()) {
+      setIosHint(true);
+    }
+
+    await registerSw();
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
@@ -56,9 +104,26 @@ export function PushNotificationsToggle() {
     void refresh();
   }, [refresh]);
 
+  async function sendTest(endpoint?: string) {
+    const res = await fetch("/api/push/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint,
+        title: "Kurt CubAIn de prueba",
+        body: "Si ves esto, las amenazas van a llegar. Un día sin música y me disparo.",
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.ok === false) {
+      throw new Error(json.error || "No se pudo enviar la prueba");
+    }
+  }
+
   async function enable() {
     setBusy(true);
     setMessage(null);
+    setOkMessage(null);
     try {
       const vapidRes = await fetch("/api/push/vapid");
       const vapid = await vapidRes.json();
@@ -71,12 +136,11 @@ export function PushNotificationsToggle() {
         return;
       }
 
-      await navigator.serviceWorker.register("/sw.js");
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await registerSw();
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(
-          vapid.publicKey
+          vapid.publicKey,
         ) as BufferSource,
       });
 
@@ -91,6 +155,16 @@ export function PushNotificationsToggle() {
         throw new Error(err.error || "Error al suscribir");
       }
       setStatus("subscribed");
+      try {
+        await sendTest(json.endpoint);
+        setOkMessage("Suscrito. Debería haberte llegado una prueba ahora.");
+      } catch (e) {
+        setMessage(
+          e instanceof Error
+            ? `Suscrito, pero la prueba falló: ${e.message}`
+            : "Suscrito, pero la prueba falló.",
+        );
+      }
     } catch (e) {
       setStatus("error");
       setMessage(e instanceof Error ? e.message : String(e));
@@ -102,6 +176,7 @@ export function PushNotificationsToggle() {
   async function disable() {
     setBusy(true);
     setMessage(null);
+    setOkMessage(null);
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
@@ -118,6 +193,22 @@ export function PushNotificationsToggle() {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testNow() {
+    setTesting(true);
+    setMessage(null);
+    setOkMessage(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      await sendTest(sub?.endpoint);
+      setOkMessage("Prueba enviada. Si no llega, revisa el permiso y el SW.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -138,23 +229,40 @@ export function PushNotificationsToggle() {
   }
 
   return (
-    <div className="space-y-1.5 px-2 pb-3 sm:px-3">
+    <div className={compact ? "space-y-1.5" : "space-y-1.5 px-2 pb-3 sm:px-3"}>
       {status === "subscribed" ? (
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="w-full justify-start gap-2"
-          disabled={busy}
-          onClick={() => void disable()}
-        >
-          {busy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <BellOff className="h-4 w-4" />
-          )}
-          Desactivar pushes
-        </Button>
+        <div className="space-y-1.5">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full justify-start gap-2"
+            disabled={testing}
+            onClick={() => void testNow()}
+          >
+            {testing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 text-spotify-green" />
+            )}
+            Probar notificación
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full justify-start gap-2"
+            disabled={busy}
+            onClick={() => void disable()}
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <BellOff className="h-4 w-4" />
+            )}
+            Desactivar pushes
+          </Button>
+        </div>
       ) : (
         <Button
           type="button"
@@ -173,9 +281,17 @@ export function PushNotificationsToggle() {
         </Button>
       )}
       <p className="px-1 text-[11px] leading-snug text-spotify-light-gray/55">
-        Avisos cuando una canción o artista sube en el top 100 (o salta +100
-        puestos en un mes).
+        Kurt te amenaza si un día no escuchas (y también avisa subidas de ranking).
       </p>
+      {iosHint && (
+        <p className="px-1 text-[11px] leading-snug text-amber-300/80">
+          iPhone: agrega la app a inicio y ábrela desde ahí, o Safari no entrega
+          el push.
+        </p>
+      )}
+      {okMessage && (
+        <p className="px-1 text-[11px] text-spotify-green">{okMessage}</p>
+      )}
       {message && (
         <p className="px-1 text-[11px] text-rose-400/90">{message}</p>
       )}

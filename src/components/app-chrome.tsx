@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { AgentDock } from "@/components/agent/agent-dock";
+import { ServiceWorkerRegister } from "@/components/service-worker-register";
 import { cn } from "@/lib/utils";
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <ServiceWorkerRegister />
       <Sidebar />
       <main
         className={cn(

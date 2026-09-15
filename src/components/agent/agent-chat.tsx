@@ -32,10 +32,10 @@ const STORAGE_KEY = "statsify-agent-chat-v1";
 const VOICE_KEY = "statsify-agent-voice-on";
 
 const SUGGESTIONS = [
+  "¿Cuántos días sin disparos llevas?",
   "¿Qué tanto escuché este año?",
   "Un día como hoy, ¿qué ponía?",
   "¿Hace cuánto que no escucho nada?",
-  "Mis temas mejor valorados",
   "Ármame algo nostálgico con mi data",
 ];
 
@@ -383,7 +383,7 @@ export function AgentChat({
       setRecording(true);
     } catch {
       stopMicTracks();
-      setError("Hay que permitir el micrófono para hablarle al DJ.");
+      setError("Hay que permitir el micrófono para hablarle a Kurt.");
     }
   }
 
@@ -413,15 +413,15 @@ export function AgentChat({
           </div>
           <div>
             <h1 className={cn("font-bold text-white", dock ? "text-base" : "text-2xl")}>
-              DJ
+              Kurt CubAIn
             </h1>
             {!dock ? (
               <p className="text-sm text-spotify-light-gray">
-                Historial, ratings, calendario y lo que está sonando.
+                DJ grunge. Si un día no pones música, se dispara.
               </p>
             ) : (
               <p className="text-[11px] text-spotify-light-gray">
-                Tu asistente musical
+                Tu búho de Duolingo con flannel
               </p>
             )}
           </div>

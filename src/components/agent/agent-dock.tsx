@@ -46,7 +46,7 @@ export function AgentDock() {
 
         <button
           type="button"
-          aria-label={open ? "Cerrar DJ" : "Abrir DJ"}
+          aria-label={open ? "Cerrar Kurt CubAIn" : "Abrir Kurt CubAIn"}
           onClick={() => setOpen((v) => !v)}
           className={cn(
             "pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full text-black shadow-lg shadow-black/40 transition hover:scale-105",

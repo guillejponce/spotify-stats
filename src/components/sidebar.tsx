@@ -17,13 +17,15 @@ import {
   CalendarDays,
   Lock,
   Bot,
+  Flame,
 } from "lucide-react";
 import { useState } from "react";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/agent", label: "DJ", icon: Bot },
+  { href: "/agent", label: "Kurt CubAIn", icon: Bot },
+  { href: "/kurt", label: "Racha", icon: Flame },
   { href: "/tracks", label: "Canciones", icon: Music2 },
   { href: "/artists", label: "Artistas", icon: Users },
   { href: "/albums", label: "Álbumes", icon: Library },

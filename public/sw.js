@@ -1,9 +1,17 @@
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   let data = {
-    title: "Statsify",
-    body: "Hay cambios en tus rankings",
-    url: "/",
-    tag: "statsify-rank",
+    title: "Kurt CubAIn",
+    body: "Hoy todavía no hay música. No me hagas dispararme.",
+    url: "/kurt",
+    tag: "kurt",
   };
 
   try {
@@ -19,25 +27,38 @@ self.addEventListener("push", (event) => {
       body: data.body,
       icon: "/icons/icon-192x192.png",
       badge: "/icons/icon-192x192.png",
-      tag: data.tag || "statsify-rank",
-      data: { url: data.url || "/" },
+      tag: data.tag || "kurt",
+      data: { url: data.url || "/kurt" },
       renotify: true,
-    })
+    }),
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/";
+  const raw = event.notification.data?.url || "/kurt";
+  const dest = new URL(raw, self.location.origin).href;
+
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    (async () => {
+      const list = await clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
       for (const client of list) {
-        if ("focus" in client) {
-          client.navigate(url);
-          return client.focus();
+        if (client.url.startsWith(self.location.origin) && "focus" in client) {
+          await client.focus();
+          if ("navigate" in client) {
+            try {
+              await client.navigate(dest);
+            } catch {
+              /* some browsers block navigate */
+            }
+          }
+          return;
         }
       }
-      if (clients.openWindow) return clients.openWindow(url);
-    })
+      if (clients.openWindow) await clients.openWindow(dest);
+    })(),
   );
 });
