@@ -16,6 +16,7 @@ export class SpotifyPlayerError extends Error {
       | "PREMIUM"
       | "NO_DEVICE"
       | "FORBIDDEN"
+      | "RESTRICTED"
       | "SPOTIFY",
   ) {
     super(message);
@@ -152,29 +153,66 @@ async function spotifyFetch(
 function throwIfPlayerFailed(res: Response, body: string) {
   if (res.ok || res.status === 204) return;
   const lower = body.toLowerCase();
-  if (res.status === 404 || lower.includes("no active device")) {
+  let reason = "";
+  let message = body;
+  try {
+    const json = JSON.parse(body) as {
+      error?: { reason?: string; message?: string; status?: number };
+    };
+    reason = (json.error?.reason ?? "").toLowerCase();
+    message = json.error?.message || body;
+  } catch {
+    /* texto plano */
+  }
+  const blob = `${lower} ${reason} ${message.toLowerCase()}`;
+
+  if (res.status === 404 || blob.includes("no active device")) {
     throw new SpotifyPlayerError(
-      "No hay un dispositivo de Spotify activo. Abre la app en el teléfono o la computadora.",
+      "No hay un dispositivo de Spotify activo. Abre la app en el teléfono o la computadora y dale play una vez.",
       404,
       "NO_DEVICE",
     );
   }
-  if (res.status === 403 && lower.includes("premium")) {
+  if (
+    res.status === 403 &&
+    (blob.includes("premium") || reason === "premium_required")
+  ) {
     throw new SpotifyPlayerError(
       "Spotify Premium es necesario para controlar la reproducción.",
       403,
       "PREMIUM",
     );
   }
-  if (res.status === 403) {
+  if (
+    res.status === 403 &&
+    (blob.includes("insufficient") || blob.includes("scope"))
+  ) {
     throw new SpotifyPlayerError(
-      "Falta permiso para controlar Spotify. Vuelve a conectar la cuenta.",
+      "La sesión de Spotify no tiene permiso de reproducción. Entrá a Conectar Spotify otra vez y aceptá los permisos.",
       403,
       "FORBIDDEN",
     );
   }
+  if (
+    res.status === 403 &&
+    (blob.includes("restriction") || reason.includes("restriction"))
+  ) {
+    throw new SpotifyPlayerError(
+      "Spotify rechazó el comando en este dispositivo. Abrí Spotify, dale play una vez (no en privado/DJ) y reintentá.",
+      403,
+      "RESTRICTED",
+    );
+  }
+  if (res.status === 403) {
+    throw new SpotifyPlayerError(
+      message.slice(0, 180) ||
+        "Spotify rechazó el control. Abrí la app, dale play una vez o reconectá la cuenta.",
+      403,
+      "RESTRICTED",
+    );
+  }
   throw new SpotifyPlayerError(
-    `Spotify ${res.status}: ${body.slice(0, 180) || res.statusText}`,
+    `Spotify ${res.status}: ${message.slice(0, 180) || res.statusText}`,
     res.status,
     "SPOTIFY",
   );
@@ -269,7 +307,25 @@ export function toTrackUri(raw: string): string | null {
   if (uri) return s;
   const open = s.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]{22})/);
   if (open) return `spotify:track:${open[1]}`;
-  if (/^[a-zA-Z0-9]{22}$/.test(s)) return `spotify:track:${s}`;
+  if (/^[a-zA-Z0-9]{22}$/.test(s) && !s.includes(":")) return `spotify:track:${s}`;
+  return null;
+}
+
+export function toArtistUri(raw: string): string | null {
+  const s = raw.trim();
+  const uri = s.match(/^spotify:artist:([a-zA-Z0-9]{22})$/);
+  if (uri) return s;
+  const open = s.match(/open\.spotify\.com\/artist\/([a-zA-Z0-9]{22})/);
+  if (open) return `spotify:artist:${open[1]}`;
+  return null;
+}
+
+export function toAlbumUri(raw: string): string | null {
+  const s = raw.trim();
+  const uri = s.match(/^spotify:album:([a-zA-Z0-9]{22})$/);
+  if (uri) return s;
+  const open = s.match(/open\.spotify\.com\/album\/([a-zA-Z0-9]{22})/);
+  if (open) return `spotify:album:${open[1]}`;
   return null;
 }
 
@@ -311,6 +367,17 @@ async function pickPlaybackDevice(preferred?: string): Promise<string> {
   return active.id;
 }
 
+async function activateDevice(deviceId: string): Promise<void> {
+  const res = await spotifyFetch("/me/player", {
+    method: "PUT",
+    body: JSON.stringify({ device_ids: [deviceId], play: false }),
+  });
+  if (res.status === 204 || res.ok) return;
+  const body = res.status === 204 ? "" : await res.text();
+  if (res.status === 404) return;
+  throwIfPlayerFailed(res, body);
+}
+
 export async function startPlayingUris(
   uris: string[],
   deviceId?: string,
@@ -320,15 +387,96 @@ export async function startPlayingUris(
     throw new SpotifyPlayerError("No hay canciones para reproducir", 400, "SPOTIFY");
   }
   const device = await pickPlaybackDevice(deviceId);
+  const tryPlay = async () => {
+    const res = await spotifyFetch(
+      `/me/player/play?device_id=${encodeURIComponent(device)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ uris: clean, offset: { position: 0 } }),
+      },
+    );
+    const body = res.status === 204 ? "" : await res.text();
+    throwIfPlayerFailed(res, body);
+  };
+  try {
+    await tryPlay();
+  } catch (err) {
+    if (err instanceof SpotifyPlayerError && err.code === "RESTRICTED") {
+      await activateDevice(device);
+      await tryPlay();
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function startPlayingContext(
+  contextUri: string,
+  deviceId?: string,
+): Promise<void> {
+  const device = await pickPlaybackDevice(deviceId);
+  const tryPlay = async () => {
+    const res = await spotifyFetch(
+      `/me/player/play?device_id=${encodeURIComponent(device)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ context_uri: contextUri }),
+      },
+    );
+    const body = res.status === 204 ? "" : await res.text();
+    throwIfPlayerFailed(res, body);
+  };
+  try {
+    await tryPlay();
+  } catch (err) {
+    if (err instanceof SpotifyPlayerError && err.code === "RESTRICTED") {
+      await activateDevice(device);
+      await tryPlay();
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function getArtistTopTrackUris(artistId: string): Promise<string[]> {
   const res = await spotifyFetch(
-    `/me/player/play?device_id=${encodeURIComponent(device)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ uris: clean, offset: { position: 0 } }),
-    },
+    `/artists/${encodeURIComponent(artistId)}/top-tracks?market=from_token`,
   );
-  const body = res.status === 204 ? "" : await res.text();
-  throwIfPlayerFailed(res, body);
+  const json = await readJson(res);
+  const tracks = Array.isArray(json?.tracks) ? json.tracks : [];
+  const uris: string[] = [];
+  for (const t of tracks) {
+    if (!t || typeof t !== "object") continue;
+    const uri = (t as { uri?: string }).uri;
+    if (uri) uris.push(uri);
+  }
+  return uris.slice(0, 10);
+}
+
+export async function searchSpotifyArtist(
+  query: string,
+): Promise<{ id: string; name: string; uri: string } | null> {
+  const q = query.trim();
+  if (!q) return null;
+  const res = await spotifyFetch(
+    `/search?q=${encodeURIComponent(q)}&type=artist&limit=5`,
+  );
+  const json = await readJson(res);
+  const items =
+    json?.artists && typeof json.artists === "object"
+      ? (json.artists as { items?: { id?: string; name?: string; uri?: string }[] })
+          .items
+      : null;
+  if (!Array.isArray(items) || !items.length) return null;
+  const lower = q.toLowerCase();
+  const hit =
+    items.find((a) => (a.name ?? "").toLowerCase() === lower) ?? items[0];
+  if (!hit?.id || !hit.name) return null;
+  return {
+    id: hit.id,
+    name: hit.name,
+    uri: hit.uri || `spotify:artist:${hit.id}`,
+  };
 }
 
 export async function addUrisToQueue(uris: string[]): Promise<void> {

@@ -29,11 +29,16 @@ import {
   addUrisToQueue,
   controlPlayback,
   fetchArtistDiscographyTracks,
+  getArtistTopTrackUris,
   getCatalogTrackFacts,
   getPlayerSnapshot,
   hydrateCatalogPopularity,
   resolveTrackQueries,
+  searchSpotifyArtist,
+  startPlayingContext,
   startPlayingUris,
+  toAlbumUri,
+  toArtistUri,
 } from "@/lib/spotify-player";
 import type { TimeFilter, TimeFilterParams, TopItem } from "@/types/database";
 
@@ -256,7 +261,7 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: "play_tracks",
       description:
-        "Reproduce o encola canciones concretas en el Spotify de Guille. Usar si pide poner un tema, armar una cola, empezar a sonar desde cero, o 'pon estos'. Resuelve nombres ('Turnstile - UNDERWATER BOI') o URIs. Requiere dispositivo activo y Premium.",
+        "Reproduce o encola en el Spotify de Guille. Temas: queries. ARTISTA entero: campo artist (pon Turnstile, pon este artista). Álbum: URI spotify:album: o URL. Requiere dispositivo activo (app abierta) y Premium.",
       parameters: {
         type: "object",
         properties: {
@@ -264,16 +269,21 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
             type: "string",
             enum: ["replace", "queue"],
             description:
-              "replace = empieza esta lista desde cero (reemplaza lo actual). queue = las agrega a continuación. Si no hay nada sonando, queue se convierte en replace.",
+              "replace = empieza esta lista/artista desde cero. queue = las agrega a continuación. Si no hay nada sonando, queue se convierte en replace.",
           },
           queries: {
             type: "array",
             items: { type: "string" },
             description:
-              "Hasta 12: 'artista - tema', nombre del tema, o spotify:track:id / URL.",
+              "Temas: 'artista - tema', nombre, o spotify:track:id / URL. También spotify:album: o URL de álbum.",
+          },
+          artist: {
+            type: "string",
+            description:
+              "Nombre o URI de un artista para ponerlo a sonar (radio/catálogo). Usar si pide 'pon Turnstile' o reproducir un artista, no un tema suelto.",
           },
         },
-        required: ["mode", "queries"],
+        required: ["mode"],
       },
     },
   },
@@ -829,7 +839,15 @@ async function getKurtSnapshot() {
 
 function playerError(err: unknown) {
   if (err instanceof SpotifyPlayerError) {
-    return { ok: false, error: err.message, code: err.code };
+    return {
+      ok: false,
+      error: err.message,
+      code: err.code,
+      reconnect:
+        err.code === "FORBIDDEN" || err.code === "EXPIRED"
+          ? "/api/spotify/auth"
+          : undefined,
+    };
   }
   throw err;
 }
@@ -932,17 +950,116 @@ async function loadHeardTracksForArtist(artistId: string): Promise<
   return rows.filter((r) => r.id && r.name);
 }
 
+async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
+  const uriFromInput = toArtistUri(nameOrUri);
+  const artist = uriFromInput
+    ? {
+        id: uriFromInput.slice("spotify:artist:".length),
+        name: nameOrUri,
+        uri: uriFromInput,
+      }
+    : await searchSpotifyArtist(nameOrUri);
+  if (!artist) {
+    return { ok: false, error: `No encontré al artista «${nameOrUri}» en Spotify.` };
+  }
+
+  let used: "context" | "top_tracks" = "context";
+  let note: string | null = null;
+  let playMode = mode;
+
+  if (playMode === "queue") {
+    const snapshot = await getPlayerSnapshot().catch(() => null);
+    if (!snapshot?.track && !snapshot?.is_playing) {
+      playMode = "replace";
+      note = "No había nada sonando: empecé al artista desde cero.";
+    }
+  }
+
+  const topUris = await getArtistTopTrackUris(artist.id);
+
+  if (playMode === "queue") {
+    if (!topUris.length) {
+      return { ok: false, error: `No pude armar la cola de ${artist.name}.` };
+    }
+    await addUrisToQueue(topUris);
+    used = "top_tracks";
+  } else {
+    try {
+      await startPlayingContext(artist.uri);
+    } catch (err) {
+      if (
+        err instanceof SpotifyPlayerError &&
+        (err.code === "RESTRICTED" || err.code === "SPOTIFY") &&
+        topUris.length
+      ) {
+        await startPlayingUris(topUris);
+        used = "top_tracks";
+        note = [
+          note,
+          "Spotify no dejó poner el artista entero en este dispositivo; puse sus temas más escuchados.",
+        ]
+          .filter(Boolean)
+          .join(" ");
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const after = await getPlayerSnapshot().catch(() => null);
+  return {
+    ok: true,
+    mode: playMode,
+    kind: "artist",
+    artist: artist.name,
+    via: used,
+    note,
+    now: after?.track
+      ? { name: after.track.name, artist: after.track.artist }
+      : null,
+    is_playing: after?.is_playing ?? playMode === "replace",
+    device: after?.device ?? null,
+  };
+}
+
 async function playTracks(args: Record<string, unknown>) {
   const modeRaw = String(args.mode ?? "replace");
   let mode: "replace" | "queue" = modeRaw === "queue" ? "queue" : "replace";
+  const artistArg = String(args.artist ?? "").trim();
   const queries = Array.isArray(args.queries)
     ? args.queries.map((q) => String(q ?? "").trim()).filter(Boolean)
     : [];
-  if (!queries.length) {
-    return { error: "Pasa queries: nombres de canciones o spotify:track:id" };
-  }
 
   try {
+    if (artistArg) return await playArtistName(artistArg, mode);
+
+    if (queries.length === 1 && toArtistUri(queries[0])) {
+      return await playArtistName(queries[0], mode);
+    }
+
+    const albumUri = queries.length === 1 ? toAlbumUri(queries[0]) : null;
+    if (albumUri && mode === "replace") {
+      await startPlayingContext(albumUri);
+      const after = await getPlayerSnapshot().catch(() => null);
+      return {
+        ok: true,
+        mode,
+        kind: "album",
+        now: after?.track
+          ? { name: after.track.name, artist: after.track.artist }
+          : null,
+        is_playing: after?.is_playing ?? true,
+        device: after?.device ?? null,
+      };
+    }
+
+    if (!queries.length) {
+      return {
+        error:
+          "Pasá artist (para un artista) o queries (temas / álbum).",
+      };
+    }
+
     const { resolved, missing } = await resolveTrackQueries(queries);
     const unique: typeof resolved = [];
     const seen = new Set<string>();
@@ -952,6 +1069,9 @@ async function playTracks(args: Record<string, unknown>) {
       unique.push(t);
     }
     if (!unique.length) {
+      if (queries.length === 1) {
+        return await playArtistName(queries[0], mode);
+      }
       return {
         ok: false,
         error: "No pude resolver esas canciones en Spotify.",
