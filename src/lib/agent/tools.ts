@@ -24,6 +24,11 @@ import {
   getSpotifyAccessToken,
 } from "@/lib/spotify-token";
 import { getKurtStatus, kurtMood } from "@/lib/kurt";
+import {
+  SpotifyPlayerError,
+  controlPlayback,
+  getPlayerSnapshot,
+} from "@/lib/spotify-player";
 import type { TimeFilter, TimeFilterParams, TopItem } from "@/types/database";
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -37,6 +42,8 @@ export const TOOL_LABELS: Record<string, string> = {
   get_now_playing: "Qué está sonando…",
   get_listening_gap: "Hace cuánto no pone nada…",
   get_kurt_status: "Contando días sin disparos…",
+  control_player: "Tocando el reproductor…",
+  inspect_now_playing: "Mirando lo que suena…",
 };
 
 const PERIODS = [
@@ -218,6 +225,33 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "control_player",
+      description:
+        "Controla el Spotify de Guille: play, pause, next o previous. Usar si pide pausar, reanudar, saltar, anterior, o controlar lo que suena. Requiere un dispositivo activo y Premium.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["play", "pause", "next", "previous"],
+          },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "inspect_now_playing",
+      description:
+        "Lo que está sonando ahora + cómo aparece en el historial/ratings de Guille. Usar para 'saber más', datos freak, o si pregunta por el tema actual.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
 ];
 
 function hoursFromMs(ms: number): number {
@@ -307,6 +341,10 @@ async function dispatchTool(name: string, args: Record<string, unknown>) {
       return getListeningGap();
     case "get_kurt_status":
       return getKurtSnapshot();
+    case "control_player":
+      return controlPlayer(args);
+    case "inspect_now_playing":
+      return inspectNowPlayingDeep();
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -717,5 +755,94 @@ async function getKurtSnapshot() {
     tone: mood.tone,
     days_without_shots: status.current_streak,
     note: "Un día cuenta con ≥1 play de 30s (Chile). Si no escuchó hoy, la racha sigue si ayer sí. Si kurt_down, racha 0.",
+  };
+}
+
+function playerError(err: unknown) {
+  if (err instanceof SpotifyPlayerError) {
+    return { ok: false, error: err.message, code: err.code };
+  }
+  throw err;
+}
+
+async function controlPlayer(args: Record<string, unknown>) {
+  const action = String(args.action ?? "");
+  if (
+    action !== "play" &&
+    action !== "pause" &&
+    action !== "next" &&
+    action !== "previous"
+  ) {
+    return { error: "action inválida. Usa play, pause, next o previous." };
+  }
+  try {
+    await controlPlayback(action);
+    const snapshot = await getPlayerSnapshot().catch(() => null);
+    return {
+      ok: true,
+      action,
+      is_playing: snapshot?.is_playing ?? action === "play",
+      device: snapshot?.device ?? null,
+      track: snapshot?.track
+        ? {
+            name: snapshot.track.name,
+            artist: snapshot.track.artist,
+            album: snapshot.track.album,
+          }
+        : null,
+      up_next: (snapshot?.queue ?? []).slice(0, 5).map((t) => ({
+        name: t.name,
+        artist: t.artist,
+      })),
+    };
+  } catch (err) {
+    return playerError(err);
+  }
+}
+
+async function inspectNowPlayingDeep() {
+  let snapshot;
+  try {
+    snapshot = await getPlayerSnapshot();
+  } catch (err) {
+    return playerError(err);
+  }
+
+  if (!snapshot.track) {
+    return { is_playing: false, note: "Nada sonando ahora en Spotify." };
+  }
+
+  const track = snapshot.track;
+  const artistQuery = track.artist.split(",")[0]?.trim() || track.artist;
+
+  const [library, artist, ratings] = await Promise.all([
+    searchLibrary({ query: track.name, kind: "tracks", period: "all" }),
+    inspectArtist({ query: artistQuery, period: "all" }),
+    getRatedTracks({
+      search: track.name,
+      offset: 0,
+      limit: 6,
+      sortBy: "rating_desc",
+    }).catch(() => ({ tracks: [], total: 0 })),
+  ]);
+
+  return {
+    is_playing: snapshot.is_playing,
+    device: snapshot.device,
+    progress_min: Math.round((snapshot.progress_ms / 60_000) * 10) / 10,
+    duration_min: Math.round((track.duration_ms / 60_000) * 10) / 10,
+    track: {
+      name: track.name,
+      artist: track.artist,
+      album: track.album,
+    },
+    in_your_library: library,
+    artist_in_history: artist,
+    your_ratings: ratings.tracks.slice(0, 6).map((t) => ({
+      name: t.track_name,
+      artist: t.artist_name,
+      rating: t.rating,
+    })),
+    note: "Ancla la respuesta a estos números. El dato freak puede salir de tu conocimiento general SOLO si es real; si no estás seguro, omítelo.",
   };
 }

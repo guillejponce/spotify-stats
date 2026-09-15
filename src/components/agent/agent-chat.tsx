@@ -19,6 +19,7 @@ import {
   recorderExtension,
   textForSpeech,
 } from "@/lib/agent/voice";
+import { KURT_ASK_EVENT, KNOW_MORE_PROMPT } from "@/lib/agent/ask-kurt";
 
 type ChatRole = "user" | "assistant";
 
@@ -37,6 +38,7 @@ const SUGGESTIONS = [
   "Un día como hoy, ¿qué ponía?",
   "¿Hace cuánto que no escucho nada?",
   "Ármame algo nostálgico con mi data",
+  "Pausa lo que está sonando",
 ];
 
 function uid(): string {
@@ -98,6 +100,11 @@ export function AgentChat({
   const [voiceOn, setVoiceOn] = useState(true);
   const [recording, setRecording] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [liveTrack, setLiveTrack] = useState<{
+    name: string;
+    artist: string;
+    is_playing: boolean;
+  } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -108,6 +115,7 @@ export function AgentChat({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recStreamRef = useRef<MediaStream | null>(null);
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   messagesRef.current = messages;
   busyRef.current = busy;
@@ -313,6 +321,52 @@ export function AgentChat({
       abortRef.current = null;
     }
   }
+
+  sendRef.current = send;
+
+  useEffect(() => {
+    const onAsk = (event: Event) => {
+      const text = (event as CustomEvent<string>).detail;
+      if (typeof text === "string") void sendRef.current(text);
+    };
+    window.addEventListener(KURT_ASK_EVENT, onAsk);
+    return () => window.removeEventListener(KURT_ASK_EVENT, onAsk);
+  }, []);
+
+  useEffect(() => {
+    let dead = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/spotify/player", { cache: "no-store" });
+        if (!res.ok) {
+          if (!dead) setLiveTrack(null);
+          return;
+        }
+        const data = (await res.json()) as {
+          is_playing?: boolean;
+          track?: { name?: string; artist?: string } | null;
+        };
+        if (dead) return;
+        if (data.track?.name) {
+          setLiveTrack({
+            name: data.track.name,
+            artist: data.track.artist ?? "",
+            is_playing: Boolean(data.is_playing),
+          });
+        } else {
+          setLiveTrack(null);
+        }
+      } catch {
+        if (!dead) setLiveTrack(null);
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 10_000);
+    return () => {
+      dead = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   async function transcribeAndSend(blob: Blob, mime: string) {
     setStatus("Transcribiendo…");
@@ -532,6 +586,25 @@ export function AgentChat({
 
       {error ? (
         <p className="mt-2 text-sm text-red-400">{error}</p>
+      ) : null}
+
+      {liveTrack && dock ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void send(KNOW_MORE_PROMPT)}
+            className="gap-1.5"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-spotify-green" />
+            Saber más de esta canción
+          </Button>
+          <p className="truncate text-[11px] text-spotify-light-gray/70">
+            {liveTrack.is_playing ? "Suena" : "Pausado"}: {liveTrack.name}
+          </p>
+        </div>
       ) : null}
 
       {recording ? (

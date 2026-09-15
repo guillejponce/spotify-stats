@@ -12,7 +12,9 @@ import {
   Play,
   SkipBack,
   SkipForward,
+  Sparkles,
 } from "lucide-react";
+import { askKurt, KNOW_MORE_PROMPT } from "@/lib/agent/ask-kurt";
 
 type PlayerTrack = {
   id: string | null;
@@ -259,6 +261,17 @@ export function AgentPlayer({ className }: { className?: string }) {
                 <SkipForward className="h-5 w-5 fill-current" />
               </button>
             </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="w-full gap-1.5"
+              onClick={() => askKurt(KNOW_MORE_PROMPT)}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-spotify-green" />
+              Saber más de la canción
+            </Button>
 
             {error && !needsReconnect ? (
               <p className="text-xs text-amber-200/90">{error.message}</p>
