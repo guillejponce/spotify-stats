@@ -86,14 +86,16 @@ export function AgentPlayer({ className }: { className?: string }) {
     return () => clearInterval(id);
   }, [load]);
 
+  const playing = Boolean(player?.is_playing && player.track);
+  const durationMs = player?.track?.duration_ms ?? 0;
+
   useEffect(() => {
-    if (!player?.is_playing || !player.track) return;
-    const duration = player.track.duration_ms;
+    if (!playing || durationMs <= 0) return;
     const id = setInterval(() => {
-      setProgress((prev) => Math.min(prev + 1000, duration));
+      setProgress((prev) => Math.min(prev + 1000, durationMs));
     }, 1000);
     return () => clearInterval(id);
-  }, [player?.is_playing, player?.track?.id, player?.track?.duration_ms]);
+  }, [playing, durationMs]);
 
   async function control(action: "play" | "pause" | "next" | "previous") {
     if (busy) return;

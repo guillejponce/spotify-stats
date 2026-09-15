@@ -56,6 +56,13 @@ type SpotifyItem = {
   images?: SpotifyImage[];
 };
 
+type PlaybackState = {
+  is_playing?: boolean;
+  progress_ms?: number;
+  device?: { id?: string; name?: string } | null;
+  item?: SpotifyItem | null;
+};
+
 function mapItem(item: SpotifyItem | null | undefined): PlayerTrack | null {
   if (!item?.name) return null;
   const artist =
@@ -156,15 +163,10 @@ export async function getPlayerSnapshot(): Promise<PlayerSnapshot> {
     throw new SpotifyPlayerError("Spotify expiró", 401, "EXPIRED");
   }
 
-  let state: {
-    is_playing?: boolean;
-    progress_ms?: number;
-    device?: { id?: string; name?: string } | null;
-    item?: SpotifyItem | null;
-  } | null = null;
+  let state: PlaybackState | null = null;
 
   if (stateRes.status !== 204 && stateRes.ok) {
-    state = (await stateRes.json()) as typeof state;
+    state = (await stateRes.json()) as PlaybackState;
   } else if (!stateRes.ok && stateRes.status !== 204) {
     const body = await stateRes.text();
     throwIfPlayerFailed(stateRes, body);
