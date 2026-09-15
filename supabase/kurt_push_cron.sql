@@ -1,7 +1,14 @@
--- OPCIONAL. Vercel ya llama a /api/cron/kurt cada hora (vercel.json).
--- Solo corre esto si quieres un backup desde Supabase (pg_cron).
--- Si CRON_SECRET en Vercel está marcado Sensitive y no lo ves, NO lo busques:
--- genera uno nuevo, pégalo en Vercel (Production + Preview) y acá abajo.
+-- Avisos de racha de Kurt cada hora (pg_cron). Vercel Hobby no puede.
+--
+-- El Bearer tiene que coincidir con CRON_SECRET en Vercel.
+-- Si no lo ves ahí (Sensitive), cópialo del job que ya existe:
+--   SELECT jobname, command FROM cron.job;
+-- El ranking-alerts-daily trae `Bearer …` en command. Pegalo abajo
+-- en lugar de __CRON_SECRET__.
+--
+-- Si no hay ningún job todavía: openssl rand -hex 32
+-- → pega ese valor en Vercel (CRON_SECRET, Production) y acá.
+-- Redeploy después de cambiar el env.
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
 CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
@@ -24,3 +31,8 @@ SELECT cron.schedule(
   );
   $$
 );
+
+-- Verificar:
+--   SELECT * FROM cron.job WHERE jobname = 'kurt-streak-alerts';
+-- Historial:
+--   SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 20;

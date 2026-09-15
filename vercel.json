@@ -1,12 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/kurt",
-      "schedule": "20 * * * *"
-    },
-    {
-      "path": "/api/cron/ranking-alerts",
-      "schedule": "0 6 * * *"
-    }
-  ]
+  "crons": []
 }
