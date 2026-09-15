@@ -131,22 +131,34 @@ export async function getRatedTracks(options: {
 }): Promise<{ tracks: SongRating[]; total: number }> {
   const supabase = createServerSupabaseClient();
   const { search, offset = 0, limit = 36, sortBy = "rating_desc" } = options;
+  const needle = search?.trim() ?? "";
+
+  // Nested PostgREST `.or(tracks.name…, tracks.artists.name…)` 400s
+  // ("failed to parse logic tree") and blows up on commas in titles.
+  // Filter the rated list in memory (~hundreds of rows), don't scan the catalog.
+  if (needle) {
+    const rated = await fetchAllRatedTracks(supabase);
+    const filtered = rated.filter((t) => ratingMatchesQuery(t, needle));
+    const sorted = sortSongRatings(filtered, sortBy);
+    return {
+      tracks: sorted.slice(offset, offset + limit),
+      total: filtered.length,
+    };
+  }
 
   // Try RPC (much faster: single SQL with proper indexes)
-  if (!search) {
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_rated_tracks", {
-      sort_mode: sortBy,
-      result_offset: offset,
-      result_limit: limit,
-    });
+  const { data: rpcData, error: rpcError } = await supabase.rpc("get_rated_tracks", {
+    sort_mode: sortBy,
+    result_offset: offset,
+    result_limit: limit,
+  });
 
-    if (!rpcError && rpcData) {
-      const rows = Array.isArray(rpcData) ? rpcData : [];
-      const tracks: SongRating[] = rows.map((r: Record<string, unknown>) => mapRpcSongRating(r));
+  if (!rpcError && rpcData) {
+    const rows = Array.isArray(rpcData) ? rpcData : [];
+    const tracks: SongRating[] = rows.map((r: Record<string, unknown>) => mapRpcSongRating(r));
 
-      const total = await countLogicalRatedTracks(supabase);
-      return { tracks, total };
-    }
+    const total = await countLogicalRatedTracks(supabase);
+    return { tracks, total };
   }
 
   // Fallback: PostgREST query
@@ -160,12 +172,6 @@ export async function getRatedTracks(options: {
        )`,
       { count: "exact" }
     );
-
-  if (search) {
-    query = query.or(
-      `tracks.name.ilike.%${search}%,tracks.artists.name.ilike.%${search}%`
-    );
-  }
 
   switch (sortBy) {
     case "rating_asc":
@@ -183,33 +189,76 @@ export async function getRatedTracks(options: {
 
   query = query.range(offset, offset + limit - 1);
 
-  const { data, error, count } = await query;
+  const { data, error } = await query;
 
   if (error) throw error;
 
-  const tracks: SongRating[] = (data || []).map((row: Record<string, unknown>) => {
-    const track = row.tracks as Record<string, unknown> | null;
-    const artist = track?.artists as Record<string, unknown> | null;
-    const album = track?.albums as Record<string, unknown> | null;
-
-    return {
-      track_id: String(row.track_id),
-      rating: numeric(row.rating),
-      track_name: String(track?.name ?? ""),
-      artist_name: artist?.name ? String(artist.name) : null,
-      album_name: album?.name ? String(album.name) : null,
-      album_id: track?.album_id ? String(track.album_id) : null,
-      artist_id: track?.artist_id ? String(track.artist_id) : null,
-      image_url: (album?.image_url as string | null) ?? (artist?.image_url as string | null) ?? null,
-      created_at: String(row.created_at),
-      updated_at: String(row.updated_at),
-    };
-  });
+  const tracks: SongRating[] = (data || []).map(mapSongRatingJoinRow);
 
   const deduped = dedupeSongRatings(tracks);
   const total = await countLogicalRatedTracks(supabase);
   const sliced = deduped.slice(offset, offset + limit);
   return { tracks: sliced, total };
+}
+
+async function fetchAllRatedTracks(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+): Promise<SongRating[]> {
+  const pageSize = 1000;
+  const rows: SongRating[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("song_ratings")
+      .select(
+        `track_id, rating, created_at, updated_at,
+         tracks!inner(name, artist_id, album_id,
+           artists(name, image_url),
+           albums(name, image_url)
+         )`,
+      )
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    const chunk = (data || []).map(mapSongRatingJoinRow);
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return dedupeSongRatings(rows);
+}
+
+function mapSongRatingJoinRow(row: Record<string, unknown>): SongRating {
+  const track = row.tracks as Record<string, unknown> | null;
+  const artist = track?.artists as Record<string, unknown> | null;
+  const album = track?.albums as Record<string, unknown> | null;
+
+  return {
+    track_id: String(row.track_id),
+    rating: numeric(row.rating),
+    track_name: String(track?.name ?? ""),
+    artist_name: artist?.name ? String(artist.name) : null,
+    album_name: album?.name ? String(album.name) : null,
+    album_id: track?.album_id ? String(track.album_id) : null,
+    artist_id: track?.artist_id ? String(track.artist_id) : null,
+    image_url:
+      (album?.image_url as string | null) ??
+      (artist?.image_url as string | null) ??
+      null,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function ratingMatchesQuery(t: SongRating, needle: string): boolean {
+  const n = needle.trim().toLowerCase();
+  if (!n) return true;
+  return (
+    t.track_name.toLowerCase().includes(n) ||
+    (t.artist_name ?? "").toLowerCase().includes(n)
+  );
+}
+
+function stripEditionSuffix(name: string): string {
+  return name.replace(/\s*[-–—(].*$/, "").trim();
 }
 
 async function countLogicalRatedTracks(
@@ -299,6 +348,29 @@ function mapRpcSongRating(r: Record<string, unknown>): SongRating {
     created_at: String(r.created_at ?? ""),
     updated_at: String(r.updated_at ?? ""),
   };
+}
+
+function sortSongRatings(
+  tracks: SongRating[],
+  sortBy: "rating_desc" | "rating_asc" | "recent" | "name",
+): SongRating[] {
+  const copy = [...tracks];
+  copy.sort((a, b) => {
+    switch (sortBy) {
+      case "rating_asc":
+        return a.rating - b.rating;
+      case "recent":
+        return String(b.updated_at).localeCompare(String(a.updated_at));
+      case "name":
+        return a.track_name.localeCompare(b.track_name, "es");
+      default:
+        return (
+          b.rating - a.rating ||
+          String(b.updated_at).localeCompare(String(a.updated_at))
+        );
+    }
+  });
+  return copy;
 }
 
 async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
@@ -547,6 +619,97 @@ export async function searchTracksForRating(
     deduped.push(row);
   }
   return deduped;
+}
+
+/** Rating 1–10 of the song that is playing (logical song, not a specific Spotify edition). */
+export async function lookupRatingForPlayingTrack(opts: {
+  spotifyTrackId?: string | null;
+  trackName: string;
+  artistName?: string;
+}): Promise<{
+  rating: number | null;
+  track_name: string | null;
+  artist_name: string | null;
+  album_name: string | null;
+}> {
+  const artistHint =
+    (opts.artistName ?? "").split(",")[0]?.trim().toLowerCase() ?? "";
+  const supabase = createServerSupabaseClient();
+
+  if (opts.spotifyTrackId) {
+    const bySpotifyId = await getTrackRating(opts.spotifyTrackId);
+    if (bySpotifyId != null) {
+      return {
+        rating: bySpotifyId,
+        track_name: opts.trackName,
+        artist_name: opts.artistName ?? null,
+        album_name: null,
+      };
+    }
+
+    const bySpotify = await supabase
+      .from("tracks")
+      .select("id, name, artist_id")
+      .eq("spotify_id", opts.spotifyTrackId)
+      .maybeSingle();
+
+    if (!bySpotify.error && bySpotify.data?.id) {
+      const { data: logical, error: logicalError } = await supabase.rpc(
+        "get_logical_track_rating",
+        {
+          p_track_name: String(bySpotify.data.name),
+          p_artist_id: bySpotify.data.artist_id
+            ? String(bySpotify.data.artist_id)
+            : null,
+        },
+      );
+      if (!logicalError && logical != null) {
+        return {
+          rating: numeric(logical),
+          track_name: String(bySpotify.data.name),
+          artist_name: opts.artistName ?? null,
+          album_name: null,
+        };
+      }
+      const mapped = await getTrackRating(String(bySpotify.data.id));
+      if (mapped != null) {
+        return {
+          rating: mapped,
+          track_name: String(bySpotify.data.name),
+          artist_name: opts.artistName ?? null,
+          album_name: null,
+        };
+      }
+    }
+  }
+
+  const rated = await fetchAllRatedTracks(supabase);
+  const nameLower = opts.trackName.trim().toLowerCase();
+  const stripped = stripEditionSuffix(opts.trackName).toLowerCase();
+
+  const pickFrom = (list: SongRating[]) =>
+    list.find((t) => t.track_name.trim().toLowerCase() === nameLower) ??
+    (stripped && stripped !== nameLower
+      ? list.find((t) => t.track_name.trim().toLowerCase() === stripped)
+      : undefined) ??
+    (stripped.length >= 4
+      ? list.find((t) => t.track_name.toLowerCase().includes(stripped))
+      : undefined) ??
+    null;
+
+  const sameArtist = artistHint
+    ? rated.filter((t) =>
+        (t.artist_name ?? "").toLowerCase().includes(artistHint),
+      )
+    : rated;
+  const best = pickFrom(sameArtist) ?? pickFrom(rated);
+
+  return {
+    rating: best?.rating ?? null,
+    track_name: best?.track_name ?? null,
+    artist_name: best?.artist_name ?? null,
+    album_name: best?.album_name ?? null,
+  };
 }
 
 export interface RatingAlbumSearchResult {

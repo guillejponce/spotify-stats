@@ -9,7 +9,11 @@ import {
   getTopArtists,
   getTopTracks,
 } from "@/lib/stats";
-import { getRatingsDashboard, getRatedTracks } from "@/lib/ratings";
+import {
+  getRatingsDashboard,
+  getRatedTracks,
+  lookupRatingForPlayingTrack,
+} from "@/lib/ratings";
 import { fetchTracksLeaderboard } from "@/lib/track-browse";
 import {
   fetchArtistPeriodStats,
@@ -200,7 +204,7 @@ export const AGENT_TOOLS: ChatCompletionTool[] = [
     function: {
       name: "get_ratings_snapshot",
       description:
-        "Valoraciones explícitas 1-10: tops, distribución, recientes. Distinto de 'más reproducido'.",
+        "Valoraciones explícitas 1-10 de Guille: tops, distribución, recientes. Distinto de 'más reproducido'. SIEMPRE usarla si pregunta por ratings. Vacío = no valoró eso; no es falta de acceso.",
       parameters: {
         type: "object",
         properties: {
@@ -655,6 +659,10 @@ async function getRatingsSnapshot(args: Record<string, unknown>) {
         album: t.album_name,
         rating: t.rating,
       })),
+      note:
+        total === 0
+          ? "No hay valoraciones que coincidan con esa búsqueda. Eso NO es un error de conexión: Guille no valoró nada con ese nombre. Llama de nuevo sin search para el panorama."
+          : undefined,
     };
   }
 
@@ -684,6 +692,10 @@ async function getRatingsSnapshot(args: Record<string, unknown>) {
       artist: t.artist_name,
       rating: t.rating,
     })),
+    note:
+      dash.totalRated === 0
+        ? "Todavía no hay canciones valoradas en la base. No es un fallo de conexión."
+        : "Estas SÍ son las valoraciones de Guille. No digas que no tienes acceso a ratings.",
   };
 }
 
@@ -1210,19 +1222,37 @@ async function inspectNowPlayingDeep() {
   const track = snapshot.track;
   const artistQuery = track.artist.split(",")[0]?.trim() || track.artist;
 
-  const [library, artist, ratings, catalog] = await Promise.all([
-    searchLibrary({ query: track.name, kind: "tracks", period: "all" }),
-    inspectArtist({ query: artistQuery, period: "all" }),
-    getRatedTracks({
-      search: track.name,
-      offset: 0,
-      limit: 6,
-      sortBy: "rating_desc",
-    }).catch(() => ({ tracks: [], total: 0 })),
+  const asError = (err: unknown) => ({
+    error: err instanceof Error ? err.message : String(err),
+  });
+
+  const [library, artist, ratingLookup, catalog] = await Promise.all([
+    searchLibrary({ query: track.name, kind: "tracks", period: "all" }).catch(
+      asError,
+    ),
+    inspectArtist({ query: artistQuery, period: "all" }).catch(asError),
+    lookupRatingForPlayingTrack({
+      spotifyTrackId: track.id,
+      trackName: track.name,
+      artistName: track.artist,
+    }).catch((err) => ({
+      rating: null as number | null,
+      track_name: null as string | null,
+      artist_name: null as string | null,
+      album_name: null as string | null,
+      error: err instanceof Error ? err.message : String(err),
+    })),
     track.id
       ? getCatalogTrackFacts(track.id).catch(() => null)
       : Promise.resolve(null),
   ]);
+
+  const playingRating =
+    "rating" in ratingLookup ? ratingLookup.rating : null;
+  const ratingsError =
+    "error" in ratingLookup && ratingLookup.error
+      ? String(ratingLookup.error)
+      : null;
 
   return {
     is_playing: snapshot.is_playing,
@@ -1237,11 +1267,23 @@ async function inspectNowPlayingDeep() {
     spotify_catalog: catalog,
     in_your_library: library,
     artist_in_history: artist,
-    your_ratings: ratings.tracks.slice(0, 6).map((t) => ({
-      name: t.track_name,
-      artist: t.artist_name,
-      rating: t.rating,
-    })),
-    note: "spotify_catalog.context_es ya resume lanzamiento/álbum. Incluye popularidad 0–100 (no streams). NO inventes millones de reproducciones. Ancla plays/ratings a la data de Guille. Un dato freak REAL o nada.",
+    playing_track_rating: playingRating,
+    playing_track_rated: playingRating != null,
+    your_rating:
+      playingRating != null && "track_name" in ratingLookup
+        ? {
+            name: ratingLookup.track_name ?? track.name,
+            artist: ratingLookup.artist_name ?? track.artist,
+            album: ratingLookup.album_name,
+            rating: playingRating,
+          }
+        : null,
+    ratings_error: ratingsError,
+    note:
+      ratingsError
+        ? `Falló la consulta de ratings (${ratingsError}). Si hay plays en in_your_library, las stats SÍ están conectadas; no digas que no tienes acceso a las stats.`
+        : playingRating == null
+          ? "Guille no valoró esta canción (1–10). Eso NO es un error de conexión ni falta de acceso. Si pide el panorama de ratings, usa get_ratings_snapshot. spotify_catalog.context_es ya resume lanzamiento/álbum. Popularidad 0–100 (no streams). Un dato freak REAL o nada."
+          : "playing_track_rating es el 1–10 de Guille para este tema. Las stats están conectadas. spotify_catalog.context_es ya resume lanzamiento/álbum. Popularidad 0–100 (no streams). Un dato freak REAL o nada.",
   };
 }
