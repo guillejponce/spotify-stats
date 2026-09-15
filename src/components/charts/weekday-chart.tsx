@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -9,16 +9,18 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  Cell,
 } from "recharts";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { msToHours, formatReproductionCount } from "@/lib/utils";
+  CHART_GREEN,
+  CHART_GREEN_BRIGHT,
+  ChartShell,
+  ChartTip,
+  chartAxis,
+  chartGrid,
+  useChartHeight,
+} from "@/components/charts/chart-ui";
+import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { ListeningTimeData } from "@/types/database";
 import { CHILE_TIMEZONE_LABEL, CHILE_WEEKDAY_ROWS } from "@/lib/chile-time";
 
@@ -32,9 +34,17 @@ interface WeekdayChartProps {
   title: string;
   data: ListeningTimeData[];
   loading?: boolean;
+  highlightWeekday?: number | null;
 }
 
-export function WeekdayChart({ title, data, loading = false }: WeekdayChartProps) {
+export function WeekdayChart({
+  title,
+  data,
+  loading = false,
+  highlightWeekday = null,
+}: WeekdayChartProps) {
+  const height = useChartHeight(200, 248);
+  const [picked, setPicked] = useState<number | null>(null);
   const rows = useMemo(() => {
     const acc = CHILE_WEEKDAY_ROWS.map((label, weekday) => ({
       weekday,
@@ -52,92 +62,72 @@ export function WeekdayChart({ title, data, loading = false }: WeekdayChartProps
     return nonzero.length ? nonzero : [];
   }, [data]);
 
-  if (loading) {
-    return (
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-64 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (rows.length === 0) {
-    return (
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex h-64 items-center justify-center">
-            <p className="text-sm text-spotify-light-gray">No data available</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const peak = rows.reduce(
+    (best, row) => (row.ms_played > best.ms_played ? row : best),
+    rows[0] ?? { weekday: -1, label: "", ms_played: 0, play_count: 0 },
+  );
+  const active = picked ?? highlightWeekday;
+  const selected = rows.find((d) => d.weekday === active) ?? (peak.ms_played > 0 ? peak : null);
 
   return (
-    <Card className="min-w-0">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          Suma de cada día civil en el período ({CHILE_TIMEZONE_LABEL}), usando el día de la
-          semana de esa fecha calendario.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="-mx-1 px-1 sm:mx-0 sm:px-0">
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.05)"
-            />
-            <XAxis
-              dataKey="label"
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => `${msToHours(v)}h`}
-              width={40}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#282828",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "8px",
-                color: "#fff",
-                fontSize: "12px",
-                maxWidth: 280,
-              }}
-              formatter={(value: number, _name, item) => {
-                const row = item?.payload as typeof rows[number] | undefined;
-                const plays = row?.play_count ?? 0;
-                return [
-                  `${msToHours(value)} h · ${formatReproductionCount(plays)} repros`,
-                  "Tiempo escuchado",
-                ];
-              }}
-            />
-            <Bar
-              dataKey="ms_played"
-              fill="#1ED760"
-              radius={[4, 4, 0, 0]}
-              opacity={0.85}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+    <ChartShell
+      title={title}
+      description={`Suma por día de la semana en ${CHILE_TIMEZONE_LABEL}.`}
+      loading={loading}
+      empty={rows.length === 0}
+      className="min-w-0"
+    >
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
+          <CartesianGrid {...chartGrid} />
+          <XAxis dataKey="label" {...chartAxis} />
+          <YAxis
+            {...chartAxis}
+            width={44}
+            tickFormatter={(v) => `${msToHours(v)}h`}
+          />
+          <Tooltip
+            cursor={{ fill: "rgba(29,185,84,0.08)" }}
+            content={
+              <ChartTip
+                title={(row) => String(row.label ?? "")}
+                body={(row) =>
+                  `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
+                }
+              />
+            }
+          />
+          <Bar
+            dataKey="ms_played"
+            radius={[6, 6, 0, 0]}
+            maxBarSize={48}
+            onClick={(row) => {
+              const w = Number((row as { weekday?: number }).weekday);
+              if (Number.isFinite(w)) setPicked(w);
+            }}
+          >
+            {rows.map((entry) => {
+              const isActive = active == null || entry.weekday === active;
+              return (
+                <Cell
+                  key={entry.weekday}
+                  cursor="pointer"
+                  fill={entry.weekday === peak.weekday ? CHART_GREEN_BRIGHT : CHART_GREEN}
+                  opacity={isActive ? 1 : 0.28}
+                />
+              );
+            })}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      {selected && (
+        <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
+          <span className="font-medium text-white">{selected.label}</span>
+          {" · "}
+          {msToHours(selected.ms_played)} h · {formatReproductionCount(selected.play_count)}{" "}
+          reproducciones
+        </p>
+      )}
+    </ChartShell>
   );
 }

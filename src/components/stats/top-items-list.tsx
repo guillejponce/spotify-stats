@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RankChangeBadge } from "@/components/stats/rank-change-badge";
-import { formatMs, formatReproductionCount } from "@/lib/utils";
+import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
 import { Music2 } from "lucide-react";
 import type { TopItem } from "@/types/database";
 
@@ -13,6 +13,7 @@ interface TopItemsListProps {
   items: TopItem[];
   loading?: boolean;
   showIndex?: boolean;
+  hideTitle?: boolean;
 }
 
 export function TopItemsList({
@@ -20,17 +21,20 @@ export function TopItemsList({
   items,
   loading = false,
   showIndex = true,
+  hideTitle = false,
 }: TopItemsListProps) {
   if (loading) {
     return (
-      <Card className="overflow-hidden">
-        <CardHeader className="px-4 pt-5 sm:p-6">
-          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 px-3 pb-4 sm:p-6 sm:pt-0">
+      <Card className="overflow-hidden border-white/[0.06]">
+        {!hideTitle && (
+          <CardHeader className="px-4 pt-5 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+          </CardHeader>
+        )}
+        <CardContent className={cn("space-y-3 px-3 pb-4", hideTitle ? "pt-4" : "sm:p-6 sm:pt-0")}>
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded" />
+              <Skeleton className="h-11 w-11 rounded-lg" />
               <div className="flex-1 space-y-1">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
@@ -44,11 +48,13 @@ export function TopItemsList({
 
   if (items.length === 0) {
     return (
-      <Card className="overflow-hidden">
-        <CardHeader className="px-4 pt-5 sm:p-6">
-          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="px-3 pb-4 sm:p-6 sm:pt-0">
+      <Card className="overflow-hidden border-white/[0.06]">
+        {!hideTitle && (
+          <CardHeader className="px-4 pt-5 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+          </CardHeader>
+        )}
+        <CardContent className={cn("px-3 pb-4", hideTitle ? "pt-4" : "sm:p-6 sm:pt-0")}>
           <p className="py-8 text-center text-sm text-spotify-light-gray">
             No data available. Import your listening history to see stats.
           </p>
@@ -60,18 +66,20 @@ export function TopItemsList({
   const maxValue = Math.max(...items.map((i) => i.play_count));
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="px-4 pt-5 sm:p-6">
-        <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 px-3 pb-4 sm:p-6 sm:pt-0">
+    <Card className="overflow-hidden border-white/[0.06]">
+      {!hideTitle && (
+        <CardHeader className="px-4 pt-5 sm:p-6">
+          <CardTitle className="text-base sm:text-lg">{title}</CardTitle>
+        </CardHeader>
+      )}
+      <CardContent className={cn("space-y-1 px-2 pb-3 sm:px-3", hideTitle ? "pt-2" : "sm:p-6 sm:pt-0")}>
         {items.map((item, index) => {
           const barWidth = maxValue > 0 ? (item.play_count / maxValue) * 100 : 0;
 
           return (
             <div
               key={item.id}
-              className="group relative flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-white/5 active:bg-white/10 sm:rounded-lg sm:p-2"
+              className="group relative flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-white/[0.06] active:bg-white/10 sm:p-2.5"
             >
               {showIndex && (
                 item.rank_delta !== undefined || item.prev_rank !== undefined ? (

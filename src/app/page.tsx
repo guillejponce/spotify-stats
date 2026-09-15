@@ -5,6 +5,11 @@ import { NowPlayingCard } from "@/components/now-playing/now-playing-card";
 import { StatCard } from "@/components/stats/stat-card";
 import { TopItemsList } from "@/components/stats/top-items-list";
 import { TimeFilterControl } from "@/components/stats/time-filter";
+import { ListeningInsights } from "@/components/stats/listening-insights";
+import {
+  StatsSyncBanner,
+  type RecentSyncPhase,
+} from "@/components/stats/stats-sync-banner";
 import { ListeningChart } from "@/components/charts/listening-chart";
 import { HourlyChart } from "@/components/charts/hourly-chart";
 import { MonthRankChart } from "@/components/charts/month-rank-chart";
@@ -21,6 +26,7 @@ import {
   LogIn,
   CheckCircle2,
   AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
 import {
   cn,
@@ -45,6 +51,8 @@ import {
 export default function DashboardPage() {
   const statsHydratedRef = useRef(false);
   const fetchStatsRef = useRef(async () => {});
+  const hourlySectionRef = useRef<HTMLDivElement>(null);
+  const weekdaySectionRef = useRef<HTMLDivElement>(null);
 
   const [timeFilter, setTimeFilter] = useState<TimeFilterParams>({
     filter: "all",
@@ -59,6 +67,10 @@ export default function DashboardPage() {
   /** Skeleton / bloqueo solo en la primera carga; los cambios de filtro refrescan datos sin vaciar todo. */
   const [blockingLoad, setBlockingLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncPhase, setSyncPhase] = useState<RecentSyncPhase>("idle");
+  const [syncInserted, setSyncInserted] = useState(0);
+  const [highlightHour, setHighlightHour] = useState<number | null>(null);
+  const [highlightWeekday, setHighlightWeekday] = useState<number | null>(null);
   const [stats, setStats] = useState({
     totalMs: 0,
     playCount: 0,
@@ -114,17 +126,30 @@ export default function DashboardPage() {
    *  No dependemos de fetchStats aquí para no reiniciar el interval ni duplicar sync al cambiar filtros.
    */
   useEffect(() => {
+    let hideTimer: number | undefined;
     const run = async () => {
+      setSyncPhase("syncing");
       try {
         const r = await syncSpotifyRecentFromServer();
-        if (r.ok) void fetchStatsRef.current();
+        if (r.ok) {
+          setSyncInserted(r.synced ?? 0);
+          setSyncPhase("refreshing");
+          await fetchStatsRef.current();
+          setSyncPhase("done");
+          hideTimer = window.setTimeout(() => setSyncPhase("idle"), 3800);
+        } else {
+          setSyncPhase("idle");
+        }
       } catch {
-        // sin tokens o error temporal
+        setSyncPhase("idle");
       }
     };
     void run();
     const id = window.setInterval(run, 5 * 60 * 1000);
-    return () => clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      if (hideTimer) window.clearTimeout(hideTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -148,96 +173,102 @@ export default function DashboardPage() {
       .catch(() => setSpotifySession({ connected: false, reason: "fetch_failed" }));
   }, []);
 
+  const connected = Boolean(spotifySession?.connected);
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-5 sm:space-y-8">
       {oauthBanner && (
         <div className="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100">
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" />
           <span>{oauthBanner}</span>
         </div>
       )}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-            Dashboard
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Tu escucha
           </h1>
           <p className="mt-1 text-sm text-spotify-light-gray">
-            Resumen de tu escucha; tiempos mostrados para Chile.
+            Stats en vivo, en hora de Chile.
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          {spotifySession && (
-            <div className="flex items-start gap-2 text-xs leading-relaxed text-spotify-light-gray sm:items-center">
-              {spotifySession.connected ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4 text-spotify-green" />
-                  <span>
-                    Spotify vinculado
-                    {spotifySession.access_token_expired &&
-                      " (access expirado; se renueva solo al usar la API si hay refresh token)"}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="text-spotify-light-gray/80">
-                    Sin tokens en BD
-                    {spotifySession.reason
-                      ? ` — ${spotifySession.reason}`
-                      : ""}{" "}
-                    · tabla <code className="text-spotify-green">spotify_tokens</code>
-                  </span>
-                </>
-              )}
-            </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {spotifySession && connected && (
+            <span className="hidden items-center gap-1.5 rounded-full border border-spotify-green/20 bg-spotify-green/10 px-2.5 py-1 text-[11px] font-medium text-spotify-green sm:inline-flex">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Spotify
+            </span>
           )}
           <a
             href="/api/spotify/auth"
             className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "min-h-[44px] w-full justify-center sm:min-h-0 sm:w-auto"
+              buttonVariants({ variant: connected ? "ghost" : "outline", size: "sm" }),
+              "min-h-10 px-3 sm:min-h-0"
             )}
           >
-            <LogIn className="mr-2 h-4 w-4" />
-            {spotifySession?.connected ? "Reconectar Spotify" : "Connect Spotify"}
+            <LogIn className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">
+              {connected ? "Reconectar" : "Connect Spotify"}
+            </span>
+            <span className="sm:hidden">{connected ? "Cuenta" : "Conectar"}</span>
           </a>
         </div>
       </div>
 
-      <div className="max-w-md">
-        <NowPlayingCard />
-      </div>
+      <StatsSyncBanner phase={syncPhase} inserted={syncInserted} />
 
-      <section className="sticky top-0 z-20 -mx-3 rounded-b-xl border-b border-white/[0.07] bg-spotify-black/90 px-3 py-3 supports-[backdrop-filter]:bg-spotify-black/75 supports-[backdrop-filter]:backdrop-blur-md lg:static lg:z-auto lg:-mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
+      <NowPlayingCard />
+
+      {!blockingLoad && (
+        <ListeningInsights
+          hourly={stats.hourlyData}
+          overTime={stats.listeningOverTime}
+          topArtist={stats.topArtists[0]?.name}
+          onHour={(hour) => {
+            setHighlightHour(hour);
+            hourlySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+          onWeekday={(weekday) => {
+            setHighlightWeekday(weekday);
+            weekdaySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        />
+      )}
+
+      <section className="sticky top-[max(4.25rem,env(safe-area-inset-top)+3.25rem)] z-20 -mx-3 rounded-b-2xl border-b border-white/[0.07] bg-spotify-black/90 px-3 py-2.5 supports-[backdrop-filter]:bg-spotify-black/80 supports-[backdrop-filter]:backdrop-blur-md lg:static lg:top-auto lg:z-auto lg:-mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
         <TimeFilterControl
           variant="dashboard"
           value={timeFilter}
           onChange={setTimeFilter}
-          busy={refreshing}
+          busy={refreshing || syncPhase === "refreshing"}
         />
       </section>
-      <p className="-mt-1 text-xs leading-relaxed text-spotify-light-gray/65 sm:-mt-2">
-        Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El número grande cuenta{" "}
-        <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
-        (segmentos de escucha)—igual que las barras por día / mes / año. Las listas Top ordenan por{" "}
-        <span className="text-spotify-light-gray">sesiones</span> (~15 min: mismo tema con pausas
-        cortas cuenta una vez). Todo agrupado en{" "}
-        <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>. El mapa térmico muestra el{" "}
-        <span className="text-spotify-light-gray">año civil actual en Chile</span>.
-      </p>
 
-      <div
-        className={cn(
-          "space-y-6 duration-300 sm:space-y-8",
-          refreshing && "opacity-70 transition-opacity"
-        )}
-      >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <details className="group rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs text-spotify-light-gray/80 [&::-webkit-details-marker]:hidden">
+          <span>Cómo se cuentan las stats</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
+        </summary>
+        <p className="mt-2 text-xs leading-relaxed text-spotify-light-gray/65">
+          Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El número grande cuenta{" "}
+          <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
+          (segmentos de escucha)—igual que las barras por día / mes / año. Las listas Top ordenan por{" "}
+          <span className="text-spotify-light-gray">sesiones</span> (~15 min: mismo tema con pausas
+          cortas cuenta una vez). Todo agrupado en{" "}
+          <span className="text-spotify-light-gray">{CHILE_TIMEZONE_LABEL}</span>. El mapa térmico muestra el{" "}
+          <span className="text-spotify-light-gray">año civil actual en Chile</span>.
+        </p>
+      </details>
+
+      <div className="space-y-5 sm:space-y-8">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
           <StatCard
             title="Tiempo de escucha"
             value={formatMs(stats.totalMs)}
             subtitle={formatListeningTimeSubtitle(stats.totalMs)}
             icon={Clock}
+            loading={blockingLoad}
           />
           <StatCard
             title="Reproducciones"
@@ -248,6 +279,7 @@ export default function DashboardPage() {
                 : undefined
             }
             icon={Music2}
+            loading={blockingLoad}
           />
           <StatCard
             title="Top Artist"
@@ -258,6 +290,7 @@ export default function DashboardPage() {
                 : undefined
             }
             icon={Disc3}
+            loading={blockingLoad}
           />
           <StatCard
             title="Top Track"
@@ -268,31 +301,38 @@ export default function DashboardPage() {
                 : undefined
             }
             icon={TrendingUp}
+            loading={blockingLoad}
           />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
           <ListeningChart
             title="Escucha en el tiempo"
             data={stats.listeningOverTime}
             loading={blockingLoad}
           />
-          <HourlyChart
-            title="Horas más activas (Chile)"
-            data={stats.hourlyData}
+          <div ref={hourlySectionRef}>
+            <HourlyChart
+              title="Horas más activas"
+              data={stats.hourlyData}
+              loading={blockingLoad}
+              highlightHour={highlightHour}
+            />
+          </div>
+        </div>
+
+        <div ref={weekdaySectionRef}>
+          <WeekdayChart
+            title="Días de la semana"
+            data={stats.listeningOverTime}
             loading={blockingLoad}
+            highlightWeekday={highlightWeekday}
           />
         </div>
 
-        <WeekdayChart
-          title="Días de la semana"
-          data={stats.listeningOverTime}
-          loading={blockingLoad}
-        />
-
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
           <MonthRankChart
-            title="Meses del año con más reproducciones"
+            title="Meses con más reproducciones"
             data={stats.monthsTop}
             loading={blockingLoad}
           />
@@ -304,7 +344,7 @@ export default function DashboardPage() {
         </div>
 
         <Heatmap
-          title={`Mapa de escuchas ${timeFilter.year ?? currentCalendarYearChile()} (calendario Chile)`}
+          title={`Mapa ${timeFilter.year ?? currentCalendarYearChile()}`}
           data={stats.heatmapData}
           loading={blockingLoad}
           year={timeFilter.year ?? currentCalendarYearChile()}
@@ -318,14 +358,14 @@ export default function DashboardPage() {
               <TabsTrigger value="albums">Top Albums</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="tracks">
-            <TopItemsList title="Top Tracks" items={stats.topTracks} loading={blockingLoad} />
+          <TabsContent value="tracks" className="mt-3">
+            <TopItemsList title="Top Tracks" items={stats.topTracks} loading={blockingLoad} hideTitle />
           </TabsContent>
-          <TabsContent value="artists">
-            <TopItemsList title="Top Artists" items={stats.topArtists} loading={blockingLoad} />
+          <TabsContent value="artists" className="mt-3">
+            <TopItemsList title="Top Artists" items={stats.topArtists} loading={blockingLoad} hideTitle />
           </TabsContent>
-          <TabsContent value="albums">
-            <TopItemsList title="Top Albums" items={stats.topAlbums} loading={blockingLoad} />
+          <TabsContent value="albums" className="mt-3">
+            <TopItemsList title="Top Albums" items={stats.topAlbums} loading={blockingLoad} hideTitle />
           </TabsContent>
         </Tabs>
       </div>

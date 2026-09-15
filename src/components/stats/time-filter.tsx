@@ -97,10 +97,22 @@ export function TimeFilterControl({
               className="min-w-0"
             >
               <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
-                <TabsTrigger value="all">Todo el tiempo</TabsTrigger>
-                <TabsTrigger value="last_6_months">Últimos 6 meses</TabsTrigger>
-                <TabsTrigger value="last_month">Último mes</TabsTrigger>
-                <TabsTrigger value="last_week">Última semana</TabsTrigger>
+                <TabsTrigger value="all">
+                  <span className="sm:hidden">Todo</span>
+                  <span className="hidden sm:inline">Todo el tiempo</span>
+                </TabsTrigger>
+                <TabsTrigger value="last_6_months">
+                  <span className="sm:hidden">6 meses</span>
+                  <span className="hidden sm:inline">Últimos 6 meses</span>
+                </TabsTrigger>
+                <TabsTrigger value="last_month">
+                  <span className="sm:hidden">Mes</span>
+                  <span className="hidden sm:inline">Último mes</span>
+                </TabsTrigger>
+                <TabsTrigger value="last_week">
+                  <span className="sm:hidden">Semana</span>
+                  <span className="hidden sm:inline">Última semana</span>
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>

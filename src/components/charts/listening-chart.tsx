@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -9,15 +10,8 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { msToHours, formatReproductionCount } from "@/lib/utils";
+import { ChartShell, ChartTip, chartAxis, chartGrid, useChartHeight } from "@/components/charts/chart-ui";
+import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { ListeningTimeData } from "@/types/database";
 import {
   CHILE_TIMEZONE_LABEL,
@@ -36,112 +30,80 @@ export function ListeningChart({
   data,
   loading = false,
 }: ListeningChartProps) {
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-64 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex h-64 items-center justify-center">
-            <p className="text-sm text-spotify-light-gray">No data available</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const formattedData = data.map((d) => ({
-    ...d,
-    hours: msToHours(d.ms_played),
-    labelShort: formatChileCalendarDayShort(d.date),
-    labelLong: formatChileCalendarDayLong(d.date),
-  }));
+  const height = useChartHeight(200, 268);
+  const [picked, setPicked] = useState<string | null>(null);
+  const formattedData = useMemo(
+    () =>
+      data.map((d) => ({
+        ...d,
+        hours: msToHours(d.ms_played),
+        labelShort: formatChileCalendarDayShort(d.date),
+        labelLong: formatChileCalendarDayLong(d.date),
+      })),
+    [data],
+  );
+  const selected = formattedData.find((d) => d.date === picked) ?? null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          Agrupación por día (o semana/mes según período) en {CHILE_TIMEZONE_LABEL}.
-          Cada barra suma reproducciones registradas (segmentos de escucha), igual que el KPI
-          principal del dashboard.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={formattedData}>
-            <defs>
-              <linearGradient id="colorPlays" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#1DB954" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#1DB954" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.05)"
-            />
-            <XAxis
-              dataKey="labelShort"
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => `${msToHours(v)}h`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#282828",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "8px",
-                color: "#fff",
-                fontSize: "12px",
-                maxWidth: 280,
-              }}
-              formatter={(value: number, _name, item) => {
-                const row = item?.payload as ListeningTimeData | undefined;
-                const plays = row?.play_count ?? 0;
-                return [
-                  `${msToHours(value)} h · ${formatReproductionCount(plays)} reproducciones`,
-                  "Tiempo escuchado",
-                ];
-              }}
-              labelFormatter={(_label, payload) => {
-                const row = payload?.[0]?.payload as
-                  | { labelLong?: string; date?: string }
-                  | undefined;
-                return row?.labelLong ?? row?.date ?? "";
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="ms_played"
-              stroke="#1DB954"
-              strokeWidth={2}
-              fill="url(#colorPlays)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+    <ChartShell
+      title={title}
+      description={`Por día en ${CHILE_TIMEZONE_LABEL}. Toca un punto para fijar el detalle.`}
+      loading={loading}
+      empty={data.length === 0}
+    >
+      <ResponsiveContainer width="100%" height={height}>
+        <AreaChart
+          data={formattedData}
+          margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+          onClick={(state) => {
+            const row = state?.activePayload?.[0]?.payload as
+              | (typeof formattedData)[number]
+              | undefined;
+            if (row?.date) setPicked(row.date);
+          }}
+        >
+          <defs>
+            <linearGradient id="colorPlays" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1ED760" stopOpacity={0.45} />
+              <stop offset="100%" stopColor="#1DB954" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...chartGrid} />
+          <XAxis dataKey="labelShort" {...chartAxis} interval="preserveStartEnd" minTickGap={18} />
+          <YAxis
+            {...chartAxis}
+            width={44}
+            tickFormatter={(v) => `${msToHours(v)}h`}
+          />
+          <Tooltip
+            cursor={{ stroke: "#1DB954", strokeWidth: 1, strokeOpacity: 0.35 }}
+            content={
+              <ChartTip
+                title={(row) => String(row.labelLong ?? row.date ?? "")}
+                body={(row) =>
+                  `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
+                }
+              />
+            }
+          />
+          <Area
+            type="monotone"
+            dataKey="ms_played"
+            stroke="#1ED760"
+            strokeWidth={2.25}
+            fill="url(#colorPlays)"
+            activeDot={{ r: 5, fill: "#fff", stroke: "#1DB954", strokeWidth: 2 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+      {selected && (
+        <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
+          <span className="font-medium text-white">{selected.labelLong}</span>
+          {" · "}
+          {msToHours(selected.ms_played)} h · {formatReproductionCount(selected.play_count)}{" "}
+          reproducciones
+        </p>
+      )}
+    </ChartShell>
   );
 }

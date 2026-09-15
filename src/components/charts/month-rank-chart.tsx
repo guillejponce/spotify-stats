@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -8,28 +9,34 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  Cell,
 } from "recharts";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+  CHART_GREEN,
+  CHART_GREEN_BRIGHT,
+  ChartShell,
+  ChartTip,
+  chartAxis,
+  chartGrid,
+  useChartHeight,
+} from "@/components/charts/chart-ui";
 import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { MonthBucket } from "@/types/database";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
+
+const MONTH_SHORT = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+] as const;
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ] as const;
 
-function formatMonthLabel(period: string): string {
+function monthIndex(period: string): number {
   const num = Number(period);
-  if (num >= 1 && num <= 12) return MONTH_NAMES[num - 1];
-  return period;
+  return num >= 1 && num <= 12 ? num - 1 : -1;
 }
 
 interface MonthRankChartProps {
@@ -43,94 +50,78 @@ export function MonthRankChart({
   data,
   loading = false,
 }: MonthRankChartProps) {
-  if (loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-72 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex h-72 items-center justify-center">
-            <p className="text-sm text-spotify-light-gray">Sin datos en este rango</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const formatted = data.map((d) => ({
-      ...d,
-      label: formatMonthLabel(d.period),
-      hours: msToHours(d.ms_played),
-    }));
+  const height = useChartHeight(210, 268);
+  const [picked, setPicked] = useState<string | null>(null);
+  const formatted = useMemo(
+    () =>
+      data.map((d) => {
+        const idx = monthIndex(d.period);
+        return {
+          ...d,
+          label: idx >= 0 ? MONTH_SHORT[idx] : d.period,
+          fullLabel: idx >= 0 ? MONTH_NAMES[idx] : d.period,
+          hours: msToHours(d.ms_played),
+        };
+      }),
+    [data],
+  );
+  const peak = formatted.reduce(
+    (best, row) => (row.play_count > best.play_count ? row : best),
+    formatted[0] ?? { period: "", play_count: 0, ms_played: 0, label: "", fullLabel: "", hours: 0 },
+  );
+  const selected = formatted.find((d) => d.period === picked) ?? (peak.play_count > 0 ? peak : null);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          Reproducciones agrupadas por mes del año (todos los años combinados, zona {CHILE_TIMEZONE_LABEL}).
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={288}>
-          <BarChart data={formatted} margin={{ left: 4, right: 8, bottom: 56 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis
-              dataKey="label"
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              angle={-40}
-              textAnchor="end"
-              height={72}
-              interval={0}
-            />
-            <YAxis
-              stroke="rgba(255,255,255,0.3)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#282828",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "8px",
-                color: "#fff",
-                fontSize: "12px",
-              }}
-              formatter={(count: number, _n, item) => {
-                const row = item?.payload as MonthBucket & { hours?: number };
-                const h = row?.hours ?? msToHours(row?.ms_played ?? 0);
-                return [
-                  `${formatReproductionCount(count)} reproducciones · ${h} h`,
-                  "Segmentos",
-                ];
-              }}
-              labelFormatter={(_l, payload) => {
-                const row = payload?.[0]?.payload as { label?: string } | undefined;
-                return row?.label ?? "";
-              }}
-            />
-            <Bar dataKey="play_count" fill="#1DB954" radius={[4, 4, 0, 0]} maxBarSize={48} />
-          </BarChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+    <ChartShell
+      title={title}
+      description={`Por mes del año (todos los años, ${CHILE_TIMEZONE_LABEL}).`}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="Sin datos en este rango"
+    >
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={formatted} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
+          <CartesianGrid {...chartGrid} />
+          <XAxis dataKey="label" {...chartAxis} interval={0} />
+          <YAxis {...chartAxis} width={44} />
+          <Tooltip
+            cursor={{ fill: "rgba(29,185,84,0.08)" }}
+            content={
+              <ChartTip
+                title={(row) => String(row.fullLabel ?? row.label ?? "")}
+                body={(row) =>
+                  `${formatReproductionCount(Number(row.play_count))} repros · ${msToHours(Number(row.ms_played))} h`
+                }
+              />
+            }
+          />
+          <Bar
+            dataKey="play_count"
+            radius={[5, 5, 0, 0]}
+            maxBarSize={36}
+            onClick={(row) => {
+              const period = String((row as MonthBucket).period ?? "");
+              if (period) setPicked(period);
+            }}
+          >
+            {formatted.map((entry) => (
+              <Cell
+                key={entry.period}
+                cursor="pointer"
+                fill={entry.period === peak.period ? CHART_GREEN_BRIGHT : CHART_GREEN}
+                opacity={picked == null || picked === entry.period ? 1 : 0.28}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      {selected && (
+        <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
+          <span className="font-medium text-white">{selected.fullLabel}</span>
+          {" · "}
+          {formatReproductionCount(selected.play_count)} reproducciones · {selected.hours} h
+        </p>
+      )}
+    </ChartShell>
   );
 }
