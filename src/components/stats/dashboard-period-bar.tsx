@@ -6,6 +6,10 @@ import { cn } from "@/lib/utils";
 /**
  * Period filter sticks flush to the top of the phone, as a full-width bar
  * with a hole on the left for the hamburger. Desktop: stays in normal flow.
+ *
+ * On iPhone (viewport-fit: cover + status bar translucido) `top: 0` still
+ * leaves a strip above the bar where overscroll shows through. A bleed
+ * block paints the same black above the viewport.
  */
 export function DashboardPeriodBar({ children }: { children: ReactNode }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -64,7 +68,7 @@ export function DashboardPeriodBar({ children }: { children: ReactNode }) {
           "z-40 min-w-0",
           stuck
             ? [
-                "fixed inset-x-0 top-0",
+                "fixed left-0 right-0 top-0",
                 "border-b border-white/[0.08] bg-spotify-black",
                 "flex min-h-[44px] items-center",
                 "pb-2 pr-3",
@@ -75,6 +79,12 @@ export function DashboardPeriodBar({ children }: { children: ReactNode }) {
           "lg:!static lg:!inset-auto lg:!z-auto lg:!border-0 lg:!bg-transparent lg:!p-0 lg:!pl-0",
         )}
       >
+        {stuck ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-full h-[100dvh] bg-spotify-black lg:hidden"
+          />
+        ) : null}
         {children}
       </section>
     </>

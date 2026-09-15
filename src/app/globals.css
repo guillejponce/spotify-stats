@@ -5,6 +5,7 @@
 html {
   /* Evita zoom accidental en inputs iOS + mejor comportamiento PWA */
   -webkit-text-size-adjust: 100%;
+  background-color: #121212;
 }
 
 body {
