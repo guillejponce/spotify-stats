@@ -2,8 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  Loader2,
+  Mic,
+  Send,
+  Sparkles,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  pickRecorderMime,
+  recorderExtension,
+  textForSpeech,
+} from "@/lib/agent/voice";
 
 type ChatRole = "user" | "assistant";
 
@@ -14,6 +29,7 @@ type ChatMessage = {
 };
 
 const STORAGE_KEY = "statsify-agent-chat-v1";
+const VOICE_KEY = "statsify-agent-voice-on";
 
 const SUGGESTIONS = [
   "¿Qué tanto escuché este año?",
@@ -79,8 +95,23 @@ export function AgentChat({
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [supabaseOk, setSupabaseOk] = useState<boolean | null>(null);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [recording, setRecording] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const busyRef = useRef(false);
+  const voiceOnRef = useRef(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recStreamRef = useRef<MediaStream | null>(null);
+
+  messagesRef.current = messages;
+  busyRef.current = busy;
+  voiceOnRef.current = voiceOn;
 
   useEffect(() => {
     void fetch("/api/agent/status")
@@ -96,10 +127,17 @@ export function AgentChat({
         const parsed = JSON.parse(raw) as ChatMessage[];
         if (Array.isArray(parsed)) setMessages(parsed.slice(-40));
       }
+      const voice = localStorage.getItem(VOICE_KEY);
+      if (voice === "0") setVoiceOn(false);
     } catch {
       /* ignore */
     }
     setHydrated(true);
+    return () => {
+      stopSpeech();
+      stopMicTracks();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -113,13 +151,76 @@ export function AgentChat({
     el.scrollTop = el.scrollHeight;
   }, [messages, status, busy]);
 
+  function stopMicTracks() {
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recStreamRef.current = null;
+  }
+
+  function stopSpeech() {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    setSpeaking(false);
+  }
+
+  async function speak(text: string) {
+    const clean = textForSpeech(text);
+    if (!voiceOnRef.current || !clean) return;
+    stopSpeech();
+    try {
+      const res = await fetch("/api/agent/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = audioRef.current ?? new Audio();
+      audioRef.current = audio;
+      audio.src = url;
+      setSpeaking(true);
+      audio.onended = () => {
+        setSpeaking(false);
+        if (audioUrlRef.current) {
+          URL.revokeObjectURL(audioUrlRef.current);
+          audioUrlRef.current = null;
+        }
+      };
+      audio.onerror = () => setSpeaking(false);
+      await audio.play();
+    } catch {
+      setSpeaking(false);
+    }
+  }
+
+  function toggleVoice() {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    try {
+      localStorage.setItem(VOICE_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (!next) stopSpeech();
+  }
+
   async function send(text: string) {
     const content = text.trim();
-    if (!content || busy) return;
+    if (!content || busyRef.current) return;
 
+    stopSpeech();
     const userMsg: ChatMessage = { id: uid(), role: "user", content };
     const assistantId = uid();
-    const nextHistory = [...messages, userMsg];
+    const nextHistory = [...messagesRef.current, userMsg];
 
     setInput("");
     setError(null);
@@ -132,6 +233,7 @@ export function AgentChat({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let assembled = "";
 
     try {
       const res = await fetch("/api/agent/chat", {
@@ -157,7 +259,6 @@ export function AgentChat({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assembled = "";
 
       while (true) {
         const { value, done } = await reader.read();
@@ -191,17 +292,14 @@ export function AgentChat({
       }
 
       if (!assembled.trim()) {
+        assembled = "No salió nada útil. Inténtalo de nuevo.";
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  content: "No salió nada útil. Inténtalo de nuevo.",
-                }
-              : m,
+            m.id === assistantId ? { ...m, content: assembled } : m,
           ),
         );
       }
+      void speak(assembled);
     } catch (err) {
       if ((err as { name?: string }).name === "AbortError") return;
       const message = err instanceof Error ? err.message : "Falló el chat";
@@ -216,8 +314,83 @@ export function AgentChat({
     }
   }
 
+  async function transcribeAndSend(blob: Blob, mime: string) {
+    setStatus("Transcribiendo…");
+    try {
+      const form = new FormData();
+      form.append(
+        "audio",
+        blob,
+        `clip.${recorderExtension(mime)}`,
+      );
+      const res = await fetch("/api/agent/transcribe", {
+        method: "POST",
+        body: form,
+      });
+      const payload = (await res.json()) as { text?: string; error?: string };
+      if (!res.ok || !payload.text) {
+        throw new Error(payload.error || "No se pudo transcribir");
+      }
+      await send(payload.text);
+    } catch (err) {
+      setStatus(null);
+      setError(err instanceof Error ? err.message : "No se escuchó nada");
+    }
+  }
+
+  function stopRecording() {
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    recorderRef.current = null;
+    setRecording(false);
+  }
+
+  async function toggleMic() {
+    if (recording) {
+      stopRecording();
+      return;
+    }
+    if (busy || !navigator.mediaDevices?.getUserMedia) {
+      setError("Este navegador no permite el micrófono.");
+      return;
+    }
+    stopSpeech();
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recStreamRef.current = stream;
+      const mime = pickRecorderMime();
+      const rec = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
+      recorderRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stopMicTracks();
+        const type = rec.mimeType || mime || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type });
+        chunksRef.current = [];
+        if (blob.size < 800) {
+          setError("No se escuchó nada. Mantén pulsado un segundo más.");
+          return;
+        }
+        void transcribeAndSend(blob, type);
+      };
+      rec.start();
+      setRecording(true);
+    } catch {
+      stopMicTracks();
+      setError("Hay que permitir el micrófono para hablarle al DJ.");
+    }
+  }
+
   function clearChat() {
     abortRef.current?.abort();
+    stopSpeech();
+    if (recording) stopRecording();
     setMessages([]);
     setError(null);
     setStatus(null);
@@ -230,7 +403,12 @@ export function AgentChat({
     <div className="flex h-full min-h-0 flex-col">
       <div className={cn("mb-3 flex items-start justify-between gap-3", dock && "mb-2")}>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-spotify-green text-black">
+          <div
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-full text-black",
+              speaking ? "bg-white" : "bg-spotify-green",
+            )}
+          >
             <Bot className="h-5 w-5" />
           </div>
           <div>
@@ -249,6 +427,21 @@ export function AgentChat({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={toggleVoice}
+            className="text-spotify-light-gray"
+            aria-label={voiceOn ? "Silenciar voz" : "Activar voz"}
+            title={voiceOn ? "Voz encendida" : "Voz apagada"}
+          >
+            {voiceOn ? (
+              <Volume2 className="h-4 w-4" />
+            ) : (
+              <VolumeX className="h-4 w-4" />
+            )}
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -287,13 +480,14 @@ export function AgentChat({
             <Sparkles className="h-7 w-7 text-spotify-green" />
             <p className="max-w-md text-sm text-spotify-light-gray">
               Pregúntame por tus stats, un día como hoy, o que te arme algo nostálgico.
+              También puedes hablarle al micrófono.
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  onClick={() => send(s)}
+                  onClick={() => void send(s)}
                   className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-xs text-white hover:border-spotify-green/50 hover:bg-white/5"
                 >
                   {s}
@@ -340,6 +534,12 @@ export function AgentChat({
         <p className="mt-2 text-sm text-red-400">{error}</p>
       ) : null}
 
+      {recording ? (
+        <p className="mt-2 text-xs text-spotify-green">
+          Escuchando… vuelve a tocar el micrófono para enviar.
+        </p>
+      ) : null}
+
       <form
         className="mt-3 flex items-end gap-2"
         onSubmit={(e) => {
@@ -347,6 +547,21 @@ export function AgentChat({
           void send(input);
         }}
       >
+        <button
+          type="button"
+          aria-label={recording ? "Detener grabación" : "Hablar"}
+          disabled={busy && !recording}
+          onClick={() => void toggleMic()}
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition",
+            recording
+              ? "bg-red-500 text-white animate-pulse"
+              : "bg-spotify-medium-gray text-white hover:bg-white/15",
+            busy && !recording && "opacity-40",
+          )}
+        >
+          <Mic className="h-4 w-4" />
+        </button>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -357,11 +572,15 @@ export function AgentChat({
             }
           }}
           rows={dock ? 1 : 2}
-          placeholder="Pregunta por stats, nostalgia o lo que está sonando…"
-          disabled={busy}
+          placeholder={
+            recording
+              ? "Te escucho…"
+              : "Pregunta por stats, nostalgia o lo que está sonando…"
+          }
+          disabled={busy || recording}
           className="min-h-[2.75rem] flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none placeholder:text-spotify-light-gray/50 focus:border-spotify-green focus:ring-2 focus:ring-spotify-green/30 disabled:opacity-60"
         />
-        <Button type="submit" disabled={busy || !input.trim()} className="h-11 px-4">
+        <Button type="submit" disabled={busy || recording || !input.trim()} className="h-11 px-4">
           {busy ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (

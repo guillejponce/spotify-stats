@@ -5,18 +5,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const VOICES = new Set([
+const TTS1_VOICES = new Set([
   "alloy",
-  "ash",
-  "ballad",
-  "coral",
   "echo",
   "fable",
   "onyx",
   "nova",
-  "sage",
   "shimmer",
-  "verse",
 ]);
 
 export async function POST(request: Request) {
@@ -42,13 +37,19 @@ export async function POST(request: Request) {
   }
 
   const preferred = process.env.OPENAI_TTS_VOICE?.trim().toLowerCase() ?? "nova";
-  const voice = VOICES.has(preferred) ? preferred : "nova";
+  const voice = (TTS1_VOICES.has(preferred) ? preferred : "nova") as
+    | "alloy"
+    | "echo"
+    | "fable"
+    | "onyx"
+    | "nova"
+    | "shimmer";
   const openai = new OpenAI({ apiKey });
 
   try {
     const speech = await openai.audio.speech.create({
       model: "tts-1",
-      voice: voice as "nova",
+      voice,
       input: text,
       response_format: "mp3",
       speed: 1.05,
