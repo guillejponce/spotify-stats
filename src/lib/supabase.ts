@@ -10,12 +10,19 @@ export function createBrowserSupabaseClient() {
 
 /** Server-side (API routes). Prefer service role key so RLS doesn't block inserts. */
 export function createServerSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const secret =
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const secret = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  )?.trim();
 
-  return createClient(url, secret!, {
+  if (!url || !secret) {
+    throw new Error(
+      "Falta NEXT_PUBLIC_SUPABASE_URL o la key de Supabase en .env.local",
+    );
+  }
+
+  return createClient(url, secret, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

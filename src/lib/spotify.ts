@@ -15,6 +15,9 @@ export function getSpotifyRedirectUri(): string {
     "";
 
   if (!base) {
+    if (process.env.NODE_ENV !== "production") {
+      return "http://127.0.0.1:3000/api/spotify/callback";
+    }
     throw new Error(
       "Define SPOTIFY_REDIRECT_URI or NEXT_PUBLIC_APP_URL for Spotify OAuth."
     );
@@ -26,6 +29,7 @@ export function getSpotifyRedirectUri(): string {
 const SCOPES = [
   "user-read-currently-playing",
   "user-read-playback-state",
+  "user-modify-playback-state",
   "user-read-recently-played",
   "user-top-read",
 ].join(" ");
