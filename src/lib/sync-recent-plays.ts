@@ -27,7 +27,7 @@ export async function syncRecentPlaysFromSpotify(
   supabase: SupabaseClient,
   limit: number = 50
 ): Promise<SyncRecentResult> {
-  const token = await getSpotifyAccessToken(supabase);
+  let token = await getSpotifyAccessToken(supabase);
   if (!token) {
     return {
       synced: 0,
@@ -38,22 +38,39 @@ export async function syncRecentPlaysFromSpotify(
     };
   }
 
-  let data;
-  try {
-    data = await getRecentlyPlayed(token, limit);
-  } catch (err) {
-    if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-      const fresh = await forceRefreshSpotifyAccessToken(supabase);
-      if (!fresh) throw err;
-      data = await getRecentlyPlayed(fresh, limit);
-    } else {
+  const loadPage = async (access: string, before?: number) => {
+    try {
+      return await getRecentlyPlayed(access, limit, before ? { before } : undefined);
+    } catch (err) {
+      if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
+        const fresh = await forceRefreshSpotifyAccessToken(supabase);
+        if (!fresh) throw err;
+        token = fresh;
+        return await getRecentlyPlayed(fresh, limit, before ? { before } : undefined);
+      }
       throw err;
     }
+  };
+
+  const collected: { track?: Record<string, unknown>; played_at?: string }[] = [];
+  const seen = new Set<string>();
+  let before: number | undefined;
+  for (let page = 0; page < 3; page++) {
+    const data = await loadPage(token, before);
+    const batch = data?.items ?? [];
+    for (const entry of batch) {
+      const key = `${String(entry.track?.id ?? "")}|${entry.played_at ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(entry);
+    }
+    const cursor = data?.cursors?.before;
+    if (!batch.length || batch.length < limit || !cursor) break;
+    before = Number(cursor);
+    if (!Number.isFinite(before)) break;
   }
 
-  const items = data?.items as
-    | { track?: Record<string, unknown>; played_at?: string }[]
-    | undefined;
+  const items = collected;
 
   const runImageBackfill = async () => {
     try {

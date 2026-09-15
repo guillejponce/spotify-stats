@@ -170,9 +170,18 @@ export async function getCurrentlyPlaying(accessToken: string) {
   return response.json();
 }
 
-export async function getRecentlyPlayed(accessToken: string, limit: number = 50) {
+export async function getRecentlyPlayed(
+  accessToken: string,
+  limit: number = 50,
+  opts?: { after?: number; before?: number },
+) {
+  const params = new URLSearchParams({
+    limit: String(Math.max(1, Math.min(50, limit))),
+  });
+  if (opts?.after) params.set("after", String(opts.after));
+  if (opts?.before) params.set("before", String(opts.before));
   const response = await fetch(
-    `${SPOTIFY_API_BASE}/me/player/recently-played?limit=${limit}`,
+    `${SPOTIFY_API_BASE}/me/player/recently-played?${params.toString()}`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
       next: { revalidate: 0 },
@@ -184,7 +193,10 @@ export async function getRecentlyPlayed(accessToken: string, limit: number = 50)
     throw new Error(`Spotify API error: ${response.statusText}`);
   }
 
-  return response.json();
+  return response.json() as Promise<{
+    items?: { track?: Record<string, unknown>; played_at?: string }[];
+    cursors?: { before?: string; after?: string };
+  }>;
 }
 
 export type SpotifyArtistApi = {

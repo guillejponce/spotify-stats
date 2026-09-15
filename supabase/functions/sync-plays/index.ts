@@ -51,6 +51,202 @@ async function parseJsonSafe(res: Response): Promise<unknown> {
   }
 }
 
+type SyncDb = ReturnType<typeof createClient>;
+
+function isUniqueViolation(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  return err.code === "23505" || /duplicate key|unique constraint/i.test(err.message ?? "");
+}
+
+async function resolveArtistDbId(
+  supabase: SyncDb,
+  payload: {
+    spotifyId: string;
+    name: string;
+    image_url: string | null;
+    spotify_url: string | null;
+  },
+): Promise<string | null> {
+  const extras = {
+    ...(payload.spotify_url ? { spotify_url: payload.spotify_url } : {}),
+  };
+
+  const byName = await supabase
+    .from("artists")
+    .upsert({ name: payload.name, ...extras }, { onConflict: "name" })
+    .select("id, image_url")
+    .maybeSingle();
+
+  if (!byName.error && byName.data?.id) {
+    if (!byName.data.image_url && payload.image_url) {
+      await supabase
+        .from("artists")
+        .update({ image_url: payload.image_url })
+        .eq("id", byName.data.id)
+        .is("image_url", null);
+    }
+    return byName.data.id as string;
+  }
+
+  const byId = await supabase
+    .from("artists")
+    .upsert(
+      {
+        id: payload.spotifyId,
+        name: payload.name,
+        image_url: payload.image_url,
+        ...extras,
+      },
+      { onConflict: "id", ignoreDuplicates: true },
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (!byId.error && byId.data?.id) return byId.data.id as string;
+
+  if (isUniqueViolation(byName.error) || isUniqueViolation(byId.error)) {
+    const existing = await supabase
+      .from("artists")
+      .select("id")
+      .eq("name", payload.name)
+      .maybeSingle();
+    if (existing.data?.id) return existing.data.id as string;
+  }
+
+  console.error("[sync-plays] artist resolve failed", payload.name, byName.error, byId.error);
+  return null;
+}
+
+async function resolveAlbumDbId(
+  supabase: SyncDb,
+  payload: {
+    spotifyId: string;
+    name: string;
+    artistDbId: string;
+    image_url: string | null;
+    release_date: string | null;
+    album_type: string | null;
+    spotify_url: string | null;
+  },
+): Promise<string | null> {
+  const extras = {
+    image_url: payload.image_url,
+    release_date: payload.release_date,
+    album_type: payload.album_type,
+    spotify_url: payload.spotify_url,
+  };
+
+  const byPair = await supabase
+    .from("albums")
+    .upsert(
+      { name: payload.name, artist_id: payload.artistDbId, ...extras },
+      { onConflict: "name,artist_id" },
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (!byPair.error && byPair.data?.id) return byPair.data.id as string;
+
+  const byId = await supabase
+    .from("albums")
+    .upsert(
+      {
+        id: payload.spotifyId,
+        name: payload.name,
+        artist_id: payload.artistDbId,
+        ...extras,
+      },
+      { onConflict: "id", ignoreDuplicates: true },
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (!byId.error && byId.data?.id) return byId.data.id as string;
+
+  if (isUniqueViolation(byPair.error) || isUniqueViolation(byId.error)) {
+    const existing = await supabase
+      .from("albums")
+      .select("id")
+      .eq("name", payload.name)
+      .eq("artist_id", payload.artistDbId)
+      .maybeSingle();
+    if (existing.data?.id) return existing.data.id as string;
+  }
+
+  console.error("[sync-plays] album resolve failed", payload.name, byPair.error, byId.error);
+  return null;
+}
+
+async function resolveTrackDbId(
+  supabase: SyncDb,
+  payload: {
+    spotifyId: string;
+    name: string;
+    artistDbId: string;
+    albumDbId: string | null;
+    duration_ms: number;
+    explicit: boolean;
+    preview_url: string | null;
+    spotify_url: string | null;
+    popularity: number | null;
+  },
+): Promise<string | null> {
+  const row = {
+    name: payload.name,
+    artist_id: payload.artistDbId,
+    album_id: payload.albumDbId,
+    duration_ms: payload.duration_ms,
+    explicit: payload.explicit,
+    preview_url: payload.preview_url,
+    spotify_url: payload.spotify_url,
+    popularity: payload.popularity,
+  };
+
+  const bySpotify = await supabase
+    .from("tracks")
+    .upsert({ spotify_id: payload.spotifyId, ...row }, { onConflict: "spotify_id" })
+    .select("id")
+    .maybeSingle();
+
+  if (!bySpotify.error && bySpotify.data?.id) return bySpotify.data.id as string;
+
+  const missingSpotifyCol =
+    bySpotify.error?.code === "PGRST204" ||
+    /spotify_id/i.test(bySpotify.error?.message ?? "");
+
+  if (!missingSpotifyCol && bySpotify.error && !isUniqueViolation(bySpotify.error)) {
+    console.error("[sync-plays] track upsert spotify_id", payload.name, bySpotify.error);
+  }
+
+  const byId = await supabase
+    .from("tracks")
+    .upsert(
+      { id: payload.spotifyId, ...row },
+      { onConflict: "id", ignoreDuplicates: true },
+    )
+    .select("id")
+    .maybeSingle();
+
+  if (!byId.error && byId.data?.id) return byId.data.id as string;
+
+  const existingSpotify = await supabase
+    .from("tracks")
+    .select("id")
+    .eq("spotify_id", payload.spotifyId)
+    .maybeSingle();
+  if (existingSpotify.data?.id) return existingSpotify.data.id as string;
+
+  const existingId = await supabase
+    .from("tracks")
+    .select("id")
+    .eq("id", payload.spotifyId)
+    .maybeSingle();
+  if (existingId.data?.id) return existingId.data.id as string;
+
+  console.error("[sync-plays] track resolve failed", payload.name, bySpotify.error, byId.error);
+  return null;
+}
+
 Deno.serve(async (req) => {
   try {
     console.log("[sync-plays] start", { method: req.method });
@@ -335,187 +531,152 @@ Deno.serve(async (req) => {
       );
     }
 
-    const artistRowsMap = new Map<string, Record<string, unknown>>();
-    const albumRowsMap = new Map<string, Record<string, unknown>>();
-    const trackRowsMap = new Map<string, Record<string, unknown>>();
+    const artistDbBySpotify = new Map<string, string>();
+    const albumDbBySpotify = new Map<string, string>();
+    const trackDbBySpotify = new Map<string, string>();
+
+    type PlayRow = {
+      track_id: string;
+      artist_id: string;
+      album_id: string | null;
+      played_at: string;
+      ms_played: number;
+      source: "live";
+      shuffle: boolean | null;
+      offline: boolean | null;
+      platform: string;
+      reason_start: string | null;
+      reason_end: string | null;
+    };
+
+    const playsByKey = new Map<string, PlayRow>();
+    let skippedGraph = 0;
 
     for (const it of items) {
       const track = it.track as SpotifyTrack;
-      const primaryArtist = track.artists?.[0];
       const album = track.album!;
+      const primaryArtist = track.artists![0];
       const albumCover = album.images?.[0]?.url ?? null;
-      if (primaryArtist?.id && primaryArtist.name) {
-        // Recently Played no trae foto del artista; usar portada del álbum/single.
-        const existing = artistRowsMap.get(primaryArtist.id);
-        artistRowsMap.set(primaryArtist.id, {
-          id: primaryArtist.id,
+      const playedAt = String(it.played_at ?? "");
+      if (!playedAt || !track.id || !primaryArtist?.id || !primaryArtist.name) {
+        skippedGraph++;
+        continue;
+      }
+
+      let artistDbId = artistDbBySpotify.get(primaryArtist.id) ?? null;
+      if (!artistDbId) {
+        artistDbId = await resolveArtistDbId(supabase, {
+          spotifyId: primaryArtist.id,
           name: primaryArtist.name,
-          image_url:
-            (existing?.image_url as string | null | undefined) ??
-            albumCover ??
-            null,
+          image_url: albumCover,
           spotify_url: primaryArtist.external_urls?.spotify ?? null,
         });
+        if (artistDbId) artistDbBySpotify.set(primaryArtist.id, artistDbId);
       }
-      const primaryArtistId = album.artists?.[0]?.id!;
-      albumRowsMap.set(album.id!, {
-        id: album.id,
-        name: album.name,
-        artist_id: primaryArtistId,
-        image_url: albumCover,
-        release_date: parseReleaseDate(album.release_date),
-        album_type: album.album_type ?? null,
-        spotify_url: album.external_urls?.spotify ?? null,
-      });
-      trackRowsMap.set(track.id!, {
-        id: track.id,
-        name: track.name,
-        artist_id: track.artists![0].id!,
-        album_id: album.id,
-        duration_ms: track.duration_ms,
-        explicit: track.explicit ?? false,
-        preview_url: track.preview_url ?? null,
-        spotify_url: track.external_urls?.spotify ?? null,
-        popularity: track.popularity ?? null,
-      });
-    }
+      if (!artistDbId) {
+        skippedGraph++;
+        continue;
+      }
 
-    console.log("[sync-plays] step 5: upsert artists", artistRowsMap.size);
-    const artistPayload = [...artistRowsMap.values()];
-    if (artistPayload.length > 0) {
-      const { error: artistsErr } = await supabase
-        .from("artists")
-        .upsert(artistPayload, { onConflict: "id", ignoreDuplicates: true });
-
-      if (artistsErr) {
-        console.error("[sync-plays] artists upsert failed (FK risk)", artistsErr);
-        return new Response(JSON.stringify({ error: String(artistsErr.message) }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
+      let albumDbId: string | null = album.id
+        ? (albumDbBySpotify.get(album.id) ?? null)
+        : null;
+      if (!albumDbId && album.id && album.name) {
+        albumDbId = await resolveAlbumDbId(supabase, {
+          spotifyId: album.id,
+          name: album.name,
+          artistDbId,
+          image_url: albumCover,
+          release_date: parseReleaseDate(album.release_date),
+          album_type: album.album_type ?? null,
+          spotify_url: album.external_urls?.spotify ?? null,
         });
+        if (albumDbId) albumDbBySpotify.set(album.id, albumDbId);
       }
-    }
 
-    console.log("[sync-plays] step 6: upsert albums", albumRowsMap.size);
-    const albumPayload = [...albumRowsMap.values()];
-    if (albumPayload.length > 0) {
-      const { error: albumsErr } = await supabase
-        .from("albums")
-        .upsert(albumPayload, { onConflict: "id", ignoreDuplicates: true });
-
-      if (albumsErr) {
-        console.error("[sync-plays] albums upsert failed", albumsErr);
-        return new Response(JSON.stringify({ error: String(albumsErr.message) }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
+      let trackDbId = trackDbBySpotify.get(track.id) ?? null;
+      if (!trackDbId) {
+        trackDbId = await resolveTrackDbId(supabase, {
+          spotifyId: track.id,
+          name: track.name ?? "",
+          artistDbId,
+          albumDbId,
+          duration_ms: track.duration_ms ?? 0,
+          explicit: track.explicit ?? false,
+          preview_url: track.preview_url ?? null,
+          spotify_url: track.external_urls?.spotify ?? null,
+          popularity: track.popularity ?? null,
         });
+        if (trackDbId) trackDbBySpotify.set(track.id, trackDbId);
       }
-    }
-
-    console.log("[sync-plays] step 7: upsert tracks", trackRowsMap.size);
-    const trackPayload = [...trackRowsMap.values()];
-    if (trackPayload.length > 0) {
-      const { error: tracksErr } = await supabase
-        .from("tracks")
-        .upsert(trackPayload, { onConflict: "id", ignoreDuplicates: true });
-
-      if (tracksErr) {
-        console.error("[sync-plays] tracks upsert failed", tracksErr);
-        return new Response(JSON.stringify({ error: String(tracksErr.message) }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (!trackDbId) {
+        skippedGraph++;
+        continue;
       }
-    }
 
-    const playsPayloadUnclean = items.map((it) => {
-      const track = it.track as SpotifyTrack;
-      const album = track.album!;
-      return {
-        track_id: track.id as string,
-        artist_id: track.artists![0].id as string,
-        album_id: album.id as string,
-        played_at: it.played_at as string,
+      const row: PlayRow = {
+        track_id: trackDbId,
+        artist_id: artistDbId,
+        album_id: albumDbId,
+        played_at: new Date(playedAt).toISOString(),
         ms_played: track.duration_ms as number,
-        source: "live" as const,
-        shuffle: null as boolean | null,
-        offline: null as boolean | null,
+        source: "live",
+        shuffle: null,
+        offline: null,
         platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
-        reason_start: null as string | null,
-        reason_end: null as string | null,
+        reason_start: null,
+        reason_end: null,
       };
+      playsByKey.set(playAtKey(row.track_id, row.played_at), row);
+    }
+
+    const playsPayload = Array.from(playsByKey.values());
+    console.log("[sync-plays] step 8: upsert plays", {
+      candidates: playsPayload.length,
+      skipped_graph: skippedGraph,
     });
 
-    const playsByKey = new Map<string, (typeof playsPayloadUnclean)[0]>();
-    for (const p of playsPayloadUnclean) {
-      playsByKey.set(playAtKey(p.track_id, p.played_at), p);
-    }
-    const playsPayload = [...playsByKey.values()];
-
-    const trackIds = [...new Set(playsPayload.map((p) => p.track_id))];
-    const playedAts = [...new Set(playsPayload.map((p) => p.played_at))];
-
-    console.log("[sync-plays] step 8: count existing plays for batch");
-    const { data: existingRows, error: existingErr } = await supabase
-      .from("plays")
-      .select("track_id, played_at")
-      .in("track_id", trackIds)
-      .in("played_at", playedAts);
-
-    if (existingErr) {
-      console.error("[sync-plays] existing plays query failed", existingErr);
-      return new Response(JSON.stringify({ error: String(existingErr.message) }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const existingSet = new Set(
-      (existingRows ?? []).map((r) =>
-        playAtKey(r.track_id as string, r.played_at as string)
-      ),
-    );
-
     let inserted = 0;
-    let skipped = 0;
-    for (const p of playsPayload) {
-      if (existingSet.has(playAtKey(p.track_id, p.played_at))) skipped++;
-      else inserted++;
-    }
+    let skipped = skippedGraph;
 
-    console.log(
-      "[sync-plays] step 8: upsert plays",
-      playsPayload.length,
-      "pre-count inserted/skipped",
-      inserted,
-      skipped,
-    );
+    const insertOne = async (p: PlayRow) => {
+      const { error } = await supabase.from("plays").insert(p);
+      if (!error) {
+        inserted++;
+        return;
+      }
+      if (isUniqueViolation(error)) {
+        skipped++;
+        return;
+      }
+      console.error("[sync-plays] play insert failed", error);
+      skipped++;
+    };
 
-    const { error: playsErr } = await supabase
-      .from("plays")
-      .upsert(playsPayload, {
+    if (playsPayload.length > 0) {
+      const { error: playsErr } = await supabase.from("plays").upsert(playsPayload, {
         onConflict: "track_id,played_at",
         ignoreDuplicates: true,
       });
 
-    if (playsErr) {
-      console.error("[sync-plays] plays upsert failed", playsErr);
-      const msg = String(playsErr.message ?? playsErr);
-      if (
-        msg.includes("foreign key") || msg.includes("violates foreign key")
-      ) {
-        console.error(
-          "[sync-plays] FK violation — check upsert order (artists → albums → tracks → plays)",
+      if (playsErr) {
+        console.warn(
+          "[sync-plays] batch plays upsert failed, inserting one by one",
+          playsErr,
         );
+        for (const p of playsPayload) await insertOne(p);
+      } else {
+        inserted = playsPayload.length;
       }
-      return new Response(JSON.stringify({ error: msg, details: playsErr }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     const synced = playsPayload.length;
-    console.log("[sync-plays] step 9: done", { synced, inserted, skipped, cursorUsed });
+    console.log("[sync-plays] step 9: done", {
+      synced,
+      inserted,
+      skipped,
+      cursorUsed,
+    });
 
     return new Response(
       JSON.stringify({

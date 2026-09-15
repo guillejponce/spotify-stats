@@ -3,9 +3,8 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
 
 /**
- * Cron / manual: requires CRON_SECRET in production.
- * Vercel Cron: proyecto → Settings → Crons debe enviar el mismo Bearer (o usar el header automático si Vercel lo inyecta en tu plan).
- * La app abierta usa `syncSpotifyRecentFromServer` (server action) en su lugar.
+ * Sync manual o desde el Dashboard (server action). En production exige CRON_SECRET.
+ * El cron vivo de plays es la Edge Function `sync-plays`, no este endpoint.
  */
 
 export const dynamic = "force-dynamic";
