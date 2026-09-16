@@ -137,6 +137,7 @@ export default function DashboardPage() {
           setSyncInserted(r.synced ?? 0);
           setSyncPhase("refreshing");
           await fetchStatsRef.current();
+          window.dispatchEvent(new Event("statsify:plays-synced"));
           setSyncPhase("done");
           hideTimer = window.setTimeout(() => setSyncPhase("idle"), 3800);
         } else {

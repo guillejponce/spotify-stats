@@ -2,6 +2,11 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
 import { createServerSupabaseClient } from "@/lib/supabase";
 import { getHeatmapData } from "@/lib/stats";
+import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
+import {
+  creditLiveListenIfNeeded,
+  overlayListenedToday,
+} from "@/lib/kurt-live-listen";
 import type { KurtDay, KurtStatus } from "@/lib/kurt-types";
 
 export type { KurtDay, KurtStatus } from "@/lib/kurt-types";
@@ -167,9 +172,7 @@ async function loadListenDaysFallback(): Promise<string[]> {
   return days;
 }
 
-export async function getKurtStatus(
-  now: Date = new Date(),
-): Promise<KurtStatus> {
+async function readKurtStatus(now: Date): Promise<KurtStatus> {
   const supabase = createServerSupabaseClient();
 
   const rpc = await supabase.rpc("get_kurt_status");
@@ -194,6 +197,36 @@ export async function getKurtStatus(
 
   const fallback = await loadListenDaysFallback();
   return buildKurtStatus(fallback, now);
+}
+
+export async function getKurtStatus(
+  now: Date = new Date(),
+): Promise<KurtStatus> {
+  let status = await readKurtStatus(now);
+  if (status.listened_today) return status;
+
+  const supabase = createServerSupabaseClient();
+  try {
+    await syncRecentPlaysFromSpotify(supabase, 50);
+  } catch (e) {
+    console.warn("[kurt] recent sync", e);
+  }
+
+  status = await readKurtStatus(now);
+  if (status.listened_today) return status;
+
+  try {
+    const credited = await creditLiveListenIfNeeded(supabase);
+    if (credited) {
+      status = await readKurtStatus(now);
+      if (status.listened_today) return status;
+      return overlayListenedToday(status);
+    }
+  } catch (e) {
+    console.warn("[kurt] live credit", e);
+  }
+
+  return status;
 }
 
 export function kurtMood(status: KurtStatus): {

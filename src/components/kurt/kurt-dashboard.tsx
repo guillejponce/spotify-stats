@@ -51,8 +51,21 @@ export function KurtDashboard() {
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 60_000);
+    const atRisk = data?.status?.at_risk || data?.status?.kurt_down;
+    const id = window.setInterval(() => void load(), atRisk ? 20_000 : 60_000);
     return () => window.clearInterval(id);
+  }, [load, data?.status?.at_risk, data?.status?.kurt_down]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("statsify:plays-synced", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("statsify:plays-synced", refresh);
+    };
   }, [load]);
 
   if (!data?.status || !data.mood) {

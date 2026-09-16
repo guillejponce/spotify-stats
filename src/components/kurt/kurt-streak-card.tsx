@@ -47,8 +47,21 @@ export function KurtStreakCard() {
 
   useEffect(() => {
     void load();
-    const poll = window.setInterval(() => void load(), 60_000);
+    const ms = status?.at_risk || status?.kurt_down ? 20_000 : 60_000;
+    const poll = window.setInterval(() => void load(), ms);
     return () => window.clearInterval(poll);
+  }, [load, status?.at_risk, status?.kurt_down]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("statsify:plays-synced", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("statsify:plays-synced", refresh);
+    };
   }, [load]);
 
   useEffect(() => {
