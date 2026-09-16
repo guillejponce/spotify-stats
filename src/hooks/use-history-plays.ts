@@ -22,17 +22,19 @@ export function useHistoryPlays(opts: HookOptions = {}) {
   const [error, setError] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
   const [freshBatch, setFreshBatch] = useState(false);
+  const [pullingSpotify, setPullingSpotify] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const newestIdRef = useRef<string | null>(null);
   const freshHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runFetch = useCallback(
-    async (mode: "full" | "silent") => {
+    async (mode: "full" | "silent", opts?: { pullSpotify?: boolean }) => {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
 
+      if (opts?.pullSpotify) setPullingSpotify(true);
       if (mode === "full") {
         setLoading(true);
       } else {
@@ -47,6 +49,7 @@ export function useHistoryPlays(opts: HookOptions = {}) {
           limit: String(limit),
           _t: String(Date.now()),
         });
+        if (opts?.pullSpotify && page === 0) params.set("sync", "1");
 
         const res = await fetch(`/api/history?${params}`, {
           cache: "no-store",
@@ -89,13 +92,19 @@ export function useHistoryPlays(opts: HookOptions = {}) {
         } else if (mode === "full" && list.length > 0) {
           newestIdRef.current = list[0]!.id;
         }
+
+        if (opts?.pullSpotify && typeof window !== "undefined") {
+          window.dispatchEvent(new Event("statsify:plays-synced"));
+        }
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : "Error al cargar historial";
         setError(msg);
       } finally {
+        if (ac.signal.aborted) return;
         if (mode === "full") setLoading(false);
         setSilentBusy(false);
+        setPullingSpotify(false);
       }
     },
     [page, limit],
@@ -106,7 +115,7 @@ export function useHistoryPlays(opts: HookOptions = {}) {
     if (t != null) clearTimeout(t);
     freshHideTimerRef.current = null;
     setFreshBatch(false);
-    void runFetch("full");
+    void runFetch("silent", { pullSpotify: true });
   }, [runFetch]);
 
   useEffect(() => {
@@ -118,7 +127,7 @@ export function useHistoryPlays(opts: HookOptions = {}) {
   }, [page]);
 
   useEffect(() => {
-    void runFetch("full");
+    void runFetch("full", { pullSpotify: page === 0 });
     return () => abortRef.current?.abort();
   }, [runFetch]);
 
@@ -176,6 +185,7 @@ export function useHistoryPlays(opts: HookOptions = {}) {
       setFreshBatch(false);
     },
     refresh,
+    pullingSpotify,
     limit,
   };
 }

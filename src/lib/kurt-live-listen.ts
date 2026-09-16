@@ -70,11 +70,14 @@ export function overlayListenedToday(status: KurtStatus): KurtStatus {
   };
 }
 
+export type LiveCreditResult = { counted: boolean; inserted: boolean };
+
 export async function creditLiveListenIfNeeded(
   supabase: SupabaseClient,
-): Promise<boolean> {
+): Promise<LiveCreditResult> {
+  const none = { counted: false, inserted: false };
   let token = await getSpotifyAccessToken(supabase);
-  if (!token) return false;
+  if (!token) return none;
 
   let data: CurrentlyPlaying | null;
   try {
@@ -82,7 +85,7 @@ export async function creditLiveListenIfNeeded(
   } catch (err) {
     if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
       const fresh = await forceRefreshSpotifyAccessToken(supabase);
-      if (!fresh) return false;
+      if (!fresh) return none;
       data = (await getCurrentlyPlaying(fresh)) as CurrentlyPlaying | null;
     } else {
       throw err;
@@ -96,12 +99,12 @@ export async function creditLiveListenIfNeeded(
     !track.name ||
     data.currently_playing_type === "episode"
   ) {
-    return false;
+    return none;
   }
 
   const progress = Number(data.progress_ms) || 0;
   const playing = Boolean(data.is_playing);
-  if (!playing && progress < 30_000) return false;
+  if (!playing && progress < 30_000) return none;
 
   const a0 = track.artists?.[0];
   const spotifyArtistKey =
@@ -115,7 +118,7 @@ export async function creditLiveListenIfNeeded(
     image_url: a0?.images?.[0]?.url ?? track.album?.images?.[0]?.url ?? null,
     spotify_url: a0?.external_urls?.spotify ?? null,
   });
-  if (!artistDbId) return false;
+  if (!artistDbId) return none;
 
   let albumDbId: string | null = null;
   if (track.album?.name) {
@@ -141,12 +144,23 @@ export async function creditLiveListenIfNeeded(
     spotify_url: track.external_urls?.spotify ?? null,
     popularity: typeof track.popularity === "number" ? track.popularity : null,
   });
-  if (!dbTrackId) return false;
+  if (!dbTrackId) return none;
 
   const duration =
     typeof track.duration_ms === "number" && track.duration_ms > 0
       ? track.duration_ms
       : 180_000;
+  const windowStart = new Date(
+    Date.now() - duration - 120_000,
+  ).toISOString();
+  const { data: already } = await supabase
+    .from("plays")
+    .select("id")
+    .eq("track_id", dbTrackId)
+    .gte("played_at", windowStart)
+    .limit(1);
+  if (already?.[0]?.id) return { counted: true, inserted: false };
+
   const msPlayed = Math.min(duration, Math.max(progress, 30_000));
   const startedMs = Date.now() - progress;
   const playedAt = new Date(Math.max(0, startedMs)).toISOString();
@@ -163,10 +177,10 @@ export async function creditLiveListenIfNeeded(
     platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
   });
 
-  if (error?.code === "23505") return true;
+  if (error?.code === "23505") return { counted: true, inserted: false };
   if (error) {
     console.warn("[kurt] credit live play", error);
-    return true;
+    return { counted: true, inserted: false };
   }
-  return true;
+  return { counted: true, inserted: true };
 }

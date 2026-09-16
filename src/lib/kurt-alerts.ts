@@ -48,7 +48,7 @@ function pickCopy(
     case "threat_evening":
       return {
         title: "Kurt amenaza con dispararse",
-        body: `Racha de ${n} en peligro. Si no pones algo, Kurt se dispara (versión búho de Duolingo, no la real).`,
+        body: `Racha de ${n} en peligro. Si no pones algo, Kurt se dispara.`,
       };
     case "last_chance":
       return {

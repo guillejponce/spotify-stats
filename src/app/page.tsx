@@ -52,7 +52,9 @@ import {
 
 export default function DashboardPage() {
   const statsHydratedRef = useRef(false);
-  const fetchStatsRef = useRef(async () => {});
+  const fetchStatsRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(
+    async () => {},
+  );
   const hourlySectionRef = useRef<HTMLDivElement>(null);
   const weekdaySectionRef = useRef<HTMLDivElement>(null);
 
@@ -87,10 +89,10 @@ export default function DashboardPage() {
     yearsBreakdown: [] as YearBucket[],
   });
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (opts?: { silent?: boolean }) => {
     const isFirstHydration = !statsHydratedRef.current;
     if (isFirstHydration) setBlockingLoad(true);
-    else setRefreshing(true);
+    else if (!opts?.silent) setRefreshing(true);
     try {
       const params = new URLSearchParams();
       params.set("filter", timeFilter.filter);
@@ -124,9 +126,7 @@ export default function DashboardPage() {
     void fetchStats();
   }, [fetchStats]);
 
-  /** Periodically pull Spotify “Recently played” into `plays` (server). Complements one-time JSON import.
-   *  No dependemos de fetchStats aquí para no reiniciar el interval ni duplicar sync al cambiar filtros.
-   */
+  /** Pull Spotify in the background. Stats already on screen; don't block the period filter. */
   useEffect(() => {
     let hideTimer: number | undefined;
     const run = async () => {
@@ -134,12 +134,17 @@ export default function DashboardPage() {
       try {
         const r = await syncSpotifyRecentFromServer();
         if (r.ok) {
-          setSyncInserted(r.synced ?? 0);
-          setSyncPhase("refreshing");
-          await fetchStatsRef.current();
-          window.dispatchEvent(new Event("statsify:plays-synced"));
-          setSyncPhase("done");
-          hideTimer = window.setTimeout(() => setSyncPhase("idle"), 3800);
+          const n = r.synced ?? 0;
+          setSyncInserted(n);
+          if (n > 0) {
+            await fetchStatsRef.current({ silent: true });
+            window.dispatchEvent(new Event("statsify:plays-synced"));
+            setSyncPhase("done");
+            hideTimer = window.setTimeout(() => setSyncPhase("idle"), 2800);
+          } else {
+            window.dispatchEvent(new Event("statsify:plays-synced"));
+            setSyncPhase("idle");
+          }
         } else {
           setSyncPhase("idle");
         }
@@ -192,8 +197,9 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
             Tu escucha
           </h1>
-          <p className="mt-1 text-sm text-spotify-light-gray">
-            Stats en vivo, en hora de Chile.
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-spotify-light-gray">
+            <span>Stats en vivo, en hora de Chile.</span>
+            <StatsSyncBanner phase={syncPhase} inserted={syncInserted} />
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -218,8 +224,6 @@ export default function DashboardPage() {
           </a>
         </div>
       </div>
-
-      <StatsSyncBanner phase={syncPhase} inserted={syncInserted} />
 
       <NowPlayingCard />
 
@@ -246,7 +250,7 @@ export default function DashboardPage() {
           variant="dashboard"
           value={timeFilter}
           onChange={setTimeFilter}
-          busy={refreshing || syncPhase === "refreshing"}
+          busy={refreshing}
         />
       </DashboardPeriodBar>
 

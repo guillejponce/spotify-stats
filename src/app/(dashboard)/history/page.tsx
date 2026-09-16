@@ -49,6 +49,7 @@ export default function HistoryPage() {
     freshBatch,
     clearFreshBadge,
     refresh,
+    pullingSpotify,
     limit,
   } = useHistoryPlays({ limit: 50 });
 
@@ -74,17 +75,17 @@ export default function HistoryPage() {
             <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
               Historial
             </h1>
-            {page === 0 && silentBusy && !loading && (
+            {page === 0 && (silentBusy || pullingSpotify) && !loading && (
               <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-spotify-light-gray/90">
                 <Loader2 className="h-3 w-3 animate-spin text-spotify-green" />
-                Actualizando…
+                {pullingSpotify ? "Trayendo de Spotify…" : "Actualizando…"}
               </span>
             )}
           </div>
           <p className="max-w-xl text-sm leading-relaxed text-spotify-light-gray">
-            Ordenado del más reciente al más antiguo (hora Chile). En la primera
-            página el listado se vuelve a pedir solo cada unos segundos mientras
-            la pestaña está visible, para que veas entradas nuevas sin recargar.
+            Ordenado del más reciente al más antiguo (hora Chile). Actualizar
+            pide a Spotify los últimos escuchados —incluido lo que está sonando—
+            y completa la lista. El poll cada unos segundos solo relee la base.
           </p>
           {page === 0 && lastSyncLabel && (
             <p
@@ -115,12 +116,12 @@ export default function HistoryPage() {
             size="sm"
             className="min-h-[44px] w-full gap-2 sm:min-h-0 sm:w-auto"
             onClick={() => void refresh()}
-            disabled={loading}
+            disabled={loading || pullingSpotify}
           >
             <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              className={`h-4 w-4 ${loading || pullingSpotify ? "animate-spin" : ""}`}
             />
-            Actualizar
+            {pullingSpotify ? "Trayendo de Spotify…" : "Actualizar"}
           </Button>
         </div>
       </div>
@@ -171,8 +172,8 @@ export default function HistoryPage() {
           </CardTitle>
           <p className="text-xs text-spotify-light-gray/70">
             {page === 0
-              ? `Hasta ${limit} repros por página · sync en vivo en esta vista`
-              : `Página ${page + 1} · sincronización automática sólo en la primera página`}
+              ? `Hasta ${limit} repros por página · Actualizar sincroniza con Spotify`
+              : `Página ${page + 1} · sincronización con Spotify sólo en la primera página`}
           </p>
         </CardHeader>
         <CardContent className="px-2 pb-4 pt-4 sm:px-6 sm:pt-5">

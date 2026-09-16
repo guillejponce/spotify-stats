@@ -217,7 +217,7 @@ export async function getKurtStatus(
 
   try {
     const credited = await creditLiveListenIfNeeded(supabase);
-    if (credited) {
+    if (credited.counted) {
       status = await readKurtStatus(now);
       if (status.listened_today) return status;
       return overlayListenedToday(status);

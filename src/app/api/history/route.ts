@@ -1,7 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase";
+import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+function nestedName(
+  rel:
+    | { name?: string | null }
+    | { name?: string | null }[]
+    | null
+    | undefined,
+): string | null {
+  if (!rel) return null;
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  const name = row?.name?.trim();
+  return name || null;
+}
+
+function nestedImage(
+  rel:
+    | { name?: string | null; image_url?: string | null }
+    | { name?: string | null; image_url?: string | null }[]
+    | null
+    | undefined,
+): { name: string | null; image_url: string | null } {
+  if (!rel) return { name: null, image_url: null };
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  return {
+    name: row?.name?.trim() || null,
+    image_url: row?.image_url ?? null,
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +50,16 @@ export async function GET(request: NextRequest) {
     const fetchSize = Math.min(pageSize + 1, 101);
 
     const supabase = createServerSupabaseClient();
+
+    if (searchParams.get("sync") === "1") {
+      try {
+        await syncRecentPlaysFromSpotify(supabase, 50, {
+          includeNowPlaying: true,
+        });
+      } catch (e) {
+        console.warn("[history] spotify sync", e);
+      }
+    }
 
     const { data, error } = await supabase
       .from("plays")
@@ -53,10 +93,14 @@ export async function GET(request: NextRequest) {
 
     const plays = pageRows.map((play: Record<string, unknown>) => {
       const t = play.tracks as null | {
-        name: string;
-        artists: { name: string } | null;
-        albums: { name: string; image_url: string | null } | null;
+        name?: string;
+        artists?: { name?: string } | { name?: string }[] | null;
+        albums?:
+          | { name?: string; image_url?: string | null }
+          | { name?: string; image_url?: string | null }[]
+          | null;
       };
+      const album = nestedImage(t?.albums);
       return {
         id: play.id as string,
         played_at: play.played_at as string,
@@ -67,10 +111,10 @@ export async function GET(request: NextRequest) {
         shuffle: (play.shuffle as boolean | null) ?? null,
         offline: (play.offline as boolean | null) ?? null,
         source: (play.source as string | null) ?? null,
-        track_name: t?.name ?? "(sin track)",
-        artist_name: t?.artists?.name ?? "—",
-        album_name: t?.albums?.name || null,
-        image_url: t?.albums?.image_url ?? null,
+        track_name: t?.name?.trim() || "(sin track)",
+        artist_name: nestedName(t?.artists) ?? "—",
+        album_name: album.name,
+        image_url: album.image_url,
       };
     });
 
