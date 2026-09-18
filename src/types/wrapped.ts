@@ -14,6 +14,7 @@ export type WrappedRace = {
   trophy: string;
   tightness: "open" | "fight" | "runaway" | "empty";
   tightness_label: string;
+  locked: boolean;
   items: WrappedRacer[];
 };
 
@@ -34,6 +35,7 @@ export type WrappedPayload = {
   year: number;
   generated_at: string;
   is_current_year: boolean;
+  available_years: number[];
   progress: {
     elapsed_days: number;
     total_days: number;

@@ -1,4 +1,5 @@
 import { formatInTimeZone } from "date-fns-tz";
+import { createServerSupabaseClient } from "@/lib/supabase";
 import {
   DISPLAY_TIME_ZONE,
   formatChileCalendarDayLong,
@@ -16,6 +17,10 @@ import type {
   WrappedRace,
   WrappedRacer,
 } from "@/types/wrapped";
+
+const TRACK_BOARD_LIMIT = 100;
+const ARTIST_BOARD_LIMIT = 100;
+const ALBUM_RACE_LIMIT = 8;
 
 function addYmd(date: string, days: number): string {
   const [y, m, day] = date.split("-").map(Number);
@@ -47,7 +52,22 @@ function tightnessOf(items: WrappedRacer[]): WrappedRace["tightness"] {
   return "runaway";
 }
 
-function tightnessLabel(kind: WrappedRace["tightness"]): string {
+function tightnessLabel(
+  kind: WrappedRace["tightness"],
+  locked: boolean,
+): string {
+  if (locked) {
+    switch (kind) {
+      case "open":
+        return "Cerró apretado";
+      case "fight":
+        return "Hubo pelea";
+      case "runaway":
+        return "Ganó claro";
+      default:
+        return "Sin premio";
+    }
+  }
   switch (kind) {
     case "open":
       return "Carrera abierta";
@@ -81,15 +101,35 @@ function buildRace(
   title: string,
   trophy: string,
   items: WrappedRacer[],
+  locked: boolean,
 ): WrappedRace {
   const tightness = tightnessOf(items);
   return {
     title,
     trophy,
     tightness,
-    tightness_label: tightnessLabel(tightness),
+    tightness_label: tightnessLabel(tightness, locked),
+    locked,
     items,
   };
+}
+
+async function listListenYears(
+  currentYear: number,
+  requestedYear: number,
+): Promise<number[]> {
+  const supabase = createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("get_calendar_available_years");
+  const fromDb =
+    error || !Array.isArray(data)
+      ? []
+      : data
+          .map((r: { year?: unknown }) => Number(r.year))
+          .filter((y) => Number.isFinite(y) && y >= 2010 && y <= 2100);
+  const years = new Set(fromDb);
+  years.add(currentYear);
+  years.add(requestedYear);
+  return Array.from(years).sort((a, b) => b - a);
 }
 
 function longestStreak(dates: string[]): number {
@@ -129,18 +169,34 @@ export async function getWrappedPayload(
   const params: TimeFilterParams = { filter: "year", year };
   const yearQs = `filter=year&year=${year}`;
 
-  const [bundle, heatmap, tracks, artists, albums, lastBundle] =
+  const [bundle, heatmap, tracks, artists, albums, lastBundle, availableYears] =
     await Promise.all([
       getDashboardBundlePayload(params, 8),
       getHeatmapData(year).catch(() => []),
-      fetchTracksLeaderboard(params, { search: "", offset: 0, limit: 8 }),
-      fetchArtistsLeaderboard(params, { search: "", offset: 0, limit: 8 }),
-      fetchAlbumsLeaderboard(params, { search: "", offset: 0, limit: 8 }),
+      fetchTracksLeaderboard(params, {
+        search: "",
+        offset: 0,
+        limit: TRACK_BOARD_LIMIT,
+        withDelta: false,
+      }),
+      fetchArtistsLeaderboard(params, {
+        search: "",
+        offset: 0,
+        limit: ARTIST_BOARD_LIMIT,
+        withDelta: false,
+      }),
+      fetchAlbumsLeaderboard(params, {
+        search: "",
+        offset: 0,
+        limit: ALBUM_RACE_LIMIT,
+        withDelta: false,
+      }),
       year > 2014
         ? getDashboardBundlePayload({ filter: "year", year: year - 1 }, 1).catch(
             () => null,
           )
         : Promise.resolve(null),
+      listListenYears(todayYear, year).catch(() => [todayYear, year]),
     ]);
 
   const listenDaysSet = new Set(
@@ -318,10 +374,11 @@ export async function getWrappedPayload(
       projected_ms: projectedMs,
     },
     vs_last_year: vsLastYear,
+    available_years: availableYears,
     races: {
-      track: buildRace("Canción del año", "Tema", trackRacers),
-      artist: buildRace("Artista del año", "Artista", artistRacers),
-      album: buildRace("Álbum del año", "Álbum", albumRacers),
+      track: buildRace("Canción del año", "Tema", trackRacers, !isCurrent),
+      artist: buildRace("Artista del año", "Artista", artistRacers, !isCurrent),
+      album: buildRace("Álbum del año", "Álbum", albumRacers, !isCurrent),
     },
     months: bundle.monthsTop,
     top_days: topDays,

@@ -22,8 +22,11 @@ export type ArtistBrowseRow = TopItem;
 
 export async function fetchArtistsLeaderboard(
   params: TimeFilterParams,
-  options: { search: string; offset: number; limit: number }
+  options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<ArtistBrowseRow[]> {
+  if (options.withDelta === false) {
+    return fetchArtistsLeaderboardLegacy(params, options);
+  }
   const supabase = createServerSupabaseClient();
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;

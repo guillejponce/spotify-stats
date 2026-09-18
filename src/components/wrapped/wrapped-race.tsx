@@ -6,8 +6,12 @@ import { Music2 } from "lucide-react";
 import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
 import type { WrappedRace, WrappedRacer } from "@/types/wrapped";
 
-function gapLabel(leader: WrappedRacer, item: WrappedRacer): string {
-  if (item.id === leader.id) return "va primero";
+function gapLabel(
+  leader: WrappedRacer,
+  item: WrappedRacer,
+  locked: boolean,
+): string {
+  if (item.id === leader.id) return locked ? "campeón" : "va primero";
   const gap = Math.max(0, leader.play_count - item.play_count);
   if (gap === 0) return "empatado";
   return `a ${formatReproductionCount(gap)}`;
@@ -43,7 +47,9 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
 
       {race.items.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-white/45 sm:px-5">
-          Todavía no hay suficientes repros este año.
+          {race.locked
+            ? "No hubo suficientes repros este año."
+            : "Todavía no hay suficientes repros este año."}
         </p>
       ) : (
         <ol className="space-y-1 px-2 pb-3 pt-2 sm:px-3">
@@ -74,8 +80,10 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
                     {item.name}
                   </span>
                   <span className="block truncate text-[11px] text-white/40">
-                    {item.subtitle || gapLabel(leader!, item)}
-                    {item.subtitle ? ` · ${gapLabel(leader!, item)}` : ""}
+                    {item.subtitle || gapLabel(leader!, item, race.locked)}
+                    {item.subtitle
+                      ? ` · ${gapLabel(leader!, item, race.locked)}`
+                      : ""}
                   </span>
                   <span className="mt-1 block h-1 overflow-hidden rounded-full bg-white/10">
                     <span

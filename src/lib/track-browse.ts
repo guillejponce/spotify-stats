@@ -29,8 +29,11 @@ function mapTrackRow(r: Record<string, unknown>): TrackBrowseRow {
 
 export async function fetchTracksLeaderboard(
   params: TimeFilterParams,
-  options: { search: string; offset: number; limit: number }
+  options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<TrackBrowseRow[]> {
+  if (options.withDelta === false) {
+    return fetchTracksLeaderboardLegacy(params, options);
+  }
   const supabase = createServerSupabaseClient();
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;

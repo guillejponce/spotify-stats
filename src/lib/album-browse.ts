@@ -22,8 +22,11 @@ export type AlbumBrowseRow = TopItem;
 
 export async function fetchAlbumsLeaderboard(
   params: TimeFilterParams,
-  options: { search: string; offset: number; limit: number }
+  options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<AlbumBrowseRow[]> {
+  if (options.withDelta === false) {
+    return fetchAlbumsLeaderboardLegacy(params, options);
+  }
   const supabase = createServerSupabaseClient();
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
