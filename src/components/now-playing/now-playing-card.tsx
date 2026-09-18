@@ -6,6 +6,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Music2, Pause, Loader2 } from "lucide-react";
+import {
+  CompactListenRanks,
+  FullListenRanks,
+} from "@/components/now-playing/listen-ranks";
+import type { ListenRank } from "@/lib/listen-rank-types";
 
 interface NowPlayingData {
   track_id: string | null;
@@ -27,12 +32,19 @@ function formatClock(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function NowPlayingCard() {
+export function NowPlayingCard({
+  variant = "compact",
+}: {
+  /** compact: dashboard. full: página Now Playing. */
+  variant?: "compact" | "full";
+}) {
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingRating, setSavingRating] = useState(false);
   const [hoverStar, setHoverStar] = useState(0);
   const [tick, setTick] = useState(0);
+  const [trackRank, setTrackRank] = useState<ListenRank | null>(null);
+  const [artistRank, setArtistRank] = useState<ListenRank | null>(null);
   const anchorRef = useRef({ at: 0, progress: 0 });
 
   const fetchNowPlaying = useCallback(async () => {
@@ -53,6 +65,36 @@ export function NowPlayingCard() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const trackId = nowPlaying?.track_id;
+    const artistId = nowPlaying?.artist_id;
+    if (!trackId && !artistId) {
+      setTrackRank(null);
+      setArtistRank(null);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (trackId) params.set("track_id", trackId);
+    if (artistId) params.set("artist_id", artistId);
+    void fetch(`/api/listen-ranks?${params}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { track?: ListenRank; artist?: ListenRank } | null) => {
+        if (cancelled || !data) return;
+        setTrackRank(data.track ?? null);
+        setArtistRank(data.artist ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTrackRank(null);
+          setArtistRank(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nowPlaying?.track_id, nowPlaying?.artist_id]);
 
   async function handleRate(rating: number) {
     if (!nowPlaying?.track_id || savingRating) return;
@@ -182,6 +224,9 @@ export function NowPlayingCard() {
             </p>
             <p className="mt-0.5 truncate text-sm text-white/75">{nowPlaying.artist_name}</p>
             <p className="truncate text-xs text-white/40">{nowPlaying.album_name}</p>
+            {variant === "compact" && (
+              <CompactListenRanks track={trackRank} artist={artistRank} />
+            )}
 
             <div className="mt-3 hidden sm:block">
               <ProgressLine percent={progressPercent} />
@@ -200,6 +245,15 @@ export function NowPlayingCard() {
             <span>{formatClock(nowPlaying.duration_ms)}</span>
           </div>
         </div>
+
+        {variant === "full" && (trackRank || artistRank) && (
+          <FullListenRanks
+            track={trackRank}
+            artist={artistRank}
+            artistId={nowPlaying.artist_id}
+            artistName={nowPlaying.artist_name}
+          />
+        )}
 
         {nowPlaying.track_id && (
           <div className="flex items-center gap-2 px-3.5 pb-3.5 sm:px-5 sm:pb-5">

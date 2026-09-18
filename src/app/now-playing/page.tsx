@@ -27,8 +27,8 @@ export default function NowPlayingPage() {
         </a>
       </div>
 
-      <div className="max-w-lg">
-        <NowPlayingCard />
+      <div className="max-w-xl">
+        <NowPlayingCard variant="full" />
       </div>
 
       <div className="rounded-xl border border-white/5 bg-spotify-dark-gray p-6">
