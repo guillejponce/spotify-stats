@@ -19,6 +19,7 @@ import {
   Bot,
   Flame,
   Gift,
+  Guitar,
 } from "lucide-react";
 import { useState } from "react";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/ratings", label: "Valoraciones", icon: Star },
   { href: "/calendar", label: "Calendario", icon: CalendarDays },
   { href: "/wrapped", label: "Wrapped", icon: Gift },
+  { href: "/charts", label: "Cifras", icon: Guitar },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },
