@@ -10,6 +10,7 @@ export type ParsedChart = {
   artist: string | null;
   key: string | null;
   capo: number | null;
+  tempo: number | null;
   lines: ChartLine[];
 };
 
@@ -43,6 +44,64 @@ const CHORD_TOKEN =
 
 export function looksLikeChordToken(token: string): boolean {
   return CHORD_TOKEN.test(token.trim());
+}
+
+function expandInlineDirectives(line: string): string[] {
+  const parts = line.match(/\{[^{}]+\}/g);
+  if (!parts || parts.length < 2) return [line];
+  if (line.replace(/\{[^{}]+\}/g, "").trim() !== "") return [line];
+  return parts;
+}
+
+/** Quita verso/letra y deja solo directivas + acordes. */
+export function stripLyricsFromChordPro(source: string): string {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  for (const rawLine of lines) {
+    for (const raw of expandInlineDirectives(rawLine)) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      out.push("");
+      continue;
+    }
+    if (trimmed.startsWith("#")) continue;
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      out.push(trimmed);
+      continue;
+    }
+
+    const chords: string[] = [];
+    let leftover = "";
+    let i = 0;
+    while (i < raw.length) {
+      if (raw[i] === "[") {
+        const end = raw.indexOf("]", i + 1);
+        if (end === -1) {
+          leftover += raw[i];
+          i += 1;
+          continue;
+        }
+        const tok = raw.slice(i + 1, end).trim();
+        if (looksLikeChordToken(tok)) chords.push(`[${tok}]`);
+        i = end + 1;
+        continue;
+      }
+      leftover += raw[i];
+      i += 1;
+    }
+
+    const words = leftover.replace(/\s+/g, " ").trim();
+    if (chords.length > 0) {
+      out.push(chords.join(" "));
+      continue;
+    }
+    if (!words) continue;
+    if (words.split(/\s+/).every(looksLikeChordToken)) {
+      out.push(words.split(/\s+/).map((t) => `[${t}]`).join(" "));
+    }
+    }
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function looksLikeChordPro(text: string): boolean {
@@ -95,6 +154,17 @@ function parseDirective(line: string): { name: string; value: string } | null {
   return { name: m[1]!.toLowerCase(), value: (m[2] ?? "").trim() };
 }
 
+export function parseTempoBpm(value: string | number | null | undefined): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 40 || value > 240) return null;
+    return Math.round(value);
+  }
+  if (!value) return null;
+  const n = Number(String(value).replace(/[^\d.]/g, ""));
+  if (!Number.isFinite(n) || n < 40 || n > 240) return null;
+  return Math.round(n);
+}
+
 function parseMusicLine(raw: string): ChartLine {
   const chords: ChartChord[] = [];
   let lyric = "";
@@ -124,18 +194,22 @@ export function parseChordPro(source: string): ParsedChart {
     artist: null,
     key: null,
     capo: null,
+    tempo: null,
     lines: [],
   };
 
   const text = source.replace(/\r\n/g, "\n");
-  for (const raw of text.split("\n")) {
+  for (const rawLine of text.split("\n")) {
+    for (const raw of expandInlineDirectives(rawLine)) {
     const dir = parseDirective(raw);
     if (dir) {
       if (dir.name === "title" || dir.name === "t") parsed.title = dir.value || parsed.title;
       else if (dir.name === "artist" || dir.name === "subtitle" || dir.name === "st") {
         parsed.artist = dir.value || parsed.artist;
       } else if (dir.name === "key") parsed.key = dir.value || parsed.key;
-      else if (dir.name === "capo") {
+      else if (dir.name === "tempo" || dir.name === "bpm") {
+        parsed.tempo = parseTempoBpm(dir.value) ?? parsed.tempo;
+      } else if (dir.name === "capo") {
         const n = Number(dir.value);
         if (Number.isFinite(n)) parsed.capo = Math.max(0, Math.min(12, Math.floor(n)));
       } else if (dir.name === "comment" || dir.name === "c" || dir.name === "comment_italic") {
@@ -160,6 +234,7 @@ export function parseChordPro(source: string): ParsedChart {
     }
 
     parsed.lines.push(parseMusicLine(raw));
+    }
   }
 
   return parsed;
@@ -250,7 +325,13 @@ export function webFormatToChordPro(text: string): string {
 
 export function ensureChartHeader(
   content: string,
-  meta: { title?: string | null; artist?: string | null; key?: string | null; capo?: number | null },
+  meta: {
+    title?: string | null;
+    artist?: string | null;
+    key?: string | null;
+    capo?: number | null;
+    tempo?: number | null;
+  },
 ): string {
   let body = content.replace(/^\uFEFF/, "");
   const parsed = parseChordPro(body);
@@ -258,6 +339,8 @@ export function ensureChartHeader(
   if (meta.title && !parsed.title) header.push(`{title: ${meta.title}}`);
   if (meta.artist && !parsed.artist) header.push(`{artist: ${meta.artist}}`);
   if (meta.key && !parsed.key) header.push(`{key: ${meta.key}}`);
+  const tempo = parseTempoBpm(meta.tempo);
+  if (tempo != null && parsed.tempo == null) header.push(`{tempo: ${tempo}}`);
   if (meta.capo != null && meta.capo > 0 && parsed.capo == null) {
     header.push(`{capo: ${meta.capo}}`);
   }

@@ -14,6 +14,7 @@ import {
   PlayCircle,
   Pencil,
   Save,
+  Sparkles,
   X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -64,6 +65,7 @@ export function ChartsView() {
   const [hits, setHits] = useState<ChartSearchHit[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [skeletonBusy, setSkeletonBusy] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const debouncedQuery = useDebounced(query, 280);
 
@@ -173,6 +175,34 @@ export function ChartsView() {
     router.replace("/charts");
   };
 
+  const requestSkeleton = useCallback(async () => {
+    if (!headerTitle) return;
+    setSkeletonBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/charts/skeleton", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: headerTitle,
+          artist: headerArtist ?? "",
+          trackId: activeTrackId,
+        }),
+      });
+      const json = (await res.json()) as { content?: string; error?: string };
+      if (!res.ok || !json.content) {
+        throw new Error(json.error || "No se pudo armar el esqueleto");
+      }
+      setDraft(json.content);
+      setEditing(true);
+      setTranspose(0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSkeletonBusy(false);
+    }
+  }, [activeTrackId, headerArtist, headerTitle]);
+
   const save = async () => {
     if (!activeTrackId) return;
     setSaving(true);
@@ -215,8 +245,8 @@ export function ChartsView() {
         </div>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">Cifras</h1>
         <p className="mt-1 max-w-xl text-sm text-spotify-light-gray">
-          Tus cifras, estilo Cifra Club. Si no hay nada cargado, buscá afuera y
-          pegá la transcripción acá.
+          Cargar acordes arma un esqueleto de tono, BPM y secciones (sin letra).
+          El verso lo pegás vos cuando quieras.
         </p>
       </header>
 
@@ -313,6 +343,7 @@ export function ChartsView() {
                 <p className="mt-1 text-[11px] tabular-nums text-white/35">
                   Tono {displayKey || "—"}
                   {transpose !== 0 ? ` · ${transpose > 0 ? "+" : ""}${transpose}` : ""}
+                  {parsed.tempo != null ? ` · ${parsed.tempo} BPM` : ""}
                   {(parsed.capo ?? chart?.capo ?? 0) > 0
                     ? ` · capo ${(parsed.capo ?? chart?.capo)!}`
                     : ""}
@@ -352,6 +383,30 @@ export function ChartsView() {
                   A+
                 </IconBtn>
               </ControlGroup>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={skeletonBusy || !headerTitle}
+                onClick={() => {
+                  const hasWords = /\][^\n{\[]*[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(
+                    draft,
+                  );
+                  if (
+                    hasWords &&
+                    !window.confirm("Esto reemplaza el borrador. ¿Seguimos?")
+                  ) {
+                    return;
+                  }
+                  void requestSkeleton();
+                }}
+              >
+                {skeletonBusy ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {chart || draft.trim() ? "Recargar acordes" : "Cargar acordes"}
+              </Button>
               <button
                 type="button"
                 onClick={() => setAutoscroll((v) => !v)}
@@ -415,7 +470,7 @@ export function ChartsView() {
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n{key: C}\n\n[C]Pegá acá ChordPro o una cifra con acordes arriba de la letra`}
+                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n{key: C}\n{tempo: 120}\n\n[C]Pegá acá ChordPro o una cifra con acordes arriba de la letra`}
                     className="min-h-[12rem] w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-sm text-white placeholder:text-white/25 outline-none focus:border-spotify-green/40"
                   />
                 )}
@@ -501,7 +556,7 @@ function EmptyChart({
     <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
       <p className="text-sm text-white/60">Todavía no hay cifra para este tema.</p>
       <p className="mt-1 text-xs text-white/40">
-        Buscala afuera y pegá ChordPro, o una cifra con acordes arriba de la letra.
+        Apretá Cargar acordes o pegá ChordPro. La letra la completás a mano.
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
         <Outbound href={links.cifraClub} label="Cifra Club" />

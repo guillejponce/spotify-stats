@@ -374,3 +374,25 @@ export async function getSpotifyAlbumWithTracks(
   out.sort((a, b) => a.track_number - b.track_number);
   return { album, tracks: out };
 }
+
+/** BPM from audio-features. Many new apps get 403; callers should treat null as unknown. */
+export async function getSpotifyTrackTempoBpm(
+  accessToken: string,
+  trackId: string,
+): Promise<number | null> {
+  const id = trackId.trim();
+  if (!id) return null;
+  const response = await fetch(
+    `${SPOTIFY_API_BASE}/audio-features/${encodeURIComponent(id)}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      next: { revalidate: 0 },
+    },
+  );
+  if (response.status === 401) throw new Error("EXPIRED_TOKEN");
+  if (!response.ok) return null;
+  const json = (await response.json()) as { tempo?: number };
+  const t = json.tempo;
+  if (typeof t !== "number" || !Number.isFinite(t) || t < 40 || t > 240) return null;
+  return Math.round(t);
+}
