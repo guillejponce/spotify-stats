@@ -157,7 +157,10 @@ export function ChartsView() {
   }, [autoscroll]);
 
   const parsed = useMemo(() => parseChordPro(draft || chart?.content || ""), [draft, chart]);
-  const displayKey = transposeKey(parsed.key || chart?.original_key, transpose);
+  const displayKey = transposeKey(
+    parsed.key ?? chart?.original_key ?? null,
+    transpose,
+  );
   const links = searchUrls(headerTitle ?? "", headerArtist ?? "");
 
   const selectTrack = (id: string) => {
