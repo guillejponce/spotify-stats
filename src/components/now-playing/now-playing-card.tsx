@@ -23,6 +23,8 @@ interface NowPlayingData {
   progress_ms: number;
   is_playing: boolean;
   current_rating: number | null;
+  key?: string | null;
+  tempo?: number | null;
 }
 
 function formatClock(ms: number): string {
@@ -224,6 +226,7 @@ export function NowPlayingCard({
             </p>
             <p className="mt-0.5 truncate text-sm text-white/75">{nowPlaying.artist_name}</p>
             <p className="truncate text-xs text-white/40">{nowPlaying.album_name}</p>
+            <HarmonyLine keyName={nowPlaying.key} tempo={nowPlaying.tempo} />
             {variant === "compact" && (
               <CompactListenRanks track={trackRank} artist={artistRank} />
             )}
@@ -294,6 +297,25 @@ export function NowPlayingCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function HarmonyLine({
+  keyName,
+  tempo,
+}: {
+  keyName?: string | null;
+  tempo?: number | null;
+}) {
+  const parts = [
+    keyName ? `Tono ${keyName}` : null,
+    tempo != null ? `${tempo} BPM` : null,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return (
+    <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/40 sm:text-[11px]">
+      {parts.join(" · ")}
+    </p>
   );
 }
 

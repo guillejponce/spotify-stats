@@ -5,6 +5,7 @@ import {
   listRecentCharts,
   upsertSongChart,
 } from "@/lib/charts";
+import { getTrackHarmony } from "@/lib/track-harmony";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -21,12 +22,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ chart: null, track: null, recent }, { headers: NO_CACHE });
     }
 
-    const [chart, track] = await Promise.all([
+    const [chart, track, harmony] = await Promise.all([
       getSongChart(trackId),
       fetchTrackForChart(trackId),
+      getTrackHarmony({ dbTrackId: trackId }),
     ]);
 
-    return NextResponse.json({ chart, track, recent: [] }, { headers: NO_CACHE });
+    return NextResponse.json(
+      { chart, track, recent: [], key: harmony.key, tempo: harmony.tempo },
+      { headers: NO_CACHE },
+    );
   } catch (e) {
     console.error("[api/charts GET]", e);
     return NextResponse.json(

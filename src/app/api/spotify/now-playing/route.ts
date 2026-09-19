@@ -10,6 +10,7 @@ import {
   upsertArtistAndGetDbId,
   upsertAlbumAndGetDbId,
 } from "@/lib/spotify-graph-db";
+import { getTrackHarmony } from "@/lib/track-harmony";
 
 export const dynamic = "force-dynamic";
 
@@ -125,14 +126,21 @@ export async function GET() {
     );
 
     let currentRating: number | null = null;
-    if (dbTrackId) {
-      const { data: ratingRow } = await supabase
-        .from("song_ratings")
-        .select("rating")
-        .eq("track_id", dbTrackId)
-        .maybeSingle();
-      if (ratingRow) currentRating = ratingRow.rating as number;
-    }
+    const [ratingRow, harmony] = await Promise.all([
+      dbTrackId
+        ? supabase
+            .from("song_ratings")
+            .select("rating")
+            .eq("track_id", dbTrackId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      getTrackHarmony({
+        accessToken,
+        spotifyTrackId: typeof track.id === "string" ? track.id : null,
+        dbTrackId,
+      }),
+    ]);
+    if (ratingRow.data) currentRating = ratingRow.data.rating as number;
 
     return NextResponse.json({
       nowPlaying: {
@@ -146,6 +154,8 @@ export async function GET() {
         progress_ms: data.progress_ms || 0,
         is_playing: data.is_playing,
         current_rating: currentRating,
+        key: harmony.key,
+        tempo: harmony.tempo,
       },
     });
   } catch (error) {

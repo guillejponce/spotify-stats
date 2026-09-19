@@ -66,6 +66,10 @@ export function ChartsView() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skeletonBusy, setSkeletonBusy] = useState(false);
+  const [harmony, setHarmony] = useState<{ key: string | null; tempo: number | null }>({
+    key: null,
+    tempo: null,
+  });
   const scrollerRef = useRef<HTMLDivElement>(null);
   const debouncedQuery = useDebounced(query, 280);
 
@@ -109,11 +113,14 @@ export function ChartsView() {
         chart: SongChart | null;
         track: ChartTrack | null;
         recent?: SongChart[];
+        key?: string | null;
+        tempo?: number | null;
         error?: string;
       };
       if (!res.ok) throw new Error(json.error || "No se pudo cargar");
       setChart(json.chart);
       setTrack(json.track);
+      setHarmony({ key: json.key ?? null, tempo: json.tempo ?? null });
       if (!trackId) setRecent(json.recent ?? []);
       setDraft(json.chart?.content ?? "");
       setEditing(!json.chart);
@@ -159,10 +166,14 @@ export function ChartsView() {
   }, [autoscroll]);
 
   const parsed = useMemo(() => parseChordPro(draft || chart?.content || ""), [draft, chart]);
-  const displayKey = transposeKey(
-    parsed.key ?? chart?.original_key ?? null,
-    transpose,
-  );
+  const draftLooksGuessed = /esqueleto tentativo/i.test(draft || chart?.content || "");
+  const sourceKey = draftLooksGuessed
+    ? harmony.key
+    : parsed.key ?? chart?.original_key ?? harmony.key;
+  const sourceTempo = draftLooksGuessed
+    ? harmony.tempo
+    : parsed.tempo ?? harmony.tempo;
+  const displayKey = transposeKey(sourceKey ?? null, transpose);
   const links = searchUrls(headerTitle ?? "", headerArtist ?? "");
 
   const selectTrack = (id: string) => {
@@ -189,13 +200,19 @@ export function ChartsView() {
           trackId: activeTrackId,
         }),
       });
-      const json = (await res.json()) as { content?: string; error?: string };
-      if (!res.ok || !json.content) {
-        throw new Error(json.error || "No se pudo armar el esqueleto");
-      }
-      setDraft(json.content);
-      setEditing(true);
-      setTranspose(0);
+        const json = (await res.json()) as {
+          content?: string;
+          key?: string | null;
+          tempo?: number | null;
+          error?: string;
+        };
+        if (!res.ok || !json.content) {
+          throw new Error(json.error || "No se pudo armar la hoja");
+        }
+        setDraft(json.content);
+        setHarmony({ key: json.key ?? null, tempo: json.tempo ?? null });
+        setEditing(true);
+        setTranspose(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -245,8 +262,7 @@ export function ChartsView() {
         </div>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">Cifras</h1>
         <p className="mt-1 max-w-xl text-sm text-spotify-light-gray">
-          Cargar acordes arma un esqueleto de tono, BPM y secciones (sin letra).
-          El verso lo pegás vos cuando quieras.
+          Tono y BPM salen de Spotify. Los acordes no los inventamos: pegálos vos.
         </p>
       </header>
 
@@ -343,7 +359,7 @@ export function ChartsView() {
                 <p className="mt-1 text-[11px] tabular-nums text-white/35">
                   Tono {displayKey || "—"}
                   {transpose !== 0 ? ` · ${transpose > 0 ? "+" : ""}${transpose}` : ""}
-                  {parsed.tempo != null ? ` · ${parsed.tempo} BPM` : ""}
+                  {sourceTempo != null ? ` · ${sourceTempo} BPM` : ""}
                   {(parsed.capo ?? chart?.capo ?? 0) > 0
                     ? ` · capo ${(parsed.capo ?? chart?.capo)!}`
                     : ""}
@@ -405,7 +421,7 @@ export function ChartsView() {
                 ) : (
                   <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                 )}
-                {chart || draft.trim() ? "Recargar acordes" : "Cargar acordes"}
+                {chart || draft.trim() ? "Recargar tono y BPM" : "Cargar tono y BPM"}
               </Button>
               <button
                 type="button"
@@ -470,7 +486,7 @@ export function ChartsView() {
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n{key: C}\n{tempo: 120}\n\n[C]Pegá acá ChordPro o una cifra con acordes arriba de la letra`}
+                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n{key: Em}\n{tempo: 168}\n\nPegá acá los acordes (y la letra si querés)`}
                     className="min-h-[12rem] w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-sm text-white placeholder:text-white/25 outline-none focus:border-spotify-green/40"
                   />
                 )}
@@ -556,7 +572,7 @@ function EmptyChart({
     <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
       <p className="text-sm text-white/60">Todavía no hay cifra para este tema.</p>
       <p className="mt-1 text-xs text-white/40">
-        Apretá Cargar acordes o pegá ChordPro. La letra la completás a mano.
+        Cargar tono y BPM deja las secciones vacías. Los acordes los pegás vos.
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
         <Outbound href={links.cifraClub} label="Cifra Club" />

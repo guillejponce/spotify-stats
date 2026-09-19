@@ -375,24 +375,98 @@ export async function getSpotifyAlbumWithTracks(
   return { album, tracks: out };
 }
 
-/** BPM from audio-features. Many new apps get 403; callers should treat null as unknown. */
-export async function getSpotifyTrackTempoBpm(
+export type SpotifyTrackAudioMeta = {
+  tempo: number | null;
+  key: string | null;
+};
+
+const PITCH_CLASS = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
+] as const;
+
+function formatPitchKey(key: unknown, mode: unknown): string | null {
+  if (typeof key !== "number" || !Number.isInteger(key) || key < 0 || key > 11) {
+    return null;
+  }
+  const note = PITCH_CLASS[key];
+  return mode === 0 ? `${note}m` : note;
+}
+
+function normalizeAudioMeta(json: {
+  tempo?: number;
+  key?: number;
+  mode?: number;
+}): SpotifyTrackAudioMeta {
+  const t = json.tempo;
+  const tempo =
+    typeof t === "number" && Number.isFinite(t) && t >= 40 && t <= 240
+      ? Math.round(t)
+      : null;
+  return { tempo, key: formatPitchKey(json.key, json.mode) };
+}
+
+async function getSpotifyTrackAudioMetaFromAnalysis(
   accessToken: string,
   trackId: string,
-): Promise<number | null> {
+): Promise<SpotifyTrackAudioMeta> {
+  const response = await fetch(
+    `${SPOTIFY_API_BASE}/audio-analysis/${encodeURIComponent(trackId)}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(4000),
+    },
+  );
+  if (response.status === 401) throw new Error("EXPIRED_TOKEN");
+  if (!response.ok) return { tempo: null, key: null };
+  const json = (await response.json()) as {
+    track?: { tempo?: number; key?: number; mode?: number };
+  };
+  return normalizeAudioMeta(json.track ?? {});
+}
+
+/** Tempo + key from Spotify. Never invents values. */
+export async function getSpotifyTrackAudioMeta(
+  accessToken: string,
+  trackId: string,
+): Promise<SpotifyTrackAudioMeta> {
   const id = trackId.trim();
-  if (!id) return null;
+  if (!id) return { tempo: null, key: null };
   const response = await fetch(
     `${SPOTIFY_API_BASE}/audio-features/${encodeURIComponent(id)}`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(3000),
     },
   );
   if (response.status === 401) throw new Error("EXPIRED_TOKEN");
-  if (!response.ok) return null;
-  const json = (await response.json()) as { tempo?: number };
-  const t = json.tempo;
-  if (typeof t !== "number" || !Number.isFinite(t) || t < 40 || t > 240) return null;
-  return Math.round(t);
+  if (response.ok) {
+    return normalizeAudioMeta(
+      (await response.json()) as { tempo?: number; key?: number; mode?: number },
+    );
+  }
+  if (response.status === 403 || response.status === 404) {
+    return getSpotifyTrackAudioMetaFromAnalysis(accessToken, id);
+  }
+  return { tempo: null, key: null };
+}
+
+export async function getSpotifyTrackTempoBpm(
+  accessToken: string,
+  trackId: string,
+): Promise<number | null> {
+  const meta = await getSpotifyTrackAudioMeta(accessToken, trackId);
+  return meta.tempo;
 }
