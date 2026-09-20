@@ -143,8 +143,7 @@ export async function GET() {
     ]);
     if (ratingRow.data) currentRating = ratingRow.data.rating as number;
 
-    return NextResponse.json({
-      nowPlaying: {
+    const nowPlaying = {
         track_id: dbTrackId,
         artist_id: artistDbId,
         track_name: track.name,
@@ -157,8 +156,12 @@ export async function GET() {
         current_rating: currentRating,
         key: harmony.key,
         tempo: harmony.tempo,
-      },
-    });
+        ...(process.env.NODE_ENV !== "production"
+          ? { harmony_debug: harmony.debug }
+          : {}),
+    };
+
+    return NextResponse.json({ nowPlaying });
   } catch (error) {
     console.error("Now playing error:", error);
     return NextResponse.json(

@@ -445,7 +445,7 @@ function normalizeAudioMeta(json: {
 async function getSpotifyTrackAudioMetaFromAnalysis(
   accessToken: string,
   trackId: string,
-): Promise<SpotifyTrackAudioMeta> {
+): Promise<{ meta: SpotifyTrackAudioMeta; status: number | null }> {
   const response = await fetch(
     `${SPOTIFY_API_BASE}/audio-analysis/${encodeURIComponent(trackId)}`,
     {
@@ -455,20 +455,29 @@ async function getSpotifyTrackAudioMetaFromAnalysis(
     },
   );
   if (response.status === 401) throw new Error("EXPIRED_TOKEN");
-  if (!response.ok) return { tempo: null, key: null };
+  if (!response.ok) {
+    return { meta: { tempo: null, key: null }, status: response.status };
+  }
   const json = (await response.json()) as {
     track?: { tempo?: number; key?: number; mode?: number };
   };
-  return normalizeAudioMeta(json.track ?? {});
+  return { meta: normalizeAudioMeta(json.track ?? {}), status: response.status };
 }
 
+export type SpotifyAudioProbe = SpotifyTrackAudioMeta & {
+  featuresStatus: number | null;
+  analysisStatus: number | null;
+};
+
 /** Tempo + key from Spotify. Never invents values. */
-export async function getSpotifyTrackAudioMeta(
+export async function probeSpotifyTrackAudioMeta(
   accessToken: string,
   trackId: string,
-): Promise<SpotifyTrackAudioMeta> {
+): Promise<SpotifyAudioProbe> {
   const id = trackId.trim();
-  if (!id) return { tempo: null, key: null };
+  if (!id) {
+    return { tempo: null, key: null, featuresStatus: null, analysisStatus: null };
+  }
   const response = await fetch(
     `${SPOTIFY_API_BASE}/audio-features/${encodeURIComponent(id)}`,
     {
@@ -479,15 +488,31 @@ export async function getSpotifyTrackAudioMeta(
   );
   if (response.status === 401) throw new Error("EXPIRED_TOKEN");
   if (response.ok) {
-    return normalizeAudioMeta(
+    const meta = normalizeAudioMeta(
       (await response.json()) as { tempo?: number; key?: number; mode?: number },
     );
+    return { ...meta, featuresStatus: response.status, analysisStatus: null };
   }
-  console.warn("[audio-meta] features", response.status, id);
+  let analysisStatus: number | null = null;
+  let meta: SpotifyTrackAudioMeta = { tempo: null, key: null };
   if (response.status === 403 || response.status === 404) {
-    return getSpotifyTrackAudioMetaFromAnalysis(accessToken, id);
+    const analysis = await getSpotifyTrackAudioMetaFromAnalysis(accessToken, id);
+    meta = analysis.meta;
+    analysisStatus = analysis.status;
   }
-  return { tempo: null, key: null };
+  return {
+    ...meta,
+    featuresStatus: response.status,
+    analysisStatus,
+  };
+}
+
+export async function getSpotifyTrackAudioMeta(
+  accessToken: string,
+  trackId: string,
+): Promise<SpotifyTrackAudioMeta> {
+  const probe = await probeSpotifyTrackAudioMeta(accessToken, trackId);
+  return { tempo: probe.tempo, key: probe.key };
 }
 
 export async function getSpotifyTrackTempoBpm(

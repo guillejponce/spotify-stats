@@ -25,13 +25,24 @@ export async function GET(request: NextRequest) {
     const [chart, track, harmony] = await Promise.all([
       getSongChart(trackId),
       fetchTrackForChart(trackId),
-      getTrackHarmony({ dbTrackId: trackId }),
+      getTrackHarmony({
+        dbTrackId: trackId,
+        bypassCache: request.nextUrl.searchParams.get("debug") === "1",
+      }),
     ]);
 
-    return NextResponse.json(
-      { chart, track, recent: [], key: harmony.key, tempo: harmony.tempo },
-      { headers: NO_CACHE },
-    );
+    const payload: Record<string, unknown> = {
+      chart,
+      track,
+      recent: [],
+      key: harmony.key,
+      tempo: harmony.tempo,
+    };
+    if (request.nextUrl.searchParams.get("debug") === "1") {
+      payload.harmony_debug = harmony.debug;
+    }
+
+    return NextResponse.json(payload, { headers: NO_CACHE });
   } catch (e) {
     console.error("[api/charts GET]", e);
     return NextResponse.json(

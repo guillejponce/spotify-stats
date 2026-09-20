@@ -166,13 +166,12 @@ export function ChartsView() {
   }, [autoscroll]);
 
   const parsed = useMemo(() => parseChordPro(draft || chart?.content || ""), [draft, chart]);
-  const draftLooksGuessed = /esqueleto tentativo/i.test(draft || chart?.content || "");
-  const sourceKey = draftLooksGuessed
-    ? harmony.key
-    : parsed.key ?? chart?.original_key ?? harmony.key;
-  const sourceTempo = draftLooksGuessed
-    ? harmony.tempo
-    : parsed.tempo ?? harmony.tempo;
+  const content = draft || chart?.content || "";
+  const guessedLead =
+    /esqueleto tentativo|tono y bpm de spotify/i.test(content) ||
+    ((parsed.key === "C" || parsed.key === "Cmaj") && parsed.tempo === 120);
+  const sourceKey = harmony.key ?? (guessedLead ? null : parsed.key ?? chart?.original_key);
+  const sourceTempo = harmony.tempo ?? (guessedLead ? null : parsed.tempo);
   const displayKey = transposeKey(sourceKey ?? null, transpose);
   const links = searchUrls(headerTitle ?? "", headerArtist ?? "");
 
@@ -492,7 +491,7 @@ export function ChartsView() {
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n{key: Em}\n{tempo: 168}\n\nPegá acá los acordes (y la letra si querés)`}
+                    placeholder={`{title: ${headerTitle || "Tema"}}\n{artist: ${headerArtist || "Artista"}}\n\nPegá acá los acordes (y la letra si querés)`}
                     className="min-h-[12rem] w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-sm text-white placeholder:text-white/25 outline-none focus:border-spotify-green/40"
                   />
                 )}

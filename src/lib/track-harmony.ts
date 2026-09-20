@@ -1,10 +1,9 @@
-import { getSongChart } from "@/lib/charts";
-import { parseChordPro } from "@/lib/chordpro";
 import {
   formatPitchKey,
   getSpotifyClientCredentialsToken,
-  getSpotifyTrackAudioMeta,
   getSpotifyTrackPreviewUrl,
+  probeSpotifyTrackAudioMeta,
+  type SpotifyAudioProbe,
   type SpotifyTrackAudioMeta,
 } from "@/lib/spotify";
 import { createServerSupabaseClient } from "@/lib/supabase";
@@ -13,6 +12,17 @@ import { getSpotifyAccessToken } from "@/lib/spotify-token";
 export type TrackHarmony = {
   key: string | null;
   tempo: number | null;
+  debug: HarmonyDebug;
+};
+
+export type HarmonyDebug = {
+  spotifyTrackId: string | null;
+  token: "user" | "cc" | "none";
+  featuresStatus: number | null;
+  analysisStatus: number | null;
+  recco: "hit" | "miss" | "error";
+  preview: boolean;
+  source: "spotify" | "recco" | "preview" | null;
 };
 
 const HIT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -26,10 +36,6 @@ const RECCO_ANALYZE_URL = "https://api.reccobeats.com/v1/analysis/audio-features
 
 function looksLikeSpotifyId(id: string): boolean {
   return SPOTIFY_ID.test(id);
-}
-
-function isGuessedChart(content: string): boolean {
-  return /esqueleto tentativo/i.test(content);
 }
 
 function emptyMeta(): SpotifyTrackAudioMeta {
@@ -94,51 +100,46 @@ export async function resolveSpotifyTrackId(
   return null;
 }
 
-async function chartHarmony(dbTrackId: string | null): Promise<TrackHarmony> {
-  if (!dbTrackId) return emptyMeta();
-  try {
-    const chart = await getSongChart(dbTrackId);
-    if (!chart || isGuessedChart(chart.content)) return emptyMeta();
-    const parsed = parseChordPro(chart.content);
-    return {
-      key: chart.original_key || parsed.key,
-      tempo: parsed.tempo,
-    };
-  } catch {
-    return emptyMeta();
-  }
-}
-
-async function resolveAccessToken(explicit: string | null): Promise<string | null> {
-  if (explicit) return explicit;
+async function resolveAccessToken(
+  explicit: string | null,
+): Promise<{ token: string | null; kind: "user" | "cc" | "none" }> {
+  if (explicit) return { token: explicit, kind: "user" };
   try {
     const supabase = createServerSupabaseClient();
     const user = await getSpotifyAccessToken(supabase);
-    if (user) return user;
+    if (user) return { token: user, kind: "user" };
   } catch {
     /* ignore */
   }
-  return getSpotifyClientCredentialsToken();
+  const cc = await getSpotifyClientCredentialsToken();
+  if (cc) return { token: cc, kind: "cc" };
+  return { token: null, kind: "none" };
 }
 
 async function readSpotifyMeta(
   accessToken: string | null,
   spotifyTrackId: string,
-): Promise<SpotifyTrackAudioMeta> {
-  if (!accessToken) return emptyMeta();
+): Promise<SpotifyAudioProbe> {
+  const empty: SpotifyAudioProbe = {
+    tempo: null,
+    key: null,
+    featuresStatus: null,
+    analysisStatus: null,
+  };
+  if (!accessToken) return empty;
   try {
-    return await getSpotifyTrackAudioMeta(accessToken, spotifyTrackId);
+    return await probeSpotifyTrackAudioMeta(accessToken, spotifyTrackId);
   } catch (e) {
     if (e instanceof Error && e.message === "EXPIRED_TOKEN") {
       const cc = await getSpotifyClientCredentialsToken();
-      if (!cc) return emptyMeta();
+      if (!cc) return { ...empty, featuresStatus: 401 };
       try {
-        return await getSpotifyTrackAudioMeta(cc, spotifyTrackId);
+        return await probeSpotifyTrackAudioMeta(cc, spotifyTrackId);
       } catch {
-        return emptyMeta();
+        return { ...empty, featuresStatus: 401 };
       }
     }
-    return emptyMeta();
+    return empty;
   }
 }
 
@@ -201,6 +202,7 @@ export async function getTrackHarmony(input: {
   spotifyTrackId?: string | null;
   dbTrackId?: string | null;
   previewUrl?: string | null;
+  bypassCache?: boolean;
 }): Promise<TrackHarmony> {
   const dbTrackId = input.dbTrackId?.trim() || null;
   let spotifyTrackId = input.spotifyTrackId?.trim() || null;
@@ -210,44 +212,78 @@ export async function getTrackHarmony(input: {
   const previewUrl = input.previewUrl?.trim() || null;
 
   const cacheKey = `${spotifyTrackId ?? ""}:${dbTrackId ?? ""}`;
-  const hit = cache.get(cacheKey);
-  if (hit) {
-    const ttl = hasAny(hit.value) ? HIT_TTL_MS : MISS_TTL_MS;
-    if (Date.now() - hit.at < ttl) return hit.value;
+  if (!input.bypassCache) {
+    const hit = cache.get(cacheKey);
+    if (hit) {
+      const ttl = hasAny(hit.value) ? HIT_TTL_MS : MISS_TTL_MS;
+      if (Date.now() - hit.at < ttl) return hit.value;
+    }
   }
 
   const pending = inflight.get(cacheKey);
   if (pending) return pending;
 
   const job = (async () => {
-    const token = await resolveAccessToken(input.accessToken ?? null);
-    const [chart, spotify, recco] = await Promise.all([
-      chartHarmony(dbTrackId),
-      spotifyTrackId ? readSpotifyMeta(token, spotifyTrackId) : emptyMeta(),
+    const auth = await resolveAccessToken(input.accessToken ?? null);
+    const emptyProbe: SpotifyAudioProbe = {
+      tempo: null,
+      key: null,
+      featuresStatus: auth.kind === "none" ? null : null,
+      analysisStatus: null,
+    };
+    const [spotify, recco] = await Promise.all([
+      spotifyTrackId ? readSpotifyMeta(auth.token, spotifyTrackId) : emptyProbe,
       spotifyTrackId ? readReccoCatalog(spotifyTrackId) : emptyMeta(),
     ]);
 
-    let measured = mergeMeta(spotify, recco);
+    let source: HarmonyDebug["source"] = null;
+    let measured: SpotifyTrackAudioMeta = emptyMeta();
+    if (hasAny(spotify)) {
+      measured = { key: spotify.key, tempo: spotify.tempo };
+      source = "spotify";
+    }
+    if (!hasAny(measured) && hasAny(recco)) {
+      measured = recco;
+      source = "recco";
+    } else if (source === "spotify") {
+      measured = mergeMeta(measured, recco);
+    }
+
     const preview =
       measured.tempo == null && spotifyTrackId
-        ? await resolvePreviewUrl(token, spotifyTrackId, previewUrl)
+        ? await resolvePreviewUrl(auth.token, spotifyTrackId, previewUrl)
         : null;
     if (measured.tempo == null && preview) {
       const tempo = await analyzePreviewTempo(preview);
-      if (tempo != null) measured = { ...measured, tempo };
+      if (tempo != null) {
+        measured = { ...measured, tempo };
+        if (!source) source = "preview";
+      }
     }
 
-    if (!hasAny(measured)) {
-      console.warn("[harmony] sin tono/BPM", {
-        spotifyTrackId,
-        hasToken: Boolean(token),
-        hasPreview: Boolean(preview),
-      });
-    }
+    const debug: HarmonyDebug = {
+      spotifyTrackId,
+      token: auth.kind,
+      featuresStatus: spotify.featuresStatus,
+      analysisStatus: spotify.analysisStatus,
+      recco: hasAny(recco) ? "hit" : "miss",
+      preview: Boolean(preview),
+      source,
+    };
+
+    console.info(
+      "[harmony]",
+      JSON.stringify({
+        ...debug,
+        key: measured.key,
+        tempo: measured.tempo,
+      }),
+    );
 
     const value: TrackHarmony = {
-      key: measured.key ?? chart.key,
-      tempo: measured.tempo ?? chart.tempo,
+      key: measured.key,
+      tempo: measured.tempo,
+      debug,
     };
     cache.set(cacheKey, { at: Date.now(), value });
     return value;

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Falta el título" }, { status: 400 });
     }
 
-    const harmony = await getTrackHarmony({ dbTrackId: trackId });
+    const harmony = await getTrackHarmony({ dbTrackId: trackId, bypassCache: true });
     const content = buildChartFrame({
       title,
       artist,
@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       content,
       key: harmony.key,
       tempo: harmony.tempo,
+      harmony_debug: harmony.debug,
     });
   } catch (e) {
     console.error("[api/charts/skeleton]", e);
