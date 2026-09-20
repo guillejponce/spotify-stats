@@ -170,6 +170,32 @@ export async function getCurrentlyPlaying(accessToken: string) {
   return response.json();
 }
 
+export async function getSpotifyTrackPreviewUrl(
+  accessToken: string,
+  trackId: string,
+): Promise<string | null> {
+  const id = trackId.trim();
+  if (!id) return null;
+  const urls = [
+    `${SPOTIFY_API_BASE}/tracks/${encodeURIComponent(id)}?market=from_token`,
+    `${SPOTIFY_API_BASE}/tracks/${encodeURIComponent(id)}?market=CL`,
+    `${SPOTIFY_API_BASE}/tracks/${encodeURIComponent(id)}`,
+  ];
+  for (const url of urls) {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.status === 401) throw new Error("EXPIRED_TOKEN");
+    if (!response.ok) continue;
+    const json = (await response.json()) as { preview_url?: string | null };
+    const preview = json.preview_url?.trim();
+    if (preview) return preview;
+  }
+  return null;
+}
+
 export async function getRecentlyPlayed(
   accessToken: string,
   limit: number = 50,
@@ -395,7 +421,7 @@ const PITCH_CLASS = [
   "B",
 ] as const;
 
-function formatPitchKey(key: unknown, mode: unknown): string | null {
+export function formatPitchKey(key: unknown, mode: unknown): string | null {
   if (typeof key !== "number" || !Number.isInteger(key) || key < 0 || key > 11) {
     return null;
   }
@@ -457,6 +483,7 @@ export async function getSpotifyTrackAudioMeta(
       (await response.json()) as { tempo?: number; key?: number; mode?: number },
     );
   }
+  console.warn("[audio-meta] features", response.status, id);
   if (response.status === 403 || response.status === 404) {
     return getSpotifyTrackAudioMetaFromAnalysis(accessToken, id);
   }

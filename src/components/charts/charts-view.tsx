@@ -262,7 +262,7 @@ export function ChartsView() {
         </div>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-white">Cifras</h1>
         <p className="mt-1 max-w-xl text-sm text-spotify-light-gray">
-          Tono y BPM salen de Spotify. Los acordes no los inventamos: pegálos vos.
+          Tono y BPM medidos (no inventados). Los acordes los pegás vos.
         </p>
       </header>
 
@@ -357,12 +357,18 @@ export function ChartsView() {
                 </h2>
                 <p className="truncate text-sm text-white/50">{headerArtist}</p>
                 <p className="mt-1 text-[11px] tabular-nums text-white/35">
-                  Tono {displayKey || "—"}
-                  {transpose !== 0 ? ` · ${transpose > 0 ? "+" : ""}${transpose}` : ""}
-                  {sourceTempo != null ? ` · ${sourceTempo} BPM` : ""}
-                  {(parsed.capo ?? chart?.capo ?? 0) > 0
-                    ? ` · capo ${(parsed.capo ?? chart?.capo)!}`
-                    : ""}
+                  {displayKey || sourceTempo != null ? (
+                    <>
+                      Tono {displayKey || "—"}
+                      {transpose !== 0 ? ` · ${transpose > 0 ? "+" : ""}${transpose}` : ""}
+                      {sourceTempo != null ? ` · ${sourceTempo} BPM` : ""}
+                      {(parsed.capo ?? chart?.capo ?? 0) > 0
+                        ? ` · capo ${(parsed.capo ?? chart?.capo)!}`
+                        : ""}
+                    </>
+                  ) : (
+                    "Sin tono/BPM medido"
+                  )}
                 </p>
               </div>
             </div>

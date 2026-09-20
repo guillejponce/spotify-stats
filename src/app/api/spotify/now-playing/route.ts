@@ -138,6 +138,7 @@ export async function GET() {
         accessToken,
         spotifyTrackId: typeof track.id === "string" ? track.id : null,
         dbTrackId,
+        previewUrl: typeof track.preview_url === "string" ? track.preview_url : null,
       }),
     ]);
     if (ratingRow.data) currentRating = ratingRow.data.rating as number;

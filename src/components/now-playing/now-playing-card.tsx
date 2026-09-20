@@ -311,7 +311,13 @@ function HarmonyLine({
     keyName ? `Tono ${keyName}` : null,
     tempo != null ? `${tempo} BPM` : null,
   ].filter(Boolean);
-  if (parts.length === 0) return null;
+  if (parts.length === 0) {
+    return (
+      <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/35 sm:text-[11px]">
+        Sin tono/BPM medido
+      </p>
+    );
+  }
   return (
     <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/40 sm:text-[11px]">
       {parts.join(" · ")}
