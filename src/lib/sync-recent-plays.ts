@@ -146,6 +146,21 @@ async function persistRecentEntry(
   }
 
   const playedAtTs = new Date(playedAt).toISOString();
+
+  // Window-based dedup: skip if the same track was already recorded within ±3 min.
+  // Prevents duplicates when creditLiveListenIfNeeded inserts an estimated
+  // played_at that differs by a few seconds from Spotify's official timestamp.
+  const DEDUP_WINDOW_MS = 3 * 60 * 1000;
+  const playedMs = new Date(playedAtTs).getTime();
+  const { data: nearbyPlay } = await supabase
+    .from("plays")
+    .select("id")
+    .eq("track_id", dbTrackId)
+    .gte("played_at", new Date(playedMs - DEDUP_WINDOW_MS).toISOString())
+    .lte("played_at", new Date(playedMs + DEDUP_WINDOW_MS).toISOString())
+    .limit(1);
+  if (nearbyPlay?.[0]?.id) return "skipped";
+
   const dur =
     typeof track.duration_ms === "number" ? track.duration_ms : 180_000;
 

@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno Edge Function: HTTP imports + Deno globals are valid at runtime.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SPOTIFY_API = "https://api.spotify.com/v1";
@@ -630,7 +631,45 @@ Deno.serve(async (req) => {
       playsByKey.set(playAtKey(row.track_id, row.played_at), row);
     }
 
-    const playsPayload = Array.from(playsByKey.values());
+    let playsPayload = Array.from(playsByKey.values());
+
+    // ── Window-based dedup ────────────────────────────────────────────
+    // creditLiveListenIfNeeded (app-side) inserts plays with an estimated
+    // played_at (Date.now() − progress_ms) that can differ by a few seconds
+    // from Spotify's official played_at. The unique index (track_id, played_at)
+    // doesn't catch these near-duplicates, so we filter them out here.
+    const DEDUP_WINDOW_MS = 3 * 60 * 1000;
+    if (playsPayload.length > 0) {
+      const times = playsPayload.map((p) => new Date(p.played_at).getTime());
+      const minTime = Math.min(...times) - DEDUP_WINDOW_MS;
+      const maxTime = Math.max(...times) + DEDUP_WINDOW_MS;
+      const trackIds = [...new Set(playsPayload.map((p) => p.track_id))];
+
+      const { data: existingPlays } = await supabase
+        .from("plays")
+        .select("track_id, played_at")
+        .in("track_id", trackIds)
+        .gte("played_at", new Date(minTime).toISOString())
+        .lte("played_at", new Date(maxTime).toISOString());
+
+      if (existingPlays?.length) {
+        const existingMap = new Map<string, number[]>();
+        for (const ep of existingPlays) {
+          const ms = new Date(ep.played_at as string).getTime();
+          const arr = existingMap.get(ep.track_id as string) ?? [];
+          arr.push(ms);
+          existingMap.set(ep.track_id as string, arr);
+        }
+        playsPayload = playsPayload.filter((p) => {
+          const existing = existingMap.get(p.track_id);
+          if (!existing) return true;
+          const pMs = new Date(p.played_at).getTime();
+          return !existing.some((eMs) => Math.abs(pMs - eMs) < DEDUP_WINDOW_MS);
+        });
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────
+
     console.log("[sync-plays] step 8: upsert plays", {
       candidates: playsPayload.length,
       skipped_graph: skippedGraph,
