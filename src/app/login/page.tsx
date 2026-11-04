@@ -1,4 +1,5 @@
 import { Music2 } from "lucide-react";
+import { LoginHashError } from "@/components/auth/login-hash-error";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,9 @@ const ERRORS: Record<string, string> = {
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string; next?: string };
+  searchParams: { error?: string; next?: string; detail?: string };
 }) {
+  const detail = typeof searchParams.detail === "string" ? searchParams.detail : null;
   const nextPath =
     typeof searchParams.next === "string" && searchParams.next.startsWith("/")
       ? searchParams.next
@@ -44,6 +46,11 @@ export default function LoginPage({
             <p className="mt-4 text-sm text-red-400" role="alert">
               {error}
             </p>
+          )}
+          {detail ? (
+            <p className="mt-2 break-words text-xs text-red-300/80">{detail}</p>
+          ) : (
+            error && <LoginHashError />
           )}
         </div>
       </div>

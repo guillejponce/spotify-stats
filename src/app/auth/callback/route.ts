@@ -19,11 +19,13 @@ function safeNext(value: string | null): string {
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const next = safeNext(request.nextUrl.searchParams.get("next"));
-  const oauthError = request.nextUrl.searchParams.get("error_description");
+  const sp = request.nextUrl.searchParams;
+  const oauthError = sp.get("error_description") || sp.get("error_code") || sp.get("error");
 
   if (oauthError || !code) {
     const url = new URL("/login", request.url);
     url.searchParams.set("error", oauthError ? "oauth_denied" : "no_code");
+    if (oauthError) url.searchParams.set("detail", oauthError.slice(0, 300));
     return NextResponse.redirect(url);
   }
 
@@ -31,7 +33,10 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.session) {
     console.error("[auth/callback] exchangeCodeForSession failed", error);
-    return NextResponse.redirect(new URL("/login?error=exchange", request.url));
+    const url = new URL("/login", request.url);
+    url.searchParams.set("error", "exchange");
+    if (error?.message) url.searchParams.set("detail", error.message.slice(0, 300));
+    return NextResponse.redirect(url);
   }
 
   const { session, user } = data;
