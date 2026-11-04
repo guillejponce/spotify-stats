@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { isWebPushConfigured } from "@/lib/web-push";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,9 @@ type Body = {
 };
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   if (!isWebPushConfigured()) {
     return NextResponse.json(
       { error: "Web Push no configurado (faltan VAPID keys)" },
@@ -26,21 +29,22 @@ export async function POST(request: NextRequest) {
 
   const endpoint = body.endpoint?.trim();
   const p256dh = body.keys?.p256dh?.trim();
-  const auth = body.keys?.auth?.trim();
+  const authKey = body.keys?.auth?.trim();
 
-  if (!endpoint || !p256dh || !auth) {
+  if (!endpoint || !p256dh || !authKey) {
     return NextResponse.json(
       { error: "Faltan endpoint / keys" },
       { status: 400 }
     );
   }
 
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { error } = await supabase.from("push_subscriptions").upsert(
     {
+      user_id: ctx.userId,
       endpoint,
       p256dh,
-      auth,
+      auth: authKey,
       user_agent: request.headers.get("user-agent")?.slice(0, 400) ?? null,
       updated_at: new Date().toISOString(),
     },
@@ -59,6 +63,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   let body: { endpoint?: string };
   try {
     body = (await request.json()) as { endpoint?: string };
@@ -71,7 +78,11 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Falta endpoint" }, { status: 400 });
   }
 
-  const supabase = createServerSupabaseClient();
-  await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  const supabase = ctx.db;
+  await supabase
+    .from("push_subscriptions")
+    .delete()
+    .eq("user_id", ctx.userId)
+    .eq("endpoint", endpoint);
   return NextResponse.json({ ok: true });
 }

@@ -5,6 +5,7 @@ import {
   fetchArtistTracksInPeriod,
 } from "@/lib/artist-browse";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { artistId: string } }
 ) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const artistId = decodeURIComponent(params.artistId);
     if (!artistId) {
@@ -29,9 +33,9 @@ export async function GET(
     const filterParams = parseParams(sp);
 
     const [profile, stats, tracks] = await Promise.all([
-      fetchArtistProfile(artistId),
-      fetchArtistPeriodStats(filterParams, artistId),
-      fetchArtistTracksInPeriod(filterParams, artistId, 50),
+      fetchArtistProfile(ctx, artistId),
+      fetchArtistPeriodStats(ctx, filterParams, artistId),
+      fetchArtistTracksInPeriod(ctx, filterParams, artistId, 50),
     ]);
 
     if (!profile && stats.play_count === 0) {

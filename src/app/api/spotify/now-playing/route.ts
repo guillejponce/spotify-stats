@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getCurrentlyPlaying } from "@/lib/spotify";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import {
   forceRefreshSpotifyAccessToken,
   getSpotifyAccessToken,
@@ -11,13 +10,17 @@ import {
   upsertAlbumAndGetDbId,
 } from "@/lib/spotify-graph-db";
 import { getTrackHarmony } from "@/lib/track-harmony";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
-    const supabase = createServerSupabaseClient();
-    let accessToken = await getSpotifyAccessToken(supabase);
+    const supabase = ctx.db;
+    let accessToken = await getSpotifyAccessToken(ctx);
 
     if (!accessToken) {
       return NextResponse.json(
@@ -31,7 +34,7 @@ export async function GET() {
       data = await getCurrentlyPlaying(accessToken);
     } catch (err) {
       if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-        const fresh = await forceRefreshSpotifyAccessToken(supabase);
+        const fresh = await forceRefreshSpotifyAccessToken(ctx);
         if (!fresh) {
           return NextResponse.json(
             {
@@ -52,7 +55,7 @@ export async function GET() {
       await supabase
         .from("now_playing")
         .update({ is_playing: false, updated_at: new Date().toISOString() })
-        .eq("id", 1);
+        .eq("user_id", ctx.userId);
 
       return NextResponse.json({ nowPlaying: null });
     }
@@ -114,7 +117,7 @@ export async function GET() {
 
     await supabase.from("now_playing").upsert(
       {
-        id: 1,
+        user_id: ctx.userId,
         track_id: dbTrackId,
         artist_id: artistDbId,
         album_id: albumDbId,
@@ -122,7 +125,7 @@ export async function GET() {
         progress_ms: data.progress_ms || 0,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "id" }
+      { onConflict: "user_id" }
     );
 
     let currentRating: number | null = null;
@@ -131,10 +134,11 @@ export async function GET() {
         ? supabase
             .from("song_ratings")
             .select("rating")
+            .eq("user_id", ctx.userId)
             .eq("track_id", dbTrackId)
             .maybeSingle()
         : Promise.resolve({ data: null }),
-      getTrackHarmony({
+      getTrackHarmony(ctx, {
         accessToken,
         spotifyTrackId: typeof track.id === "string" ? track.id : null,
         dbTrackId,

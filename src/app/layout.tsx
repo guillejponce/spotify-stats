@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppChrome } from "@/components/app-chrome";
+import { SessionProvider, type ClientSession } from "@/components/session-provider";
+import { getProfile, getSessionUserId } from "@/lib/auth";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -34,15 +36,32 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+async function loadClientSession(): Promise<ClientSession> {
+  const userId = await getSessionUserId();
+  if (!userId) return null;
+  const profile = await getProfile(userId);
+  if (!profile || profile.status !== "active") return null;
+  return {
+    userId,
+    role: profile.role,
+    displayName: profile.display_name,
+    avatarUrl: profile.avatar_url,
+    email: profile.email,
+  };
+}
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await loadClientSession();
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans antialiased`}>
-        <AppChrome>{children}</AppChrome>
+        <SessionProvider session={session}>
+          <AppChrome>{children}</AppChrome>
+        </SessionProvider>
       </body>
     </html>
   );

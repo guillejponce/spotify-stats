@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { formatChileCalendarDayLong } from "@/lib/chile-time";
 import type { KurtStatus } from "@/lib/kurt-types";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
+import { useIsAdmin } from "@/components/session-provider";
 
 type Mood = {
   headline: string;
@@ -32,6 +33,7 @@ function weekdayShort(ymd: string): string {
 }
 
 export function KurtDashboard() {
+  const isAdmin = useIsAdmin();
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,9 +196,11 @@ export function KurtDashboard() {
       </Card>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/agent" className={buttonVariants()}>
-          Hablar con Kurt
-        </Link>
+        {isAdmin && (
+          <Link href="/agent" className={buttonVariants()}>
+            Hablar con Kurt
+          </Link>
+        )}
         <p className="text-xs text-spotify-light-gray/60">
           Si no escuchas un día, la racha cae a 0 y Kurt se dispara. Estilo
           Duolingo: amenaza de cartón, no de verdad.

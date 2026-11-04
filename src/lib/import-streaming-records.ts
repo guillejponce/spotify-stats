@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UserCtx } from "@/lib/user-context";
 import { extractSpotifyId } from "@/lib/utils";
 import type { SpotifyStreamingRecord } from "@/types/database";
 
@@ -10,10 +10,10 @@ export function albumKey(name: string, artistId: string): string {
 
 /**
  * Procesa filas de Extended Streaming History: upserts en lote a artists / albums / tracks / plays.
- * `plays` usa conflicto (track_id, played_at) → reimportar el mismo archivo no duplica escuchas.
+ * `plays` usa conflicto (user_id, track_id, played_at) → reimportar el mismo archivo no duplica escuchas.
  */
 export async function ingestStreamingHistoryRecords(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   importId: string,
   records: SpotifyStreamingRecord[],
   options?: {
@@ -23,6 +23,7 @@ export async function ingestStreamingHistoryRecords(
     }) => Promise<void>;
   }
 ): Promise<{ processed: number; skipped: number }> {
+  const supabase = ctx.db;
   let processed = 0;
   let skipped = 0;
 
@@ -171,6 +172,7 @@ export async function ingestStreamingHistoryRecords(
 
     const playDedup = new Set<string>();
     const playRows: {
+      user_id: string;
       track_id: string;
       played_at: string;
       ms_played: number;
@@ -197,6 +199,7 @@ export async function ingestStreamingHistoryRecords(
       }
       playDedup.add(pkey);
       playRows.push({
+        user_id: ctx.userId,
         track_id: tid,
         played_at: playedAt,
         ms_played: r.ms_played,
@@ -216,7 +219,7 @@ export async function ingestStreamingHistoryRecords(
 
     const { error: playsErr } = await supabase.from("plays").upsert(
       playRows,
-      { onConflict: "track_id,played_at" }
+      { onConflict: "user_id,track_id,played_at" }
     );
 
     if (playsErr) {

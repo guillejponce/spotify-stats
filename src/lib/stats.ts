@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "./user-context";
 import { buildDateFilterChile } from "./chile-stats-range";
 import type {
   TopItem,
@@ -150,6 +150,7 @@ function rollupYearsFromDays(days: ListeningTimeData[]): YearBucket[] {
 }
 
 async function getDashboardLegacyPayload(
+  ctx: UserCtx,
   params: TimeFilterParams,
   limit: number,
 ): Promise<DashboardBundlePayload> {
@@ -161,12 +162,12 @@ async function getDashboardLegacyPayload(
     listeningOverTime,
     hourlyData,
   ] = await Promise.all([
-    getTotalListeningTime(params),
-    getTopTracks(params, limit),
-    getTopArtists(params, limit),
-    getTopAlbums(params, limit),
-    getListeningOverTime(params, "day"),
-    getHourlyDistribution(params),
+    getTotalListeningTime(ctx, params),
+    getTopTracks(ctx, params, limit),
+    getTopArtists(ctx, params, limit),
+    getTopAlbums(ctx, params, limit),
+    getListeningOverTime(ctx, params, "day"),
+    getHourlyDistribution(ctx, params),
   ]);
 
   return {
@@ -245,28 +246,29 @@ function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundl
 const PG_STATEMENT_TIMEOUT = "57014";
 
 export async function getDashboardBundlePayload(
+  ctx: UserCtx,
   params: TimeFilterParams,
   limit: number = 50,
 ): Promise<DashboardBundlePayload> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
   const rpcArgs = {
     start_date: start,
     end_date: end,
     result_limit: limit,
+    p_user_id: ctx.userId,
   };
 
   let data: unknown = null;
   let error: { message: string; code?: string; details?: string; hint?: string } | null =
     null;
 
-  ({ data, error } = await supabase.rpc("get_dashboard_bundle", rpcArgs));
+  ({ data, error } = await ctx.db.rpc("get_dashboard_bundle", rpcArgs));
 
   if (error?.code === PG_STATEMENT_TIMEOUT) {
     console.warn(
       "[stats] get_dashboard_bundle: timeout (57014) → get_dashboard_bundle_fast",
     );
-    ({ data, error } = await supabase.rpc("get_dashboard_bundle_fast", rpcArgs));
+    ({ data, error } = await ctx.db.rpc("get_dashboard_bundle_fast", rpcArgs));
   }
 
   if (!error) {
@@ -295,7 +297,7 @@ export async function getDashboardBundlePayload(
   /* El fallback legacy vuelve a ejecutar `plays_in_range_with_sessions` varias veces → mismo timeout. */
   if (!hitTimeout) {
     try {
-      return await getDashboardLegacyPayload(params, limit);
+      return await getDashboardLegacyPayload(ctx, params, limit);
     } catch (legacyErr) {
       console.error("[stats] legacy dashboard failed", legacyErr);
     }
@@ -316,14 +318,15 @@ export async function getDashboardBundlePayload(
 }
 
 export async function getTotalListeningTime(
+  ctx: UserCtx,
   params: TimeFilterParams
 ): Promise<{ total_ms: number; play_count: number; session_count: number }> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_total_listening_time", {
+  const { data, error } = await ctx.db.rpc("get_total_listening_time", {
     start_date: start,
     end_date: end,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -340,16 +343,17 @@ export async function getTotalListeningTime(
 }
 
 export async function getTopTracks(
+  ctx: UserCtx,
   params: TimeFilterParams,
   limit: number = 50
 ): Promise<TopItem[]> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_top_tracks", {
+  const { data, error } = await ctx.db.rpc("get_top_tracks", {
     start_date: start,
     end_date: end,
     result_limit: limit,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -357,16 +361,17 @@ export async function getTopTracks(
 }
 
 export async function getTopArtists(
+  ctx: UserCtx,
   params: TimeFilterParams,
   limit: number = 50
 ): Promise<TopItem[]> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_top_artists", {
+  const { data, error } = await ctx.db.rpc("get_top_artists", {
     start_date: start,
     end_date: end,
     result_limit: limit,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -374,16 +379,17 @@ export async function getTopArtists(
 }
 
 export async function getTopAlbums(
+  ctx: UserCtx,
   params: TimeFilterParams,
   limit: number = 50
 ): Promise<TopItem[]> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_top_albums", {
+  const { data, error } = await ctx.db.rpc("get_top_albums", {
     start_date: start,
     end_date: end,
     result_limit: limit,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -391,16 +397,17 @@ export async function getTopAlbums(
 }
 
 export async function getListeningOverTime(
+  ctx: UserCtx,
   params: TimeFilterParams,
   groupBy: "day" | "week" | "month" = "day"
 ): Promise<ListeningTimeData[]> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_listening_over_time", {
+  const { data, error } = await ctx.db.rpc("get_listening_over_time", {
     start_date: start,
     end_date: end,
     group_by: groupBy,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -412,14 +419,15 @@ export async function getListeningOverTime(
 }
 
 export async function getHourlyDistribution(
+  ctx: UserCtx,
   params: TimeFilterParams
 ): Promise<HourlyData[]> {
-  const supabase = createServerSupabaseClient();
   const { start, end } = buildDateFilterChile(params);
 
-  const { data, error } = await supabase.rpc("get_hourly_distribution", {
+  const { data, error } = await ctx.db.rpc("get_hourly_distribution", {
     start_date: start,
     end_date: end,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;
@@ -431,12 +439,13 @@ export async function getHourlyDistribution(
 }
 
 export async function getHeatmapData(
+  ctx: UserCtx,
   year: number
 ): Promise<{ date: string; count: number; ms_played: number }[]> {
-  const supabase = createServerSupabaseClient();
 
-  const { data, error } = await supabase.rpc("get_heatmap_data", {
+  const { data, error } = await ctx.db.rpc("get_heatmap_data", {
     target_year: year,
+    p_user_id: ctx.userId,
   });
 
   if (error) throw error;

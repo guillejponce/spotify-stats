@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNowPlayingListenRanks } from "@/lib/listen-ranks";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   const trackId = request.nextUrl.searchParams.get("track_id")?.trim() || null;
   const artistId = request.nextUrl.searchParams.get("artist_id")?.trim() || null;
 
@@ -12,7 +16,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const ranks = await getNowPlayingListenRanks(trackId, artistId);
+    const ranks = await getNowPlayingListenRanks(ctx, trackId, artistId);
     return NextResponse.json(ranks, {
       headers: {
         "Cache-Control": "private, max-age=30",

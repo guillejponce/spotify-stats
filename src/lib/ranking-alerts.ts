@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import { asRows, numeric } from "./rank-delta";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
@@ -22,11 +22,13 @@ export type RankingRise = {
 };
 
 async function fetchAllTimeRanks(
+  ctx: UserCtx,
   entityType: "track" | "artist" | "album",
   asOf: Date
 ): Promise<RankRow[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase.rpc("get_all_time_ranks", {
+    p_user_id: ctx.userId,
     entity_type: entityType,
     as_of: asOf.toISOString(),
   });
@@ -40,13 +42,15 @@ async function fetchAllTimeRanks(
 }
 
 async function loadSnapshotMap(
+  ctx: UserCtx,
   entityType: "track" | "artist",
   snapshotDate: string
 ): Promise<Map<string, RankRow>> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("ranking_snapshots")
     .select("entity_id, entity_name, rank, play_count")
+    .eq("user_id", ctx.userId)
     .eq("entity_type", entityType)
     .eq("snapshot_date", snapshotDate);
 
@@ -64,21 +68,24 @@ async function loadSnapshotMap(
 }
 
 async function saveSnapshot(
+  ctx: UserCtx,
   entityType: "track" | "artist" | "album",
   snapshotDate: string,
   rows: RankRow[]
 ): Promise<void> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   // Reemplazar el día por si el cron corre más de una vez.
   await supabase
     .from("ranking_snapshots")
     .delete()
+    .eq("user_id", ctx.userId)
     .eq("entity_type", entityType)
     .eq("snapshot_date", snapshotDate);
 
   const chunk = 500;
   for (let i = 0; i < rows.length; i += chunk) {
     const slice = rows.slice(i, i + chunk).map((r) => ({
+      user_id: ctx.userId,
       snapshot_date: snapshotDate,
       entity_type: entityType,
       entity_id: r.entity_id,
@@ -133,14 +140,16 @@ function detectRises(
 }
 
 async function filterUnsent(
+  ctx: UserCtx,
   snapshotDate: string,
   rises: RankingRise[]
 ): Promise<RankingRise[]> {
   if (rises.length === 0) return [];
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data } = await supabase
     .from("ranking_notifications_sent")
     .select("entity_type, entity_id, kind")
+    .eq("user_id", ctx.userId)
     .eq("snapshot_date", snapshotDate);
 
   const sent = new Set(
@@ -152,11 +161,12 @@ async function filterUnsent(
   );
 }
 
-async function markSent(snapshotDate: string, rises: RankingRise[]) {
+async function markSent(ctx: UserCtx, snapshotDate: string, rises: RankingRise[]) {
   if (rises.length === 0) return;
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   await supabase.from("ranking_notifications_sent").insert(
     rises.map((r) => ({
+      user_id: ctx.userId,
       entity_type: r.entity_type,
       entity_id: r.entity_id,
       snapshot_date: snapshotDate,
@@ -185,14 +195,15 @@ function riseMessage(r: RankingRise): { title: string; body: string; url: string
   };
 }
 
-async function broadcastRises(rises: RankingRise[]): Promise<{
+async function broadcastRises(ctx: UserCtx, rises: RankingRise[]): Promise<{
   sent: number;
   pruned: number;
 }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data: subs, error } = await supabase
     .from("push_subscriptions")
-    .select("id, endpoint, p256dh, auth");
+    .select("id, endpoint, p256dh, auth")
+    .eq("user_id", ctx.userId);
 
   if (error) throw error;
   if (!subs?.length) return { sent: 0, pruned: 0 };
@@ -220,7 +231,11 @@ async function broadcastRises(rises: RankingRise[]): Promise<{
   }
 
   if (goneIds.length) {
-    await supabase.from("push_subscriptions").delete().in("id", goneIds);
+    await supabase
+      .from("push_subscriptions")
+      .delete()
+      .eq("user_id", ctx.userId)
+      .in("id", goneIds);
     pruned = goneIds.length;
   }
 
@@ -230,7 +245,10 @@ async function broadcastRises(rises: RankingRise[]): Promise<{
 /**
  * Snapshot diario all-time + notificaciones de subidas (tracks/artists).
  */
-export async function runRankingAlertsJob(now: Date = new Date()): Promise<{
+export async function runRankingAlertsJob(
+  ctx: UserCtx,
+  now: Date = new Date()
+): Promise<{
   snapshotDate: string;
   rises: number;
   notified: number;
@@ -251,22 +269,22 @@ export async function runRankingAlertsJob(now: Date = new Date()): Promise<{
   );
 
   const [tracks, artists, albums] = await Promise.all([
-    fetchAllTimeRanks("track", now),
-    fetchAllTimeRanks("artist", now),
-    fetchAllTimeRanks("album", now),
+    fetchAllTimeRanks(ctx, "track", now),
+    fetchAllTimeRanks(ctx, "artist", now),
+    fetchAllTimeRanks(ctx, "album", now),
   ]);
 
   await Promise.all([
-    saveSnapshot("track", snapshotDate, tracks),
-    saveSnapshot("artist", snapshotDate, artists),
-    saveSnapshot("album", snapshotDate, albums),
+    saveSnapshot(ctx, "track", snapshotDate, tracks),
+    saveSnapshot(ctx, "artist", snapshotDate, artists),
+    saveSnapshot(ctx, "album", snapshotDate, albums),
   ]);
 
   const [yTracks, yArtists, mTracks, mArtists] = await Promise.all([
-    loadSnapshotMap("track", yesterdayDate),
-    loadSnapshotMap("artist", yesterdayDate),
-    loadSnapshotMap("track", monthAgoDate),
-    loadSnapshotMap("artist", monthAgoDate),
+    loadSnapshotMap(ctx, "track", yesterdayDate),
+    loadSnapshotMap(ctx, "artist", yesterdayDate),
+    loadSnapshotMap(ctx, "track", monthAgoDate),
+    loadSnapshotMap(ctx, "artist", monthAgoDate),
   ]);
 
   // Primer día sin historial: no spamear; solo guardar snapshot.
@@ -286,11 +304,11 @@ export async function runRankingAlertsJob(now: Date = new Date()): Promise<{
     ...detectRises("artist", artists, yArtists, mArtists),
   ];
 
-  const fresh = await filterUnsent(snapshotDate, rises);
+  const fresh = await filterUnsent(ctx, snapshotDate, rises);
   // Cap diario para no inundar el dispositivo.
   const capped = fresh.slice(0, 25);
-  const { sent, pruned } = await broadcastRises(capped);
-  await markSent(snapshotDate, capped);
+  const { sent, pruned } = await broadcastRises(ctx, capped);
+  await markSent(ctx, snapshotDate, capped);
 
   return {
     snapshotDate,

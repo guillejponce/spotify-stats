@@ -1,17 +1,26 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { refreshSpotifyToken } from "@/lib/spotify";
+import type { UserCtx } from "@/lib/user-context";
 
 /** Renovar un poco antes de `expires_at` (relojes / sesión real vs BD). */
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
+async function loadTokenRow(ctx: UserCtx) {
+  const { data } = await ctx.db
+    .from("spotify_tokens")
+    .select("*")
+    .eq("user_id", ctx.userId)
+    .maybeSingle();
+  return data;
+}
+
 async function persistRefreshedTokens(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   refreshToken: string,
   previousRefreshToken: string
 ) {
   const newTokens = await refreshSpotifyToken(refreshToken);
 
-  await supabase
+  await ctx.db
     .from("spotify_tokens")
     .update({
       access_token: newTokens.access_token,
@@ -21,26 +30,21 @@ async function persistRefreshedTokens(
       ).toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", "default");
+    .eq("user_id", ctx.userId);
 
   return newTokens.access_token as string;
 }
 
 /** Fuerza POST refresh (p. ej. Spotify devolvió 401 pero `expires_at` en BD sigue “válido”). */
 export async function forceRefreshSpotifyAccessToken(
-  supabase: SupabaseClient
+  ctx: UserCtx
 ): Promise<string | null> {
-  const { data: tokenData } = await supabase
-    .from("spotify_tokens")
-    .select("*")
-    .eq("id", "default")
-    .single();
-
+  const tokenData = await loadTokenRow(ctx);
   if (!tokenData?.refresh_token) return null;
 
   try {
     return await persistRefreshedTokens(
-      supabase,
+      ctx,
       tokenData.refresh_token,
       tokenData.refresh_token
     );
@@ -52,14 +56,9 @@ export async function forceRefreshSpotifyAccessToken(
 
 /** Valid access_token for Spotify Web API calls, refreshing if stale. */
 export async function getSpotifyAccessToken(
-  supabase: SupabaseClient
+  ctx: UserCtx
 ): Promise<string | null> {
-  const { data: tokenData } = await supabase
-    .from("spotify_tokens")
-    .select("*")
-    .eq("id", "default")
-    .single();
-
+  const tokenData = await loadTokenRow(ctx);
   if (!tokenData) return null;
 
   const expiresAtMs = new Date(tokenData.expires_at).getTime();
@@ -73,7 +72,7 @@ export async function getSpotifyAccessToken(
 
   try {
     return await persistRefreshedTokens(
-      supabase,
+      ctx,
       tokenData.refresh_token,
       tokenData.refresh_token
     );

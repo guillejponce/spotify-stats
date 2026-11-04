@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchTracksLeaderboard } from "@/lib/track-browse";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ function parseParams(sp: URLSearchParams): TimeFilterParams {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const sp = request.nextUrl.searchParams;
     const params = parseParams(sp);
@@ -20,7 +24,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(60, Math.max(1, Number(sp.get("limit") || 36)));
     const fetchN = pageSize + 1;
 
-    const rows = await fetchTracksLeaderboard(params, {
+    const rows = await fetchTracksLeaderboard(ctx, params, {
       search: q,
       offset,
       limit: fetchN,

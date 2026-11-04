@@ -8,6 +8,7 @@ const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const PLAYBACK_PLATFORM_SPOTIFY_SYNC = "spotify_recent_api";
 
 type SpotifyTokenRow = {
+  user_id: string;
   id: string;
   access_token: string;
   refresh_token: string | null;
@@ -248,6 +249,393 @@ async function resolveTrackDbId(
   return null;
 }
 
+type SyncResult = { status: number; body: Record<string, unknown> };
+
+async function syncUser(
+  supabase: SyncDb,
+  row: SpotifyTokenRow,
+  clientId: string,
+  clientSecret: string,
+): Promise<SyncResult> {
+  const refresh = row.refresh_token?.trim();
+
+  if (!refresh) {
+    console.error(`[sync-plays] ${row.user_id} refresh_token missing or empty`);
+    return { status: 200, body: { ok: true, message: "No refresh_token" } };
+  }
+
+  console.log(`[sync-plays] ${row.user_id} step 2: refresh Spotify access token`);
+  const tokenBody = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refresh,
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+
+  const tokenRes = await fetch(SPOTIFY_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenBody.toString(),
+  });
+
+  const tokenParsed = await parseJsonSafe(tokenRes) as Record<
+    string,
+    unknown
+  >;
+
+  const newAccess =
+    typeof tokenParsed.access_token === "string"
+      ? tokenParsed.access_token
+      : "";
+
+  if (!tokenRes.ok || !newAccess) {
+    console.error(
+      "[sync-plays] Token refresh failed — response:",
+      JSON.stringify(tokenParsed),
+    );
+    return { status: 500, body: { error: "Token refresh failed" } };
+  }
+
+  const expiresAtIso = new Date(Date.now() + 3600 * 1000).toISOString();
+  const { error: tokenUpdateErr } = await supabase
+    .from("spotify_tokens")
+    .update({
+      access_token: newAccess,
+      ...(typeof tokenParsed.refresh_token === "string" && tokenParsed.refresh_token
+        ? { refresh_token: tokenParsed.refresh_token }
+        : {}),
+      expires_at: expiresAtIso,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", row.user_id);
+
+  if (tokenUpdateErr) {
+    console.error(
+      "[sync-plays] spotify_tokens update failed (continuing in memory)",
+      tokenUpdateErr,
+    );
+  }
+
+  console.log(`[sync-plays] ${row.user_id} step 3: cursor from last live play`);
+  const { data: lastPlays, error: lastPlayErr } = await supabase
+    .from("plays")
+    .select("played_at")
+    .eq("user_id", row.user_id)
+    .eq("source", "live")
+    .order("played_at", { ascending: false })
+    .limit(1);
+
+  if (lastPlayErr) {
+    console.error(`[sync-plays] ${row.user_id} last play query failed`, lastPlayErr);
+    return { status: 500, body: { error: String(lastPlayErr.message) } };
+  }
+
+  let cursorUsed: number;
+  const lastPt = lastPlays?.[0]?.played_at;
+  if (lastPt) {
+    cursorUsed = new Date(lastPt as string).getTime();
+  } else {
+    cursorUsed = Date.now() - 24 * 60 * 60 * 1000;
+  }
+  console.log(`[sync-plays] ${row.user_id} cursor_used (ms)`, cursorUsed);
+
+  console.log(`[sync-plays] ${row.user_id} step 4: fetch recently-played`);
+  const recentUrl =
+    `${SPOTIFY_API}/me/player/recently-played?limit=50&after=${cursorUsed}`;
+  const recentRes = await fetch(recentUrl, {
+    headers: { Authorization: `Bearer ${newAccess}` },
+  });
+
+  if (recentRes.status === 401) {
+    console.error(`[sync-plays] ${row.user_id} Spotify returned 401 (invalid token)`);
+    return { status: 401, body: { error: "Spotify unauthorized" } };
+  }
+
+  if (recentRes.status === 429) {
+    const ra = recentRes.headers.get("retry-after");
+    console.error(`[sync-plays] ${row.user_id} rate limited 429 retry-after=`, ra ?? "(none)");
+    return { status: 429, body: { error: "Spotify rate limited", retry_after: ra } };
+  }
+
+  if (!recentRes.ok) {
+    const body = await readResponseBody(recentRes);
+    console.error(
+      "[sync-plays] recently-played error",
+      recentRes.status,
+      body,
+    );
+    return { status: 500, body: { error: "Spotify recently-played failed", status: recentRes.status } };
+  }
+
+  const recentParsed = await parseJsonSafe(recentRes) as {
+    items?: Array<Record<string, unknown>>;
+  };
+
+  const rawItems = Array.isArray(recentParsed.items)
+    ? recentParsed.items
+    : [];
+
+  if (rawItems.length === 0) {
+    console.log(`[sync-plays] ${row.user_id} No new plays`);
+    return { status: 200, body: {
+        message: "No new plays",
+        synced: 0,
+        inserted: 0,
+        skipped: 0,
+        cursor_used: cursorUsed,
+      } };
+  }
+
+  type SpotifyArtist = {
+    id?: string;
+    name?: string;
+    external_urls?: { spotify?: string };
+  };
+  type SpotifyAlbum = {
+    id?: string;
+    name?: string;
+    artists?: SpotifyArtist[];
+    images?: { url?: string }[];
+    release_date?: string;
+    album_type?: string;
+    external_urls?: { spotify?: string };
+  };
+  type SpotifyTrack = {
+    id?: string;
+    name?: string;
+    artists?: SpotifyArtist[];
+    album?: SpotifyAlbum;
+    duration_ms?: number;
+    explicit?: boolean;
+    preview_url?: string | null;
+    external_urls?: { spotify?: string };
+    popularity?: number | null;
+  };
+
+  const items = rawItems.filter((it) => {
+    const track = it?.track as SpotifyTrack | null | undefined;
+    if (!track || track.id == null || String(track.id).trim() === "") {
+      return false;
+    }
+    const tid = track.id as string;
+    const alb = track.album;
+    const a0 = track.artists?.[0]?.id;
+    const albA0 = alb?.artists?.[0]?.id;
+    if (!a0 || !alb?.id || !albA0 || track.duration_ms == null) {
+      console.log(
+        "[sync-plays] skip item missing artist/album/duration",
+        tid,
+      );
+      return false;
+    }
+    return true;
+  });
+
+  if (items.length === 0) {
+    console.log(`[sync-plays] ${row.user_id} No new plays after filter`);
+    return { status: 200, body: {
+        message: "No new plays",
+        synced: 0,
+        inserted: 0,
+        skipped: 0,
+        cursor_used: cursorUsed,
+      } };
+  }
+
+  const artistDbBySpotify = new Map<string, string>();
+  const albumDbBySpotify = new Map<string, string>();
+  const trackDbBySpotify = new Map<string, string>();
+
+  type PlayRow = {
+    user_id: string;
+    track_id: string;
+    artist_id: string;
+    album_id: string | null;
+    played_at: string;
+    ms_played: number;
+    source: "live";
+    shuffle: boolean | null;
+    offline: boolean | null;
+    platform: string;
+    reason_start: string | null;
+    reason_end: string | null;
+  };
+
+  const playsByKey = new Map<string, PlayRow>();
+  let skippedGraph = 0;
+
+  for (const it of items) {
+    const track = it.track as SpotifyTrack;
+    const album = track.album!;
+    const primaryArtist = track.artists![0];
+    const albumCover = album.images?.[0]?.url ?? null;
+    const playedAt = String(it.played_at ?? "");
+    if (!playedAt || !track.id || !primaryArtist?.id || !primaryArtist.name) {
+      skippedGraph++;
+      continue;
+    }
+
+    let artistDbId = artistDbBySpotify.get(primaryArtist.id) ?? null;
+    if (!artistDbId) {
+      artistDbId = await resolveArtistDbId(supabase, {
+        spotifyId: primaryArtist.id,
+        name: primaryArtist.name,
+        image_url: albumCover,
+        spotify_url: primaryArtist.external_urls?.spotify ?? null,
+      });
+      if (artistDbId) artistDbBySpotify.set(primaryArtist.id, artistDbId);
+    }
+    if (!artistDbId) {
+      skippedGraph++;
+      continue;
+    }
+
+    let albumDbId: string | null = album.id
+      ? (albumDbBySpotify.get(album.id) ?? null)
+      : null;
+    if (!albumDbId && album.id && album.name) {
+      albumDbId = await resolveAlbumDbId(supabase, {
+        spotifyId: album.id,
+        name: album.name,
+        artistDbId,
+        image_url: albumCover,
+        release_date: parseReleaseDate(album.release_date),
+        album_type: album.album_type ?? null,
+        spotify_url: album.external_urls?.spotify ?? null,
+      });
+      if (albumDbId) albumDbBySpotify.set(album.id, albumDbId);
+    }
+
+    let trackDbId = trackDbBySpotify.get(track.id) ?? null;
+    if (!trackDbId) {
+      trackDbId = await resolveTrackDbId(supabase, {
+        spotifyId: track.id,
+        name: track.name ?? "",
+        artistDbId,
+        albumDbId,
+        duration_ms: track.duration_ms ?? 0,
+        explicit: track.explicit ?? false,
+        preview_url: track.preview_url ?? null,
+        spotify_url: track.external_urls?.spotify ?? null,
+        popularity: track.popularity ?? null,
+      });
+      if (trackDbId) trackDbBySpotify.set(track.id, trackDbId);
+    }
+    if (!trackDbId) {
+      skippedGraph++;
+      continue;
+    }
+
+    const play: PlayRow = {
+      user_id: row.user_id,
+      track_id: trackDbId,
+      artist_id: artistDbId,
+      album_id: albumDbId,
+      played_at: new Date(playedAt).toISOString(),
+      ms_played: track.duration_ms as number,
+      source: "live",
+      shuffle: null,
+      offline: null,
+      platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
+      reason_start: null,
+      reason_end: null,
+    };
+    playsByKey.set(playAtKey(play.track_id, play.played_at), play);
+  }
+
+  let playsPayload = Array.from(playsByKey.values());
+
+  // ── Window-based dedup ────────────────────────────────────────────
+  // creditLiveListenIfNeeded (app-side) inserts plays with an estimated
+  // played_at (Date.now() − progress_ms) that can differ by a few seconds
+  // from Spotify's official played_at. The unique index (track_id, played_at)
+  // doesn't catch these near-duplicates, so we filter them out here.
+  const DEDUP_WINDOW_MS = 3 * 60 * 1000;
+  if (playsPayload.length > 0) {
+    const times = playsPayload.map((p) => new Date(p.played_at).getTime());
+    const minTime = Math.min(...times) - DEDUP_WINDOW_MS;
+    const maxTime = Math.max(...times) + DEDUP_WINDOW_MS;
+    const trackIds = [...new Set(playsPayload.map((p) => p.track_id))];
+
+    const { data: existingPlays } = await supabase
+      .from("plays")
+      .select("track_id, played_at")
+      .eq("user_id", row.user_id)
+      .in("track_id", trackIds)
+      .gte("played_at", new Date(minTime).toISOString())
+      .lte("played_at", new Date(maxTime).toISOString());
+
+    if (existingPlays?.length) {
+      const existingMap = new Map<string, number[]>();
+      for (const ep of existingPlays) {
+        const ms = new Date(ep.played_at as string).getTime();
+        const arr = existingMap.get(ep.track_id as string) ?? [];
+        arr.push(ms);
+        existingMap.set(ep.track_id as string, arr);
+      }
+      playsPayload = playsPayload.filter((p) => {
+        const existing = existingMap.get(p.track_id);
+        if (!existing) return true;
+        const pMs = new Date(p.played_at).getTime();
+        return !existing.some((eMs) => Math.abs(pMs - eMs) < DEDUP_WINDOW_MS);
+      });
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────
+
+  console.log(`[sync-plays] ${row.user_id} step 8: upsert plays`, {
+    candidates: playsPayload.length,
+    skipped_graph: skippedGraph,
+  });
+
+  let inserted = 0;
+  let skipped = skippedGraph;
+
+  const insertOne = async (p: PlayRow) => {
+    const { error } = await supabase.from("plays").insert(p);
+    if (!error) {
+      inserted++;
+      return;
+    }
+    if (isUniqueViolation(error)) {
+      skipped++;
+      return;
+    }
+    console.error(`[sync-plays] ${row.user_id} play insert failed`, error);
+    skipped++;
+  };
+
+  if (playsPayload.length > 0) {
+    const { error: playsErr } = await supabase.from("plays").upsert(playsPayload, {
+      onConflict: "user_id,track_id,played_at",
+      ignoreDuplicates: true,
+    });
+
+    if (playsErr) {
+      console.warn(
+        `[sync-plays] ${row.user_id} batch plays upsert failed, inserting one by one`,
+        playsErr,
+      );
+      for (const p of playsPayload) await insertOne(p);
+    } else {
+      inserted = playsPayload.length;
+    }
+  }
+
+  const synced = playsPayload.length;
+  console.log(`[sync-plays] ${row.user_id} step 9: done`, {
+    synced,
+    inserted,
+    skipped,
+    cursorUsed,
+  });
+
+  return {
+    status: 200,
+    body: { synced, inserted, skipped, cursor_used: cursorUsed },
+  };
+}
+
 Deno.serve(async (req) => {
   try {
     console.log("[sync-plays] start", { method: req.method });
@@ -274,19 +662,12 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    console.log("[sync-plays] step 1: load spotify_tokens");
-    const { data: tokenRow, error: tokenErr } = await supabase
+    console.log("[sync-plays] load spotify_tokens of active users");
+    const { data: tokenRows, error: tokenErr } = await supabase
       .from("spotify_tokens")
-      .select("id, access_token, refresh_token, expires_at")
-      .limit(1)
-      .single();
-
-    const noRow =
-      tokenErr?.code === "PGRST116" ||
-      (tokenErr?.message ?? "").includes("0 rows") ||
-      (tokenErr?.message ?? "").includes("no rows");
-
-    if (tokenErr && !noRow) {
+      .select("user_id, access_token, refresh_token, expires_at")
+      .not("user_id", "is", null);
+    if (tokenErr) {
       console.error("[sync-plays] spotify_tokens query error", tokenErr);
       return new Response(JSON.stringify({ error: String(tokenErr.message) }), {
         status: 500,
@@ -294,441 +675,40 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!tokenRow) {
-      console.error("[sync-plays] No spotify_tokens row");
-      return new Response(
-        JSON.stringify({ ok: true, message: "No spotify_tokens row" }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const row = tokenRow as SpotifyTokenRow;
-    const refresh = row.refresh_token?.trim();
-
-    if (!refresh) {
-      console.error("[sync-plays] refresh_token missing or empty");
-      return new Response(
-        JSON.stringify({ ok: true, message: "No refresh_token" }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    console.log("[sync-plays] step 2: refresh Spotify access token");
-    const tokenBody = new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refresh,
-      client_id: clientId,
-      client_secret: clientSecret,
-    });
-
-    const tokenRes = await fetch(SPOTIFY_TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: tokenBody.toString(),
-    });
-
-    const tokenParsed = await parseJsonSafe(tokenRes) as Record<
-      string,
-      unknown
-    >;
-
-    const newAccess =
-      typeof tokenParsed.access_token === "string"
-        ? tokenParsed.access_token
-        : "";
-
-    if (!tokenRes.ok || !newAccess) {
-      console.error(
-        "[sync-plays] Token refresh failed — response:",
-        JSON.stringify(tokenParsed),
-      );
-      return new Response(
-        JSON.stringify({ error: "Token refresh failed" }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const expiresAtIso = new Date(Date.now() + 3600 * 1000).toISOString();
-    const { error: tokenUpdateErr } = await supabase
-      .from("spotify_tokens")
-      .update({
-        access_token: newAccess,
-        expires_at: expiresAtIso,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", row.id);
-
-    if (tokenUpdateErr) {
-      console.error(
-        "[sync-plays] spotify_tokens update failed (continuing in memory)",
-        tokenUpdateErr,
-      );
-    }
-
-    console.log("[sync-plays] step 3: cursor from last live play");
-    const { data: lastPlays, error: lastPlayErr } = await supabase
-      .from("plays")
-      .select("played_at")
-      .eq("source", "live")
-      .order("played_at", { ascending: false })
-      .limit(1);
-
-    if (lastPlayErr) {
-      console.error("[sync-plays] last play query failed", lastPlayErr);
-      return new Response(JSON.stringify({ error: String(lastPlayErr.message) }), {
+    const userIds = (tokenRows ?? []).map((r) => r.user_id as string);
+    const { data: activeRows, error: activeErr } = userIds.length
+      ? await supabase.from("profiles").select("id").in("id", userIds).eq("status", "active")
+      : { data: [], error: null };
+    if (activeErr) {
+      console.error("[sync-plays] profiles query error", activeErr);
+      return new Response(JSON.stringify({ error: String(activeErr.message) }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
     }
+    const active = new Set((activeRows ?? []).map((r) => r.id as string));
 
-    let cursorUsed: number;
-    const lastPt = lastPlays?.[0]?.played_at;
-    if (lastPt) {
-      cursorUsed = new Date(lastPt as string).getTime();
-    } else {
-      cursorUsed = Date.now() - 24 * 60 * 60 * 1000;
-    }
-    console.log("[sync-plays] cursor_used (ms)", cursorUsed);
-
-    console.log("[sync-plays] step 4: fetch recently-played");
-    const recentUrl =
-      `${SPOTIFY_API}/me/player/recently-played?limit=50&after=${cursorUsed}`;
-    const recentRes = await fetch(recentUrl, {
-      headers: { Authorization: `Bearer ${newAccess}` },
-    });
-
-    if (recentRes.status === 401) {
-      console.error("[sync-plays] Spotify returned 401 (invalid token)");
-      return new Response(
-        JSON.stringify({ error: "Spotify unauthorized" }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (recentRes.status === 429) {
-      const ra = recentRes.headers.get("retry-after");
-      console.error("[sync-plays] rate limited 429 retry-after=", ra ?? "(none)");
-      return new Response(
-        JSON.stringify({ error: "Spotify rate limited", retry_after: ra }),
-        {
-          status: 429,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (!recentRes.ok) {
-      const body = await readResponseBody(recentRes);
-      console.error(
-        "[sync-plays] recently-played error",
-        recentRes.status,
-        body,
-      );
-      return new Response(
-        JSON.stringify({ error: "Spotify recently-played failed", status: recentRes.status }),
-        {
+    const results: Record<string, unknown>[] = [];
+    for (const tokenRow of tokenRows ?? []) {
+      const row = tokenRow as SpotifyTokenRow;
+      if (!active.has(row.user_id)) continue;
+      try {
+        const r = await syncUser(supabase, row, clientId, clientSecret);
+        results.push({ user_id: row.user_id, status: r.status, ...r.body });
+      } catch (e) {
+        console.error("[sync-plays] user failed", row.user_id, e);
+        results.push({
+          user_id: row.user_id,
           status: 500,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
 
-    const recentParsed = await parseJsonSafe(recentRes) as {
-      items?: Array<Record<string, unknown>>;
-    };
-
-    const rawItems = Array.isArray(recentParsed.items)
-      ? recentParsed.items
-      : [];
-
-    if (rawItems.length === 0) {
-      console.log("[sync-plays] No new plays");
-      return new Response(
-        JSON.stringify({
-          message: "No new plays",
-          synced: 0,
-          inserted: 0,
-          skipped: 0,
-          cursor_used: cursorUsed,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    type SpotifyArtist = {
-      id?: string;
-      name?: string;
-      external_urls?: { spotify?: string };
-    };
-    type SpotifyAlbum = {
-      id?: string;
-      name?: string;
-      artists?: SpotifyArtist[];
-      images?: { url?: string }[];
-      release_date?: string;
-      album_type?: string;
-      external_urls?: { spotify?: string };
-    };
-    type SpotifyTrack = {
-      id?: string;
-      name?: string;
-      artists?: SpotifyArtist[];
-      album?: SpotifyAlbum;
-      duration_ms?: number;
-      explicit?: boolean;
-      preview_url?: string | null;
-      external_urls?: { spotify?: string };
-      popularity?: number | null;
-    };
-
-    const items = rawItems.filter((it) => {
-      const track = it?.track as SpotifyTrack | null | undefined;
-      if (!track || track.id == null || String(track.id).trim() === "") {
-        return false;
-      }
-      const tid = track.id as string;
-      const alb = track.album;
-      const a0 = track.artists?.[0]?.id;
-      const albA0 = alb?.artists?.[0]?.id;
-      if (!a0 || !alb?.id || !albA0 || track.duration_ms == null) {
-        console.log(
-          "[sync-plays] skip item missing artist/album/duration",
-          tid,
-        );
-        return false;
-      }
-      return true;
+    return new Response(JSON.stringify({ ok: true, users: results.length, results }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
     });
-
-    if (items.length === 0) {
-      console.log("[sync-plays] No new plays after filter");
-      return new Response(
-        JSON.stringify({
-          message: "No new plays",
-          synced: 0,
-          inserted: 0,
-          skipped: 0,
-          cursor_used: cursorUsed,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const artistDbBySpotify = new Map<string, string>();
-    const albumDbBySpotify = new Map<string, string>();
-    const trackDbBySpotify = new Map<string, string>();
-
-    type PlayRow = {
-      track_id: string;
-      artist_id: string;
-      album_id: string | null;
-      played_at: string;
-      ms_played: number;
-      source: "live";
-      shuffle: boolean | null;
-      offline: boolean | null;
-      platform: string;
-      reason_start: string | null;
-      reason_end: string | null;
-    };
-
-    const playsByKey = new Map<string, PlayRow>();
-    let skippedGraph = 0;
-
-    for (const it of items) {
-      const track = it.track as SpotifyTrack;
-      const album = track.album!;
-      const primaryArtist = track.artists![0];
-      const albumCover = album.images?.[0]?.url ?? null;
-      const playedAt = String(it.played_at ?? "");
-      if (!playedAt || !track.id || !primaryArtist?.id || !primaryArtist.name) {
-        skippedGraph++;
-        continue;
-      }
-
-      let artistDbId = artistDbBySpotify.get(primaryArtist.id) ?? null;
-      if (!artistDbId) {
-        artistDbId = await resolveArtistDbId(supabase, {
-          spotifyId: primaryArtist.id,
-          name: primaryArtist.name,
-          image_url: albumCover,
-          spotify_url: primaryArtist.external_urls?.spotify ?? null,
-        });
-        if (artistDbId) artistDbBySpotify.set(primaryArtist.id, artistDbId);
-      }
-      if (!artistDbId) {
-        skippedGraph++;
-        continue;
-      }
-
-      let albumDbId: string | null = album.id
-        ? (albumDbBySpotify.get(album.id) ?? null)
-        : null;
-      if (!albumDbId && album.id && album.name) {
-        albumDbId = await resolveAlbumDbId(supabase, {
-          spotifyId: album.id,
-          name: album.name,
-          artistDbId,
-          image_url: albumCover,
-          release_date: parseReleaseDate(album.release_date),
-          album_type: album.album_type ?? null,
-          spotify_url: album.external_urls?.spotify ?? null,
-        });
-        if (albumDbId) albumDbBySpotify.set(album.id, albumDbId);
-      }
-
-      let trackDbId = trackDbBySpotify.get(track.id) ?? null;
-      if (!trackDbId) {
-        trackDbId = await resolveTrackDbId(supabase, {
-          spotifyId: track.id,
-          name: track.name ?? "",
-          artistDbId,
-          albumDbId,
-          duration_ms: track.duration_ms ?? 0,
-          explicit: track.explicit ?? false,
-          preview_url: track.preview_url ?? null,
-          spotify_url: track.external_urls?.spotify ?? null,
-          popularity: track.popularity ?? null,
-        });
-        if (trackDbId) trackDbBySpotify.set(track.id, trackDbId);
-      }
-      if (!trackDbId) {
-        skippedGraph++;
-        continue;
-      }
-
-      const row: PlayRow = {
-        track_id: trackDbId,
-        artist_id: artistDbId,
-        album_id: albumDbId,
-        played_at: new Date(playedAt).toISOString(),
-        ms_played: track.duration_ms as number,
-        source: "live",
-        shuffle: null,
-        offline: null,
-        platform: PLAYBACK_PLATFORM_SPOTIFY_SYNC,
-        reason_start: null,
-        reason_end: null,
-      };
-      playsByKey.set(playAtKey(row.track_id, row.played_at), row);
-    }
-
-    let playsPayload = Array.from(playsByKey.values());
-
-    // ── Window-based dedup ────────────────────────────────────────────
-    // creditLiveListenIfNeeded (app-side) inserts plays with an estimated
-    // played_at (Date.now() − progress_ms) that can differ by a few seconds
-    // from Spotify's official played_at. The unique index (track_id, played_at)
-    // doesn't catch these near-duplicates, so we filter them out here.
-    const DEDUP_WINDOW_MS = 3 * 60 * 1000;
-    if (playsPayload.length > 0) {
-      const times = playsPayload.map((p) => new Date(p.played_at).getTime());
-      const minTime = Math.min(...times) - DEDUP_WINDOW_MS;
-      const maxTime = Math.max(...times) + DEDUP_WINDOW_MS;
-      const trackIds = [...new Set(playsPayload.map((p) => p.track_id))];
-
-      const { data: existingPlays } = await supabase
-        .from("plays")
-        .select("track_id, played_at")
-        .in("track_id", trackIds)
-        .gte("played_at", new Date(minTime).toISOString())
-        .lte("played_at", new Date(maxTime).toISOString());
-
-      if (existingPlays?.length) {
-        const existingMap = new Map<string, number[]>();
-        for (const ep of existingPlays) {
-          const ms = new Date(ep.played_at as string).getTime();
-          const arr = existingMap.get(ep.track_id as string) ?? [];
-          arr.push(ms);
-          existingMap.set(ep.track_id as string, arr);
-        }
-        playsPayload = playsPayload.filter((p) => {
-          const existing = existingMap.get(p.track_id);
-          if (!existing) return true;
-          const pMs = new Date(p.played_at).getTime();
-          return !existing.some((eMs) => Math.abs(pMs - eMs) < DEDUP_WINDOW_MS);
-        });
-      }
-    }
-    // ──────────────────────────────────────────────────────────────────
-
-    console.log("[sync-plays] step 8: upsert plays", {
-      candidates: playsPayload.length,
-      skipped_graph: skippedGraph,
-    });
-
-    let inserted = 0;
-    let skipped = skippedGraph;
-
-    const insertOne = async (p: PlayRow) => {
-      const { error } = await supabase.from("plays").insert(p);
-      if (!error) {
-        inserted++;
-        return;
-      }
-      if (isUniqueViolation(error)) {
-        skipped++;
-        return;
-      }
-      console.error("[sync-plays] play insert failed", error);
-      skipped++;
-    };
-
-    if (playsPayload.length > 0) {
-      const { error: playsErr } = await supabase.from("plays").upsert(playsPayload, {
-        onConflict: "track_id,played_at",
-        ignoreDuplicates: true,
-      });
-
-      if (playsErr) {
-        console.warn(
-          "[sync-plays] batch plays upsert failed, inserting one by one",
-          playsErr,
-        );
-        for (const p of playsPayload) await insertOne(p);
-      } else {
-        inserted = playsPayload.length;
-      }
-    }
-
-    const synced = playsPayload.length;
-    console.log("[sync-plays] step 9: done", {
-      synced,
-      inserted,
-      skipped,
-      cursorUsed,
-    });
-
-    return new Response(
-      JSON.stringify({
-        synced,
-        inserted,
-        skipped,
-        cursor_used: cursorUsed,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[sync-plays] unhandled", e);

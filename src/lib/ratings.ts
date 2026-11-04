@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import { ratingSongKey, type TrackIdentityRow } from "./rating-identity";
 
 export interface SongRating {
@@ -51,8 +51,8 @@ function numeric(v: unknown, fallback = 0): number {
   return fallback;
 }
 
-async function resolveEquivalentTrackIds(trackId: string): Promise<string[]> {
-  const supabase = createServerSupabaseClient();
+async function resolveEquivalentTrackIds(ctx: UserCtx, trackId: string): Promise<string[]> {
+  const supabase = ctx.db;
 
   const { data: rpcIds, error: rpcError } = await supabase.rpc("get_equivalent_track_ids", {
     p_track_id: trackId,
@@ -91,6 +91,7 @@ async function resolveEquivalentTrackIds(trackId: string): Promise<string[]> {
 }
 
 export async function upsertRating(
+  ctx: UserCtx,
   trackId: string,
   rating: number
 ): Promise<{ success: boolean; error?: string }> {
@@ -98,13 +99,13 @@ export async function upsertRating(
     return { success: false, error: "Rating must be an integer between 1 and 10" };
   }
 
-  const supabase = createServerSupabaseClient();
-  const trackIds = await resolveEquivalentTrackIds(trackId);
+  const supabase = ctx.db;
+  const trackIds = await resolveEquivalentTrackIds(ctx, trackId);
   const updatedAt = new Date().toISOString();
 
   const { error } = await supabase.from("song_ratings").upsert(
-    trackIds.map((id) => ({ track_id: id, rating, updated_at: updatedAt })),
-    { onConflict: "track_id" }
+    trackIds.map((id) => ({ user_id: ctx.userId, track_id: id, rating, updated_at: updatedAt })),
+    { onConflict: "user_id,track_id" }
   );
 
   if (error) return { success: false, error: error.message };
@@ -112,24 +113,29 @@ export async function upsertRating(
 }
 
 export async function deleteRating(
+  ctx: UserCtx,
   trackId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = createServerSupabaseClient();
-  const trackIds = await resolveEquivalentTrackIds(trackId);
+  const supabase = ctx.db;
+  const trackIds = await resolveEquivalentTrackIds(ctx, trackId);
 
-  const { error } = await supabase.from("song_ratings").delete().in("track_id", trackIds);
+  const { error } = await supabase
+    .from("song_ratings")
+    .delete()
+    .eq("user_id", ctx.userId)
+    .in("track_id", trackIds);
 
   if (error) return { success: false, error: error.message };
   return { success: true };
 }
 
-export async function getRatedTracks(options: {
+export async function getRatedTracks(ctx: UserCtx, options: {
   search?: string;
   offset?: number;
   limit?: number;
   sortBy?: "rating_desc" | "rating_asc" | "recent" | "name";
 }): Promise<{ tracks: SongRating[]; total: number }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { search, offset = 0, limit = 36, sortBy = "rating_desc" } = options;
   const needle = search?.trim() ?? "";
 
@@ -137,7 +143,7 @@ export async function getRatedTracks(options: {
   // ("failed to parse logic tree") and blows up on commas in titles.
   // Filter the rated list in memory (~hundreds of rows), don't scan the catalog.
   if (needle) {
-    const rated = await fetchAllRatedTracks(supabase);
+    const rated = await fetchAllRatedTracks(ctx);
     const filtered = rated.filter((t) => ratingMatchesQuery(t, needle));
     const sorted = sortSongRatings(filtered, sortBy);
     return {
@@ -148,6 +154,7 @@ export async function getRatedTracks(options: {
 
   // Try RPC (much faster: single SQL with proper indexes)
   const { data: rpcData, error: rpcError } = await supabase.rpc("get_rated_tracks", {
+    p_user_id: ctx.userId,
     sort_mode: sortBy,
     result_offset: offset,
     result_limit: limit,
@@ -157,7 +164,7 @@ export async function getRatedTracks(options: {
     const rows = Array.isArray(rpcData) ? rpcData : [];
     const tracks: SongRating[] = rows.map((r: Record<string, unknown>) => mapRpcSongRating(r));
 
-    const total = await countLogicalRatedTracks(supabase);
+    const total = await countLogicalRatedTracks(ctx);
     return { tracks, total };
   }
 
@@ -171,7 +178,8 @@ export async function getRatedTracks(options: {
          albums(name, image_url)
        )`,
       { count: "exact" }
-    );
+    )
+    .eq("user_id", ctx.userId);
 
   switch (sortBy) {
     case "rating_asc":
@@ -196,18 +204,16 @@ export async function getRatedTracks(options: {
   const tracks: SongRating[] = (data || []).map(mapSongRatingJoinRow);
 
   const deduped = dedupeSongRatings(tracks);
-  const total = await countLogicalRatedTracks(supabase);
+  const total = await countLogicalRatedTracks(ctx);
   const sliced = deduped.slice(offset, offset + limit);
   return { tracks: sliced, total };
 }
 
-async function fetchAllRatedTracks(
-  supabase: ReturnType<typeof createServerSupabaseClient>,
-): Promise<SongRating[]> {
+async function fetchAllRatedTracks(ctx: UserCtx): Promise<SongRating[]> {
   const pageSize = 1000;
   const rows: SongRating[] = [];
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await ctx.db
       .from("song_ratings")
       .select(
         `track_id, rating, created_at, updated_at,
@@ -216,6 +222,7 @@ async function fetchAllRatedTracks(
            albums(name, image_url)
          )`,
       )
+      .eq("user_id", ctx.userId)
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -261,12 +268,11 @@ function stripEditionSuffix(name: string): string {
   return name.replace(/\s*[-–—(].*$/, "").trim();
 }
 
-async function countLogicalRatedTracks(
-  supabase: ReturnType<typeof createServerSupabaseClient>
-): Promise<number> {
-  const { data, error } = await supabase
+async function countLogicalRatedTracks(ctx: UserCtx): Promise<number> {
+  const { data, error } = await ctx.db
     .from("song_ratings")
-    .select("track_id, tracks!inner(name, artist_id)");
+    .select("track_id, tracks!inner(name, artist_id)")
+    .eq("user_id", ctx.userId);
 
   if (error) return 0;
   const keys = new Set<string>();
@@ -290,11 +296,11 @@ function dedupeSongRatings(tracks: SongRating[]): SongRating[] {
   return Array.from(byKey.values());
 }
 
-export async function getRatingsDashboard(): Promise<RatingsDashboard> {
-  const supabase = createServerSupabaseClient();
+export async function getRatingsDashboard(ctx: UserCtx): Promise<RatingsDashboard> {
+  const supabase = ctx.db;
 
   // Try optimized RPC first
-  const { data: rpcData, error: rpcError } = await supabase.rpc("get_ratings_dashboard");
+  const { data: rpcData, error: rpcError } = await supabase.rpc("get_ratings_dashboard", { p_user_id: ctx.userId });
 
   if (!rpcError && rpcData) {
     const d = (typeof rpcData === "string" ? JSON.parse(rpcData) : rpcData) as Record<string, unknown>;
@@ -327,7 +333,7 @@ export async function getRatingsDashboard(): Promise<RatingsDashboard> {
   }
 
   // Fallback: compute in JS
-  return getRatingsDashboardFallback();
+  return getRatingsDashboardFallback(ctx);
 }
 
 function asRpcArray(data: unknown): Record<string, unknown>[] {
@@ -373,8 +379,8 @@ function sortSongRatings(
   return copy;
 }
 
-async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
-  const supabase = createServerSupabaseClient();
+async function getRatingsDashboardFallback(ctx: UserCtx): Promise<RatingsDashboard> {
+  const supabase = ctx.db;
 
   const { data: allRatings, error } = await supabase
     .from("song_ratings")
@@ -385,6 +391,7 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
          albums(name, image_url)
        )`
     )
+    .eq("user_id", ctx.userId)
     .order("rating", { ascending: false });
 
   if (error) throw error;
@@ -509,11 +516,12 @@ async function getRatingsDashboardFallback(): Promise<RatingsDashboard> {
   };
 }
 
-export async function getTrackRating(trackId: string): Promise<number | null> {
-  const supabase = createServerSupabaseClient();
+export async function getTrackRating(ctx: UserCtx, trackId: string): Promise<number | null> {
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("song_ratings")
     .select("rating")
+    .eq("user_id", ctx.userId)
     .eq("track_id", trackId)
     .maybeSingle();
 
@@ -522,6 +530,7 @@ export async function getTrackRating(trackId: string): Promise<number | null> {
 }
 
 export async function searchTracksForRating(
+  ctx: UserCtx,
   query: string,
   limit: number = 20
 ): Promise<{
@@ -533,10 +542,11 @@ export async function searchTracksForRating(
   image_url: string | null;
   current_rating: number | null;
 }[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
 
   // Try RPC (single query with LEFT JOIN to song_ratings, uses indexes)
   const { data: rpcData, error: rpcError } = await supabase.rpc("search_tracks_for_rating", {
+    p_user_id: ctx.userId,
     search_query: query,
     result_limit: limit,
   });
@@ -570,6 +580,7 @@ export async function searchTracksForRating(
   const { data: existingRatings } = await supabase
     .from("song_ratings")
     .select("track_id, rating")
+    .eq("user_id", ctx.userId)
     .in("track_id", trackIds);
 
   const ratingsMap = new Map<string, number>();
@@ -622,7 +633,7 @@ export async function searchTracksForRating(
 }
 
 /** Rating 1–10 of the song that is playing (logical song, not a specific Spotify edition). */
-export async function lookupRatingForPlayingTrack(opts: {
+export async function lookupRatingForPlayingTrack(ctx: UserCtx, opts: {
   spotifyTrackId?: string | null;
   trackName: string;
   artistName?: string;
@@ -634,10 +645,10 @@ export async function lookupRatingForPlayingTrack(opts: {
 }> {
   const artistHint =
     (opts.artistName ?? "").split(",")[0]?.trim().toLowerCase() ?? "";
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
 
   if (opts.spotifyTrackId) {
-    const bySpotifyId = await getTrackRating(opts.spotifyTrackId);
+    const bySpotifyId = await getTrackRating(ctx, opts.spotifyTrackId);
     if (bySpotifyId != null) {
       return {
         rating: bySpotifyId,
@@ -657,6 +668,7 @@ export async function lookupRatingForPlayingTrack(opts: {
       const { data: logical, error: logicalError } = await supabase.rpc(
         "get_logical_track_rating",
         {
+          p_user_id: ctx.userId,
           p_track_name: String(bySpotify.data.name),
           p_artist_id: bySpotify.data.artist_id
             ? String(bySpotify.data.artist_id)
@@ -671,7 +683,7 @@ export async function lookupRatingForPlayingTrack(opts: {
           album_name: null,
         };
       }
-      const mapped = await getTrackRating(String(bySpotify.data.id));
+      const mapped = await getTrackRating(ctx, String(bySpotify.data.id));
       if (mapped != null) {
         return {
           rating: mapped,
@@ -683,7 +695,7 @@ export async function lookupRatingForPlayingTrack(opts: {
     }
   }
 
-  const rated = await fetchAllRatedTracks(supabase);
+  const rated = await fetchAllRatedTracks(ctx);
   const nameLower = opts.trackName.trim().toLowerCase();
   const stripped = stripEditionSuffix(opts.trackName).toLowerCase();
 
@@ -721,12 +733,14 @@ export interface RatingAlbumSearchResult {
 }
 
 export async function searchAlbumsForRating(
+  ctx: UserCtx,
   query: string,
   limit: number = 20
 ): Promise<RatingAlbumSearchResult[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
 
   const { data: rpcData, error: rpcError } = await supabase.rpc("search_albums_for_rating", {
+    p_user_id: ctx.userId,
     search_query: query,
     result_limit: limit,
   });
@@ -773,6 +787,7 @@ export async function searchAlbumsForRating(
 }
 
 export async function getAlbumTracksForRating(
+  ctx: UserCtx,
   albumId: string,
   limit: number = 200
 ): Promise<
@@ -786,9 +801,10 @@ export async function getAlbumTracksForRating(
     current_rating: number | null;
   }[]
 > {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
 
   const { data: rpcData, error: rpcError } = await supabase.rpc("get_album_tracks_for_rating", {
+    p_user_id: ctx.userId,
     p_album_id: albumId,
     result_limit: limit,
   });
@@ -822,6 +838,7 @@ export async function getAlbumTracksForRating(
   const { data: existingRatings } = await supabase
     .from("song_ratings")
     .select("track_id, rating, tracks!inner(name, artist_id)")
+    .eq("user_id", ctx.userId)
     .in("track_id", trackIds.length > 0 ? trackIds : ["__none__"]);
 
   const logicalRatings = new Map<string, number>();

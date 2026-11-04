@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "@/lib/supabase";
+import type { UserCtx } from "@/lib/user-context";
 import {
   forceRefreshSpotifyAccessToken,
   getSpotifyAccessToken,
@@ -114,11 +114,11 @@ function mapItem(item: SpotifyItem | null | undefined): PlayerTrack | null {
 }
 
 async function spotifyFetch(
+  ctx: UserCtx,
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const supabase = createServerSupabaseClient();
-  let token = await getSpotifyAccessToken(supabase);
+  let token = await getSpotifyAccessToken(ctx);
   if (!token) {
     throw new SpotifyPlayerError(
       "No hay sesión de Spotify",
@@ -140,7 +140,7 @@ async function spotifyFetch(
 
   let res = await run(token);
   if (res.status === 401) {
-    const fresh = await forceRefreshSpotifyAccessToken(supabase);
+    const fresh = await forceRefreshSpotifyAccessToken(ctx);
     if (!fresh) {
       throw new SpotifyPlayerError("Spotify expiró", 401, "EXPIRED");
     }
@@ -218,10 +218,10 @@ function throwIfPlayerFailed(res: Response, body: string) {
   );
 }
 
-export async function getPlayerSnapshot(): Promise<PlayerSnapshot> {
+export async function getPlayerSnapshot(ctx: UserCtx): Promise<PlayerSnapshot> {
   const [stateRes, queueRes] = await Promise.all([
-    spotifyFetch("/me/player"),
-    spotifyFetch("/me/player/queue"),
+    spotifyFetch(ctx, "/me/player"),
+    spotifyFetch(ctx, "/me/player/queue"),
   ]);
 
   if (stateRes.status === 401) {
@@ -267,6 +267,7 @@ export async function getPlayerSnapshot(): Promise<PlayerSnapshot> {
 }
 
 export async function controlPlayback(
+  ctx: UserCtx,
   action: "play" | "pause" | "next" | "previous",
 ): Promise<void> {
   const path =
@@ -278,7 +279,7 @@ export async function controlPlayback(
           ? "/me/player/next"
           : "/me/player/previous";
   const method = action === "next" || action === "previous" ? "POST" : "PUT";
-  const res = await spotifyFetch(path, { method });
+  const res = await spotifyFetch(ctx, path, { method });
   const body = res.status === 204 ? "" : await res.text();
   throwIfPlayerFailed(res, body);
 }
@@ -329,8 +330,8 @@ export function toAlbumUri(raw: string): string | null {
   return null;
 }
 
-export async function listPlaybackDevices(): Promise<PlaybackDevice[]> {
-  const res = await spotifyFetch("/me/player/devices");
+export async function listPlaybackDevices(ctx: UserCtx): Promise<PlaybackDevice[]> {
+  const res = await spotifyFetch(ctx, "/me/player/devices");
   const json = await readJson(res);
   const devices = Array.isArray(json?.devices) ? json.devices : [];
   return devices
@@ -353,9 +354,9 @@ export async function listPlaybackDevices(): Promise<PlaybackDevice[]> {
     .filter((d): d is PlaybackDevice => d != null);
 }
 
-async function pickPlaybackDevice(preferred?: string): Promise<string> {
+async function pickPlaybackDevice(ctx: UserCtx, preferred?: string): Promise<string> {
   if (preferred?.trim()) return preferred.trim();
-  const devices = await listPlaybackDevices();
+  const devices = await listPlaybackDevices(ctx);
   const active = devices.find((d) => d.is_active) ?? devices[0];
   if (!active) {
     throw new SpotifyPlayerError(
@@ -367,8 +368,8 @@ async function pickPlaybackDevice(preferred?: string): Promise<string> {
   return active.id;
 }
 
-async function activateDevice(deviceId: string): Promise<void> {
-  const res = await spotifyFetch("/me/player", {
+async function activateDevice(ctx: UserCtx, deviceId: string): Promise<void> {
+  const res = await spotifyFetch(ctx, "/me/player", {
     method: "PUT",
     body: JSON.stringify({ device_ids: [deviceId], play: false }),
   });
@@ -379,6 +380,7 @@ async function activateDevice(deviceId: string): Promise<void> {
 }
 
 export async function startPlayingUris(
+  ctx: UserCtx,
   uris: string[],
   deviceId?: string,
 ): Promise<void> {
@@ -386,9 +388,9 @@ export async function startPlayingUris(
   if (!clean.length) {
     throw new SpotifyPlayerError("No hay canciones para reproducir", 400, "SPOTIFY");
   }
-  const device = await pickPlaybackDevice(deviceId);
+  const device = await pickPlaybackDevice(ctx, deviceId);
   const tryPlay = async () => {
-    const res = await spotifyFetch(
+    const res = await spotifyFetch(ctx, 
       `/me/player/play?device_id=${encodeURIComponent(device)}`,
       {
         method: "PUT",
@@ -402,7 +404,7 @@ export async function startPlayingUris(
     await tryPlay();
   } catch (err) {
     if (err instanceof SpotifyPlayerError && err.code === "RESTRICTED") {
-      await activateDevice(device);
+      await activateDevice(ctx, device);
       await tryPlay();
       return;
     }
@@ -411,12 +413,13 @@ export async function startPlayingUris(
 }
 
 export async function startPlayingContext(
+  ctx: UserCtx,
   contextUri: string,
   deviceId?: string,
 ): Promise<void> {
-  const device = await pickPlaybackDevice(deviceId);
+  const device = await pickPlaybackDevice(ctx, deviceId);
   const tryPlay = async () => {
-    const res = await spotifyFetch(
+    const res = await spotifyFetch(ctx, 
       `/me/player/play?device_id=${encodeURIComponent(device)}`,
       {
         method: "PUT",
@@ -430,7 +433,7 @@ export async function startPlayingContext(
     await tryPlay();
   } catch (err) {
     if (err instanceof SpotifyPlayerError && err.code === "RESTRICTED") {
-      await activateDevice(device);
+      await activateDevice(ctx, device);
       await tryPlay();
       return;
     }
@@ -438,8 +441,8 @@ export async function startPlayingContext(
   }
 }
 
-export async function getArtistTopTrackUris(artistId: string): Promise<string[]> {
-  const res = await spotifyFetch(
+export async function getArtistTopTrackUris(ctx: UserCtx, artistId: string): Promise<string[]> {
+  const res = await spotifyFetch(ctx, 
     `/artists/${encodeURIComponent(artistId)}/top-tracks?market=from_token`,
   );
   const json = await readJson(res);
@@ -454,11 +457,12 @@ export async function getArtistTopTrackUris(artistId: string): Promise<string[]>
 }
 
 export async function searchSpotifyArtist(
+  ctx: UserCtx,
   query: string,
 ): Promise<{ id: string; name: string; uri: string } | null> {
   const q = query.trim();
   if (!q) return null;
-  const res = await spotifyFetch(
+  const res = await spotifyFetch(ctx, 
     `/search?q=${encodeURIComponent(q)}&type=artist&limit=5`,
   );
   const json = await readJson(res);
@@ -479,14 +483,14 @@ export async function searchSpotifyArtist(
   };
 }
 
-export async function addUrisToQueue(uris: string[]): Promise<void> {
+export async function addUrisToQueue(ctx: UserCtx, uris: string[]): Promise<void> {
   const clean = uris.filter(Boolean).slice(0, 20);
   if (!clean.length) {
     throw new SpotifyPlayerError("No hay canciones para la cola", 400, "SPOTIFY");
   }
-  const device = await pickPlaybackDevice();
+  const device = await pickPlaybackDevice(ctx);
   for (const uri of clean) {
-    const res = await spotifyFetch(
+    const res = await spotifyFetch(ctx, 
       `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(device)}`,
       { method: "POST" },
     );
@@ -496,12 +500,13 @@ export async function addUrisToQueue(uris: string[]): Promise<void> {
 }
 
 export async function searchSpotifyTracks(
+  ctx: UserCtx,
   query: string,
   limit = 5,
 ): Promise<CatalogTrack[]> {
   const q = query.trim();
   if (!q) return [];
-  const res = await spotifyFetch(
+  const res = await spotifyFetch(ctx, 
     `/search?q=${encodeURIComponent(q)}&type=track&limit=${Math.max(1, Math.min(10, limit))}`,
   );
   const json = await readJson(res);
@@ -536,6 +541,7 @@ function mapCatalogSearchItem(item: unknown): CatalogTrack | null {
 }
 
 export async function resolveTrackQueries(
+  ctx: UserCtx,
   queries: string[],
 ): Promise<{
   resolved: CatalogTrack[];
@@ -550,11 +556,11 @@ export async function resolveTrackQueries(
       const uri = toTrackUri(query);
       if (uri) {
         const id = uri.slice("spotify:track:".length);
-        const res = await spotifyFetch(`/tracks/${encodeURIComponent(id)}`);
+        const res = await spotifyFetch(ctx, `/tracks/${encodeURIComponent(id)}`);
         const json = await readJson(res);
         return { query, track: mapCatalogSearchItem(json) };
       }
-      const hits = await searchSpotifyTracks(query, 3);
+      const hits = await searchSpotifyTracks(ctx, query, 3);
       return { query, track: hits[0] ?? null };
     }),
   );
@@ -569,11 +575,12 @@ export async function resolveTrackQueries(
 }
 
 export async function fetchArtistDiscographyTracks(
+  ctx: UserCtx,
   artistQuery: string,
 ): Promise<{ artist: { id: string; name: string }; tracks: CatalogTrack[] } | null> {
   const q = artistQuery.trim();
   if (!q) return null;
-  const searchRes = await spotifyFetch(
+  const searchRes = await spotifyFetch(ctx, 
     `/search?q=${encodeURIComponent(q)}&type=artist&limit=5`,
   );
   const searchJson = await readJson(searchRes);
@@ -599,7 +606,7 @@ export async function fetchArtistDiscographyTracks(
   const albums: AlbumLite[] = [];
   let offset = 0;
   for (let page = 0; page < 6; page++) {
-    const albumRes = await spotifyFetch(
+    const albumRes = await spotifyFetch(ctx, 
       `/artists/${encodeURIComponent(artistId)}/albums?include_groups=album,single&limit=50&offset=${offset}&market=from_token`,
     );
     const albumJson = await readJson(albumRes);
@@ -643,7 +650,7 @@ export async function fetchArtistDiscographyTracks(
   }
   const albumJsons = await Promise.all(
     albumChunks.map(async (chunk) => {
-      const res = await spotifyFetch(
+      const res = await spotifyFetch(ctx, 
         `/albums?ids=${encodeURIComponent(chunk.map((a) => a.id).join(","))}&market=from_token`,
       );
       return readJson(res);
@@ -714,6 +721,7 @@ export async function fetchArtistDiscographyTracks(
 }
 
 export async function hydrateCatalogPopularity(
+  ctx: UserCtx,
   tracks: CatalogTrack[],
 ): Promise<CatalogTrack[]> {
   if (!tracks.length) return tracks;
@@ -724,7 +732,7 @@ export async function hydrateCatalogPopularity(
   }
   const jsons = await Promise.all(
     chunks.map(async (chunk) => {
-      const res = await spotifyFetch(
+      const res = await spotifyFetch(ctx, 
         `/tracks?ids=${encodeURIComponent(chunk.join(","))}&market=from_token`,
       );
       return readJson(res);
@@ -786,7 +794,7 @@ type CatalogOtherRelease = {
 };
 
 /** Ficha pública de Spotify. No hay conteo oficial de streams; popularity 0–100. */
-export async function getCatalogTrackFacts(spotifyTrackId: string): Promise<{
+export async function getCatalogTrackFacts(ctx: UserCtx, spotifyTrackId: string): Promise<{
   name: string;
   artists: string[];
   duration: string;
@@ -824,7 +832,7 @@ export async function getCatalogTrackFacts(spotifyTrackId: string): Promise<{
   const id = spotifyTrackId.trim();
   if (!id) return null;
 
-  const trackRes = await spotifyFetch(`/tracks/${encodeURIComponent(id)}`);
+  const trackRes = await spotifyFetch(ctx, `/tracks/${encodeURIComponent(id)}`);
   const track = await readJson(trackRes);
   if (!track) return null;
 
@@ -848,13 +856,13 @@ export async function getCatalogTrackFacts(spotifyTrackId: string): Promise<{
 
   const [albumRes, artistRes, isrcRes] = await Promise.all([
     albumId
-      ? spotifyFetch(`/albums/${encodeURIComponent(albumId)}`)
+      ? spotifyFetch(ctx, `/albums/${encodeURIComponent(albumId)}`)
       : Promise.resolve(null),
     artistId
-      ? spotifyFetch(`/artists/${encodeURIComponent(artistId)}`)
+      ? spotifyFetch(ctx, `/artists/${encodeURIComponent(artistId)}`)
       : Promise.resolve(null),
     isrc
-      ? spotifyFetch(
+      ? spotifyFetch(ctx, 
           `/search?q=${encodeURIComponent(`isrc:${isrc}`)}&type=track&limit=8`,
         )
       : Promise.resolve(null),

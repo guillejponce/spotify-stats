@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "@/lib/supabase";
+import type { UserCtx } from "@/lib/user-context";
 import type { ListenRank, NowPlayingListenRanks } from "@/lib/listen-rank-types";
 
 export type { ListenRank, NowPlayingListenRanks } from "@/lib/listen-rank-types";
@@ -17,14 +17,16 @@ function isMissingRelation(error: { code?: string; message?: string } | null): b
 }
 
 async function rankFromRollup(
+  ctx: UserCtx,
   table: "stats_track_segments" | "stats_artist_segments",
   idColumn: "track_id" | "artist_id",
   id: string,
 ): Promise<ListenRank | "missing" | null> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const mine = await supabase
     .from(table)
     .select("segment_count, total_ms")
+    .eq("user_id", ctx.userId)
     .eq(idColumn, id)
     .maybeSingle();
 
@@ -36,7 +38,8 @@ async function rankFromRollup(
 
   const catalog = await supabase
     .from(table)
-    .select(idColumn, { count: "exact", head: true });
+    .select(idColumn, { count: "exact", head: true })
+    .eq("user_id", ctx.userId);
   if (isMissingRelation(catalog.error)) return "missing";
 
   const among = catalog.count ?? 0;
@@ -50,6 +53,7 @@ async function rankFromRollup(
   const ahead = await supabase
     .from(table)
     .select(idColumn, { count: "exact", head: true })
+    .eq("user_id", ctx.userId)
     .gt("segment_count", plays);
 
   if (ahead.error) {
@@ -66,13 +70,15 @@ async function rankFromRollup(
 }
 
 async function rankFromPlays(
+  ctx: UserCtx,
   column: "track_id" | "artist_id",
   id: string,
 ): Promise<ListenRank> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const counted = await supabase
     .from("plays")
     .select("id", { count: "exact", head: true })
+    .eq("user_id", ctx.userId)
     .eq(column, id);
 
   const plays = counted.count ?? 0;
@@ -85,25 +91,27 @@ async function rankFromPlays(
 }
 
 async function rankFor(
+  ctx: UserCtx,
   rollup: "stats_track_segments" | "stats_artist_segments",
   idColumn: "track_id" | "artist_id",
   id: string,
 ): Promise<ListenRank> {
-  const fromRollup = await rankFromRollup(rollup, idColumn, id);
-  if (fromRollup === "missing") return rankFromPlays(idColumn, id);
+  const fromRollup = await rankFromRollup(ctx, rollup, idColumn, id);
+  if (fromRollup === "missing") return rankFromPlays(ctx, idColumn, id);
   return fromRollup ?? EMPTY;
 }
 
 export async function getNowPlayingListenRanks(
+  ctx: UserCtx,
   trackId: string | null,
   artistId: string | null,
 ): Promise<NowPlayingListenRanks> {
   const [track, artist] = await Promise.all([
     trackId
-      ? rankFor("stats_track_segments", "track_id", trackId)
+      ? rankFor(ctx, "stats_track_segments", "track_id", trackId)
       : Promise.resolve(EMPTY),
     artistId
-      ? rankFor("stats_artist_segments", "artist_id", artistId)
+      ? rankFor(ctx, "stats_artist_segments", "artist_id", artistId)
       : Promise.resolve(EMPTY),
   ]);
   return { track, artist };

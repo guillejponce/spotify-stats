@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Bot, X } from "lucide-react";
 import { AgentChat } from "@/components/agent/agent-chat";
+import { useIsAdmin } from "@/components/session-provider";
 import { cn } from "@/lib/utils";
 
 export function AgentDock() {
   const pathname = usePathname();
+  const isAdmin = useIsAdmin();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function AgentDock() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (pathname === "/agent" || pathname === "/unlock") return null;
+  if (!isAdmin || pathname === "/agent") return null;
 
   return (
     <>

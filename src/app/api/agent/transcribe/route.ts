@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -7,6 +8,9 @@ export const maxDuration = 30;
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return Response.json({ error: "Falta OPENAI_API_KEY" }, { status: 503 });

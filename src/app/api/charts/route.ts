@@ -6,6 +6,7 @@ import {
   upsertSongChart,
 } from "@/lib/charts";
 import { getTrackHarmony } from "@/lib/track-harmony";
+import { requireAdmin, requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -15,17 +16,20 @@ const NO_CACHE = {
 } as const;
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const trackId = request.nextUrl.searchParams.get("track_id")?.trim();
     if (!trackId) {
-      const recent = await listRecentCharts();
+      const recent = await listRecentCharts(ctx);
       return NextResponse.json({ chart: null, track: null, recent }, { headers: NO_CACHE });
     }
 
     const [chart, track, harmony] = await Promise.all([
-      getSongChart(trackId),
-      fetchTrackForChart(trackId),
-      getTrackHarmony({
+      getSongChart(ctx, trackId),
+      fetchTrackForChart(ctx, trackId),
+      getTrackHarmony(ctx, {
         dbTrackId: trackId,
         bypassCache: request.nextUrl.searchParams.get("debug") === "1",
       }),
@@ -53,6 +57,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const body = (await request.json()) as {
       trackId?: string;
@@ -70,7 +77,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const chart = await upsertSongChart({
+    const chart = await upsertSongChart(ctx, {
       trackId: body.trackId,
       content: body.content,
       title: body.title,

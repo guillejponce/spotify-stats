@@ -1,34 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase";
+import { isCronAuthorized, requireUser } from "@/lib/auth";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
+import { forEachUser, listActiveUsersWithSpotify } from "@/lib/user-context";
 
 /**
- * Sync manual o desde el Dashboard (server action). En production exige CRON_SECRET.
- * El cron vivo de plays es la Edge Function `sync-plays`, no este endpoint.
+ * Con `Authorization: Bearer CRON_SECRET` sincroniza a todos los usuarios activos;
+ * con sesión, solo la cuenta propia. El cron vivo de plays es la Edge Function `sync-plays`.
  */
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-
-  if (secret) {
-    if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  } else if (process.env.NODE_ENV === "production") {
-    return NextResponse.json(
-      {
-        error: "Set CRON_SECRET and send Authorization: Bearer <CRON_SECRET>",
-      },
-      { status: 401 }
-    );
-  }
-
   try {
-    const supabase = createServerSupabaseClient();
-    const result = await syncRecentPlaysFromSpotify(supabase, 50);
+    if (isCronAuthorized(request)) {
+      const users = await listActiveUsersWithSpotify(createServerSupabaseClient());
+      const results = await forEachUser(users, (ctx) => syncRecentPlaysFromSpotify(ctx, 50));
+      return NextResponse.json({ users: results.length, results });
+    }
+
+    const auth = await requireUser();
+    if ("response" in auth) return auth.response;
+    const result = await syncRecentPlaysFromSpotify(auth.ctx, 50);
 
     if (!result.ok && result.error === "no_tokens") {
       return NextResponse.json(

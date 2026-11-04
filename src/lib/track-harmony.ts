@@ -1,3 +1,4 @@
+import type { UserCtx } from "@/lib/user-context";
 import {
   formatPitchKey,
   getSpotifyClientCredentialsToken,
@@ -6,7 +7,6 @@ import {
   type SpotifyAudioProbe,
   type SpotifyTrackAudioMeta,
 } from "@/lib/spotify";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { getSpotifyAccessToken } from "@/lib/spotify-token";
 
 export type TrackHarmony = {
@@ -74,13 +74,14 @@ function parseReccoMeta(json: unknown): SpotifyTrackAudioMeta {
 }
 
 export async function resolveSpotifyTrackId(
+  ctx: UserCtx,
   dbTrackId: string,
 ): Promise<string | null> {
   const id = dbTrackId.trim();
   if (!id) return null;
   if (looksLikeSpotifyId(id)) return id;
 
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const withSpotify = await supabase
     .from("tracks")
     .select("id, spotify_id")
@@ -101,12 +102,12 @@ export async function resolveSpotifyTrackId(
 }
 
 async function resolveAccessToken(
+  ctx: UserCtx,
   explicit: string | null,
 ): Promise<{ token: string | null; kind: "user" | "cc" | "none" }> {
   if (explicit) return { token: explicit, kind: "user" };
   try {
-    const supabase = createServerSupabaseClient();
-    const user = await getSpotifyAccessToken(supabase);
+    const user = await getSpotifyAccessToken(ctx);
     if (user) return { token: user, kind: "user" };
   } catch {
     /* ignore */
@@ -197,7 +198,7 @@ async function resolvePreviewUrl(
   }
 }
 
-export async function getTrackHarmony(input: {
+export async function getTrackHarmony(ctx: UserCtx, input: {
   accessToken?: string | null;
   spotifyTrackId?: string | null;
   dbTrackId?: string | null;
@@ -207,7 +208,7 @@ export async function getTrackHarmony(input: {
   const dbTrackId = input.dbTrackId?.trim() || null;
   let spotifyTrackId = input.spotifyTrackId?.trim() || null;
   if (!spotifyTrackId && dbTrackId) {
-    spotifyTrackId = await resolveSpotifyTrackId(dbTrackId);
+    spotifyTrackId = await resolveSpotifyTrackId(ctx, dbTrackId);
   }
   const previewUrl = input.previewUrl?.trim() || null;
 
@@ -224,7 +225,7 @@ export async function getTrackHarmony(input: {
   if (pending) return pending;
 
   const job = (async () => {
-    const auth = await resolveAccessToken(input.accessToken ?? null);
+    const auth = await resolveAccessToken(ctx, input.accessToken ?? null);
     const emptyProbe: SpotifyAudioProbe = {
       tempo: null,
       key: null,

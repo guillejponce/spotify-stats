@@ -4,6 +4,7 @@ import {
   controlPlayback,
   getPlayerSnapshot,
 } from "@/lib/spotify-player";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,11 @@ function errorResponse(err: unknown) {
 }
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
-    const snapshot = await getPlayerSnapshot();
+    const snapshot = await getPlayerSnapshot(ctx);
     return NextResponse.json(snapshot, {
       headers: { "Cache-Control": "private, no-store" },
     });
@@ -33,6 +37,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const body = (await request.json()) as { action?: string };
     const action = body.action;
@@ -44,8 +51,8 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json({ error: "Acción inválida" }, { status: 400 });
     }
-    await controlPlayback(action);
-    const snapshot = await getPlayerSnapshot().catch(() => null);
+    await controlPlayback(ctx, action);
+    const snapshot = await getPlayerSnapshot(ctx).catch(() => null);
     return NextResponse.json({ ok: true, player: snapshot });
   } catch (err) {
     return errorResponse(err);

@@ -1,6 +1,6 @@
+import type { UserCtx } from "@/lib/user-context";
 import { formatInTimeZone } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { addYmd, getKurtStatus, type KurtStatus } from "@/lib/kurt";
 import { broadcastPush } from "@/lib/push-broadcast";
 
@@ -13,11 +13,12 @@ export type KurtPushKind =
 
 const MILESTONES = new Set([7, 30, 100, 365]);
 
-async function alreadySent(day: string, kind: KurtPushKind): Promise<boolean> {
-  const supabase = createServerSupabaseClient();
+async function alreadySent(ctx: UserCtx, day: string, kind: KurtPushKind): Promise<boolean> {
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("kurt_push_log")
     .select("kind")
+    .eq("user_id", ctx.userId)
     .eq("chile_day", day)
     .eq("kind", kind)
     .maybeSingle();
@@ -25,11 +26,11 @@ async function alreadySent(day: string, kind: KurtPushKind): Promise<boolean> {
   return Boolean(data);
 }
 
-async function markSent(day: string, kind: KurtPushKind): Promise<void> {
-  const supabase = createServerSupabaseClient();
+async function markSent(ctx: UserCtx, day: string, kind: KurtPushKind): Promise<void> {
+  const supabase = ctx.db;
   await supabase.from("kurt_push_log").upsert(
-    { chile_day: day, kind },
-    { onConflict: "chile_day,kind" },
+    { user_id: ctx.userId, chile_day: day, kind },
+    { onConflict: "user_id,chile_day,kind" },
   );
 }
 
@@ -101,7 +102,7 @@ function decideAlert(
   return null;
 }
 
-export async function runKurtAlertsJob(now = new Date()): Promise<{
+export async function runKurtAlertsJob(ctx: UserCtx, now = new Date()): Promise<{
   chileDay: string;
   hour: number;
   kind: KurtPushKind | null;
@@ -114,7 +115,7 @@ export async function runKurtAlertsJob(now = new Date()): Promise<{
   listenedToday: boolean;
   error?: string;
 }> {
-  const status = await getKurtStatus(now);
+  const status = await getKurtStatus(ctx, now);
   const hour = Number(formatInTimeZone(now, DISPLAY_TIME_ZONE, "H"));
   const pick = decideAlert(status, hour);
 
@@ -129,7 +130,7 @@ export async function runKurtAlertsJob(now = new Date()): Promise<{
     return { ...base, kind: null, skipped: true, sent: 0, pruned: 0, subscribers: 0 };
   }
 
-  if (await alreadySent(pick.logDay, pick.kind)) {
+  if (await alreadySent(ctx, pick.logDay, pick.kind)) {
     return {
       ...base,
       kind: pick.kind,
@@ -142,7 +143,7 @@ export async function runKurtAlertsJob(now = new Date()): Promise<{
   }
 
   const copy = pickCopy(status, pick.kind);
-  const result = await broadcastPush({
+  const result = await broadcastPush(ctx, {
     title: copy.title,
     body: copy.body,
     url: "/kurt",
@@ -150,7 +151,7 @@ export async function runKurtAlertsJob(now = new Date()): Promise<{
   });
 
   if (result.sent > 0) {
-    await markSent(pick.logDay, pick.kind);
+    await markSent(ctx, pick.logDay, pick.kind);
   }
 
   return {

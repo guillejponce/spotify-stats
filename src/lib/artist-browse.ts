@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import {
   asRows,
   buildLeaderboardRangeWithPrev,
@@ -21,19 +21,21 @@ function mapTopLikeRow(r: Record<string, unknown>): TopItem {
 export type ArtistBrowseRow = TopItem;
 
 export async function fetchArtistsLeaderboard(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<ArtistBrowseRow[]> {
   if (options.withDelta === false) {
-    return fetchArtistsLeaderboardLegacy(params, options);
+    return fetchArtistsLeaderboardLegacy(ctx, params, options);
   }
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc(
     "get_artists_leaderboard_with_delta",
     {
+      p_user_id: ctx.userId,
       start_date: start,
       end_date: end,
       prev_end_date: prevEnd,
@@ -48,7 +50,7 @@ export async function fetchArtistsLeaderboard(
       error.message?.includes("get_artists_leaderboard_with_delta") ||
       error.code === "PGRST202"
     ) {
-      return await fetchArtistsLeaderboardLegacy(params, options);
+      return await fetchArtistsLeaderboardLegacy(ctx, params, options);
     }
     throw error;
   }
@@ -56,14 +58,16 @@ export async function fetchArtistsLeaderboard(
 }
 
 async function fetchArtistsLeaderboardLegacy(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number }
 ): Promise<ArtistBrowseRow[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_artists_leaderboard", {
+    p_user_id: ctx.userId,
     start_date: start,
     end_date: end,
     search_query: q,
@@ -79,14 +83,16 @@ async function fetchArtistsLeaderboardLegacy(
 }
 
 export async function fetchArtistTracksInPeriod(
+  ctx: UserCtx,
   params: TimeFilterParams,
   artistId: string,
   limit: number = 80
 ): Promise<TopItem[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_artist_top_tracks_in_period", {
+    p_user_id: ctx.userId,
     artist_ref: artistId,
     start_date: start,
     end_date: end,
@@ -98,13 +104,15 @@ export async function fetchArtistTracksInPeriod(
 }
 
 export async function fetchArtistPeriodStats(
+  ctx: UserCtx,
   params: TimeFilterParams,
   artistId: string
 ): Promise<{ play_count: number; total_ms_played: number }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_artist_period_stats", {
+    p_user_id: ctx.userId,
     artist_ref: artistId,
     start_date: start,
     end_date: end,
@@ -128,9 +136,10 @@ export type ArtistProfile = {
 };
 
 export async function fetchArtistProfile(
+  ctx: UserCtx,
   artistId: string
 ): Promise<ArtistProfile | null> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("artists")
     .select("id, name, image_url, spotify_url, genres")

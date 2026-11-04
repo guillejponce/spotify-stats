@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const sp = request.nextUrl.searchParams;
     const limit = Math.min(
@@ -14,11 +17,11 @@ export async function GET(request: NextRequest) {
       ? sp.get("exclude")!.split(",").filter(Boolean)
       : [];
 
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
 
     const { data: rpcData, error: rpcError } = await supabase.rpc(
       "get_unrated_random_tracks",
-      { result_limit: limit, p_exclude_ids: excludeIds.length > 0 ? excludeIds : ["__none__"] }
+      { p_user_id: ctx.userId, result_limit: limit, p_exclude_ids: excludeIds.length > 0 ? excludeIds : ["__none__"] }
     );
 
     if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
@@ -26,9 +29,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Fallback: manual query
-    let query = supabase
+    const query = supabase
       .from("plays")
       .select("track_id")
+      .eq("user_id", ctx.userId)
       .order("played_at", { ascending: false })
       .limit(500);
 
@@ -44,6 +48,7 @@ export async function GET(request: NextRequest) {
     const { data: ratedRows } = await supabase
       .from("song_ratings")
       .select("track_id")
+      .eq("user_id", ctx.userId)
       .in("track_id", playedIds);
 
     const ratedSet = new Set((ratedRows || []).map((r) => String(r.track_id)));
@@ -69,6 +74,7 @@ export async function GET(request: NextRequest) {
     const { data: playCounts } = await supabase
       .from("plays")
       .select("track_id")
+      .eq("user_id", ctx.userId)
       .in("track_id", selected);
 
     const countMap = new Map<string, number>();

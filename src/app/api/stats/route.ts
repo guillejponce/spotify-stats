@@ -5,10 +5,14 @@ import {
 } from "@/lib/stats";
 import { currentCalendarYearChile } from "@/lib/chile-time";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const searchParams = request.nextUrl.searchParams;
     const filter = (searchParams.get("filter") || "all") as TimeFilter;
@@ -27,8 +31,8 @@ export async function GET(request: NextRequest) {
         : currentCalendarYearChile();
 
     const [bundle, heatmapData] = await Promise.all([
-      getDashboardBundlePayload(params, 50),
-      getHeatmapData(heatmapYear).catch((e) => {
+      getDashboardBundlePayload(ctx, params, 50),
+      getHeatmapData(ctx, heatmapYear).catch((e) => {
         console.warn("[stats] getHeatmapData", e);
         return [];
       }),

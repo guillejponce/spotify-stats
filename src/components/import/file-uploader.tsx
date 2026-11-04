@@ -1,142 +1,38 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileJson, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileArchive,
+  FileJson,
+  Loader2,
+  RotateCcw,
+  Square,
+  Upload,
+} from "lucide-react";
 import { cn, getProgressPercentage } from "@/lib/utils";
-import type { Import } from "@/types/database";
+import {
+  ImportCancelled,
+  importHistoryEntry,
+  readHistoryEntries,
+  type ImportProgress,
+} from "@/lib/import-client";
 
-/**
- * Chunks pequeños para Vercel Hobby (~10s). Archivos grandes: `npm run import:streaming`.
- */
-const IMPORT_CHUNK_RECORDS = 600;
-const IMPORT_CHUNK_RETRIES = 4;
+const ACCEPTED = /\.(zip|json)$/i;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetryableImportFailure(
-  status: number,
-  text: string,
-  jsonMsg: string
-): boolean {
-  if ([408, 429, 500, 502, 503, 504].includes(status)) return true;
-  const blob = `${text} ${jsonMsg}`.toLowerCase();
-  return (
-    blob.includes("function_invocation") ||
-    blob.includes("invocation_timeout") ||
-    blob.includes("timeout") ||
-    blob.includes("gateway time-out") ||
-    blob.includes("busy") ||
-    blob.includes("deadlock")
-  );
-}
-
-async function parseResponseBody(res: Response): Promise<{ json?: unknown; text: string }> {
-  const text = await res.text();
-  try {
-    return { json: JSON.parse(text), text };
-  } catch {
-    return { text };
-  }
-}
-
-async function importRecordsChunked(
-  filename: string,
-  records: Record<string, unknown>[]
-): Promise<{ import: Import; processed: number; skipped: number }> {
-  const total = records.length;
-  let importId: string | undefined;
-  let lastProcessed = 0;
-  let lastSkipped = 0;
-  let lastImport: Import | null = null;
-
-  const postChunk = async (payload: Record<string, unknown>) => {
-    let lastMsg = "Import request failed";
-
-    for (let attempt = 0; attempt < IMPORT_CHUNK_RETRIES; attempt++) {
-      const response = await fetch("/api/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const { json, text } = await parseResponseBody(response);
-
-      if (response.ok) {
-        const result = json as {
-          import?: Import;
-          processed?: number;
-          skipped?: number;
-        };
-        if (!result.import) {
-          throw new Error(text.slice(0, 200) || "Invalid import response");
-        }
-
-        lastImport = result.import;
-        lastProcessed = result.processed ?? 0;
-        lastSkipped = result.skipped ?? 0;
-        importId = result.import.id;
-        return;
-      }
-
-      lastMsg =
-        typeof json === "object" &&
-        json !== null &&
-        "error" in json &&
-        typeof (json as { error: unknown }).error === "string"
-          ? (json as { error: string }).error
-          : text.slice(0, 500) || `HTTP ${response.status}`;
-
-      const retryable = isRetryableImportFailure(response.status, text, lastMsg);
-      if (!retryable || attempt === IMPORT_CHUNK_RETRIES - 1) {
-        throw new Error(lastMsg);
-      }
-
-      await sleep(1800 * 2 ** attempt);
-    }
-
-    throw new Error(lastMsg);
-  };
-
-  if (total === 0) {
-    await postChunk({
-      filename,
-      records: [],
-      total_records: 0,
-      finalize: true,
-    });
-    if (!lastImport) throw new Error("Invalid import response");
-    return { import: lastImport, processed: 0, skipped: 0 };
-  }
-
-  for (let start = 0; start < total; start += IMPORT_CHUNK_RECORDS) {
-    const chunk = records.slice(start, start + IMPORT_CHUNK_RECORDS);
-    const isLast = start + chunk.length >= total;
-
-    const payload: Record<string, unknown> = {
-      filename,
-      records: chunk,
-      finalize: isLast,
-      ...(importId ? { import_id: importId } : { total_records: total }),
-    };
-
-    await postChunk(payload);
-  }
-
-  if (!lastImport) {
-    throw new Error("Import finished without result");
-  }
-
-  return {
-    import: lastImport,
-    processed: lastProcessed,
-    skipped: lastSkipped,
-  };
-}
+const STATUS_LABEL: Record<ImportProgress["status"], string> = {
+  queued: "En cola",
+  reading: "Leyendo",
+  uploading: "Subiendo",
+  finalizing: "Recalculando stats",
+  done: "Listo",
+  error: "Error",
+  cancelled: "Cancelado",
+};
 
 interface FileUploaderProps {
   onImportComplete?: () => void;
@@ -145,92 +41,118 @@ interface FileUploaderProps {
 export function FileUploader({ onImportComplete }: FileUploaderProps) {
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [imports, setImports] = useState<Import[]>([]);
+  const [running, setRunning] = useState(false);
+  const [jobs, setJobs] = useState<ImportProgress[]>([]);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const addFiles = useCallback((list: File[]) => {
+    setError(null);
+    const ok = list.filter((f) => ACCEPTED.test(f.name));
+    if (ok.length < list.length) setError("Solo se aceptan archivos .zip o .json");
+    setFiles((prev) => [...prev, ...ok]);
+  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
+    setDragActive(e.type === "dragenter" || e.type === "dragover");
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    setError(null);
-
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      (f) => f.type === "application/json" || f.name.endsWith(".json")
-    );
-
-    if (droppedFiles.length === 0) {
-      setError("Please drop JSON files only");
-      return;
-    }
-
-    setFiles((prev) => [...prev, ...droppedFiles]);
-  }, []);
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setError(null);
-      if (e.target.files) {
-        setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
-      }
+      addFiles(Array.from(e.dataTransfer.files));
     },
-    []
+    [addFiles],
   );
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const patchJob = (index: number, patch: Partial<ImportProgress>) => {
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined),
+    ) as Partial<ImportProgress>;
+    setJobs((prev) => prev.map((j, i) => (i === index ? { ...j, ...defined } : j)));
   };
 
-  const handleUpload = async () => {
-    if (files.length === 0) return;
-
-    setUploading(true);
+  const run = async () => {
+    if (files.length === 0 || running) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setRunning(true);
     setError(null);
-    setImports([]);
+    setJobs([]);
 
-    for (const file of files) {
-      try {
-        const text = await file.text();
-        const records = JSON.parse(text) as Record<string, unknown>[];
+    try {
+      const entries = [];
+      for (const file of files) {
+        try {
+          const found = await readHistoryEntries(file);
+          if (found.length === 0) {
+            setError(
+              `${file.name}: no tiene archivos Streaming_History_Audio_*.json. ¿Es el zip de "Extended streaming history"?`,
+            );
+          }
+          entries.push(...found);
+        } catch (e) {
+          setError(`${file.name}: no se pudo abrir (${(e as Error).message})`);
+        }
+      }
 
-        if (!Array.isArray(records)) {
-          setError(`${file.name}: File must contain a JSON array`);
+      setJobs(
+        entries.map((e) => ({
+          name: e.name,
+          total: 0,
+          offset: 0,
+          processed: 0,
+          skipped: 0,
+          resumedFrom: 0,
+          status: "queued",
+        })),
+      );
+
+      for (let i = 0; i < entries.length; i++) {
+        if (controller.signal.aborted) {
+          patchJob(i, { status: "cancelled" });
           continue;
         }
-
-        const { import: imp } = await importRecordsChunked(file.name, records);
-        setImports((prev) => [...prev, imp]);
-      } catch (err) {
-        setError(`Error processing ${file.name}: ${(err as Error).message}`);
+        try {
+          await importHistoryEntry(entries[i], controller.signal, (p) => patchJob(i, p));
+        } catch (e) {
+          if (e instanceof ImportCancelled) {
+            patchJob(i, { status: "cancelled" });
+          } else {
+            patchJob(i, { status: "error", error: (e as Error).message });
+          }
+        }
+        // Liberar memoria del archivo ya subido.
+        entries[i] = { name: entries[i].name, bytes: new Uint8Array() };
       }
+    } finally {
+      abortRef.current = null;
+      setRunning(false);
+      onImportComplete?.();
     }
-
-    setUploading(false);
-    setFiles([]);
-    onImportComplete?.();
   };
+
+  const cancel = () => abortRef.current?.abort();
+
+  const pendingJobs = jobs.some((j) => j.status === "cancelled" || j.status === "error");
+  const totalRecords = jobs.reduce((s, j) => s + j.total, 0);
+  const doneRecords = jobs.reduce((s, j) => s + Math.min(j.offset, j.total), 0);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Import Listening History</CardTitle>
+          <CardTitle>Importar historial</CardTitle>
           <CardDescription>
-            Upload your Spotify Extended Streaming History JSON files. Reimports do not duplicate plays
-            (same track + time). Large exports often time out on Vercel Hobby — use{" "}
-            <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">npm run import:streaming</code>{" "}
-            locally instead.
+            Sube el .zip de &quot;Extended streaming history&quot; que manda Spotify (o los
+            Streaming_History_Audio_*.json sueltos). Se descomprime en tu navegador y se sube en
+            lotes chicos. Si se corta, vuelve a elegir el mismo archivo y sigue donde quedó. Reimportar
+            no duplica escuchas.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -243,30 +165,31 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
               "relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors",
               dragActive
                 ? "border-spotify-green bg-spotify-green/5"
-                : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                : "border-white/10 bg-white/[0.02] hover:border-white/20",
             )}
             onClick={() => inputRef.current?.click()}
           >
             <input
               ref={inputRef}
               type="file"
-              accept=".json,application/json"
+              accept=".zip,.json,application/zip,application/json"
               multiple
-              onChange={handleFileSelect}
+              onChange={(e) => {
+                if (e.target.files) addFiles(Array.from(e.target.files));
+                e.target.value = "";
+              }}
               className="hidden"
             />
             <Upload
               className={cn(
                 "mb-3 h-10 w-10",
-                dragActive ? "text-spotify-green" : "text-spotify-light-gray"
+                dragActive ? "text-spotify-green" : "text-spotify-light-gray",
               )}
             />
             <p className="text-sm font-medium text-white">
-              {dragActive ? "Drop files here" : "Drag & drop JSON files here"}
+              {dragActive ? "Suelta acá" : "Arrastra el .zip o los .json"}
             </p>
-            <p className="mt-1 text-xs text-spotify-light-gray">
-              or click to browse
-            </p>
+            <p className="mt-1 text-xs text-spotify-light-gray">o haz click para elegir</p>
           </div>
         </CardContent>
       </Card>
@@ -274,9 +197,7 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
       {files.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">
-              Selected Files ({files.length})
-            </CardTitle>
+            <CardTitle className="text-base">Archivos ({files.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {files.map((file, index) => (
@@ -285,7 +206,11 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
                 className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-3"
               >
                 <div className="flex items-center gap-3">
-                  <FileJson className="h-5 w-5 text-spotify-green" />
+                  {/\.zip$/i.test(file.name) ? (
+                    <FileArchive className="h-5 w-5 text-spotify-green" />
+                  ) : (
+                    <FileJson className="h-5 w-5 text-spotify-green" />
+                  )}
                   <div>
                     <p className="text-sm font-medium text-white">{file.name}</p>
                     <p className="text-xs text-spotify-light-gray">
@@ -293,28 +218,40 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => removeFile(index)}
-                  className="text-xs text-spotify-light-gray hover:text-red-400"
-                >
-                  Remove
-                </button>
+                {!running && (
+                  <button
+                    type="button"
+                    onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                    className="text-xs text-spotify-light-gray hover:text-red-400"
+                  >
+                    Quitar
+                  </button>
+                )}
               </div>
             ))}
 
-            <Button onClick={handleUpload} disabled={uploading} className="mt-4 w-full">
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importing...
-                </>
+            <div className="mt-4 flex gap-2">
+              {running ? (
+                <Button onClick={cancel} variant="outline" className="w-full">
+                  <Square className="mr-2 h-4 w-4" />
+                  Cancelar
+                </Button>
               ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import {files.length} file{files.length > 1 ? "s" : ""}
-                </>
+                <Button onClick={run} className="w-full">
+                  {pendingJobs ? (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reanudar
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Importar
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -322,41 +259,57 @@ export function FileUploader({ onImportComplete }: FileUploaderProps) {
       {error && (
         <Card className="border-red-500/20">
           <CardContent className="flex items-center gap-3 p-4">
-            <AlertCircle className="h-5 w-5 text-red-400" />
+            <AlertCircle className="h-5 w-5 shrink-0 text-red-400" />
             <p className="text-sm text-red-400">{error}</p>
           </CardContent>
         </Card>
       )}
 
-      {imports.length > 0 && (
+      {jobs.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Import Results</CardTitle>
+            <CardTitle className="text-base">Progreso</CardTitle>
+            {totalRecords > 0 && (
+              <CardDescription>
+                {doneRecords.toLocaleString()} de {totalRecords.toLocaleString()} reproducciones
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
-            {imports.map((imp) => (
-              <div key={imp.id} className="rounded-lg bg-white/5 p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {imp.status === "completed" ? (
-                      <CheckCircle2 className="h-4 w-4 text-spotify-green" />
-                    ) : imp.status === "failed" ? (
-                      <AlertCircle className="h-4 w-4 text-red-400" />
+            {totalRecords > 0 && (
+              <Progress value={getProgressPercentage(doneRecords, totalRecords)} />
+            )}
+            {jobs.map((job) => (
+              <div key={job.name} className="rounded-lg bg-white/5 p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {job.status === "done" ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-spotify-green" />
+                    ) : job.status === "error" || job.status === "cancelled" ? (
+                      <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    ) : job.status === "queued" ? (
+                      <span className="h-4 w-4 shrink-0" />
                     ) : (
-                      <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-spotify-green" />
                     )}
-                    <span className="text-sm font-medium text-white">{imp.filename}</span>
+                    <span className="truncate text-sm font-medium text-white">{job.name}</span>
                   </div>
-                  <span className="text-xs capitalize text-spotify-light-gray">{imp.status}</span>
+                  <span className="shrink-0 text-xs text-spotify-light-gray">
+                    {STATUS_LABEL[job.status]}
+                  </span>
                 </div>
-                <Progress
-                  value={getProgressPercentage(imp.processed_records, imp.total_records)}
-                />
-                <div className="mt-2 flex gap-4 text-xs text-spotify-light-gray">
-                  <span>{imp.processed_records} processed</span>
-                  <span>{imp.skipped_records} skipped</span>
-                  <span>{imp.total_records} total</span>
+                <Progress value={getProgressPercentage(job.offset, job.total || 1)} />
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-spotify-light-gray">
+                  <span>
+                    {job.offset.toLocaleString()} / {job.total.toLocaleString()}
+                  </span>
+                  <span>{job.processed.toLocaleString()} guardadas</span>
+                  <span>{job.skipped.toLocaleString()} omitidas</span>
+                  {job.resumedFrom > 0 && job.resumedFrom < job.total && (
+                    <span>retomado desde {job.resumedFrom.toLocaleString()}</span>
+                  )}
                 </div>
+                {job.error && <p className="mt-2 text-xs text-red-400">{job.error}</p>}
               </div>
             ))}
           </CardContent>

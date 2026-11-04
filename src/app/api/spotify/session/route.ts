@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth";
 
 /**
  * No secrets exposed. Lets you verify OAuth stored tokens server-side (Supabase spotify_tokens).
@@ -8,12 +8,14 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
-    const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
+    const { data, error } = await ctx.db
       .from("spotify_tokens")
       .select("expires_at, updated_at")
-      .eq("id", "default")
+      .eq("user_id", ctx.userId)
       .maybeSingle();
 
     if (error) {

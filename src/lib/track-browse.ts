@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import {
   asRows,
   buildLeaderboardRangeWithPrev,
@@ -28,17 +28,19 @@ function mapTrackRow(r: Record<string, unknown>): TrackBrowseRow {
 }
 
 export async function fetchTracksLeaderboard(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<TrackBrowseRow[]> {
   if (options.withDelta === false) {
-    return fetchTracksLeaderboardLegacy(params, options);
+    return fetchTracksLeaderboardLegacy(ctx, params, options);
   }
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_tracks_leaderboard_with_delta", {
+    p_user_id: ctx.userId,
     start_date: start,
     end_date: end,
     prev_end_date: prevEnd,
@@ -52,7 +54,7 @@ export async function fetchTracksLeaderboard(
       error.message?.includes("get_tracks_leaderboard_with_delta") ||
       error.code === "PGRST202"
     ) {
-      return await fetchTracksLeaderboardLegacy(params, options);
+      return await fetchTracksLeaderboardLegacy(ctx, params, options);
     }
     throw error;
   }
@@ -60,14 +62,16 @@ export async function fetchTracksLeaderboard(
 }
 
 async function fetchTracksLeaderboardLegacy(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number }
 ): Promise<TrackBrowseRow[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_tracks_leaderboard", {
+    p_user_id: ctx.userId,
     start_date: start,
     end_date: end,
     search_query: q,
@@ -80,7 +84,7 @@ async function fetchTracksLeaderboardLegacy(
       error.message?.includes("get_tracks_leaderboard") ||
       error.code === "PGRST202"
     ) {
-      return await fetchTracksLeaderboardFallback(params, options);
+      return await fetchTracksLeaderboardFallback(ctx, params, options);
     }
     throw error;
   }
@@ -91,13 +95,15 @@ async function fetchTracksLeaderboardLegacy(
 }
 
 async function fetchTracksLeaderboardFallback(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number }
 ): Promise<TrackBrowseRow[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_top_tracks", {
+    p_user_id: ctx.userId,
     start_date: start,
     end_date: end,
     result_limit: 500,

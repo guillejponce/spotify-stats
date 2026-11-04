@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,22 +7,27 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: { trackId: string } }
 ) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const trackId = decodeURIComponent(params.trackId);
     if (!trackId) {
       return NextResponse.json({ error: "Missing trackId" }, { status: 400 });
     }
 
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
 
     const { count } = await supabase
       .from("plays")
       .select("id", { count: "exact", head: true })
+      .eq("user_id", ctx.userId)
       .eq("track_id", trackId);
 
     const { data, error } = await supabase
       .from("plays")
       .select("id, played_at, ms_played, platform")
+      .eq("user_id", ctx.userId)
       .eq("track_id", trackId)
       .order("played_at", { ascending: false })
       .limit(100);

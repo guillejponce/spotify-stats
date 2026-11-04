@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { sendWebPush, isWebPushConfigured } from "@/lib/web-push";
 import { broadcastPush } from "@/lib/push-broadcast";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,9 @@ type Body = {
 };
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   if (!isWebPushConfigured()) {
     return NextResponse.json(
       { error: "Web Push no configurado (faltan VAPID keys)" },
@@ -33,10 +36,11 @@ export async function POST(request: NextRequest) {
   const endpoint = payload.endpoint?.trim();
 
   if (endpoint) {
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
     const { data, error } = await supabase
       .from("push_subscriptions")
       .select("endpoint, p256dh, auth")
+      .eq("user_id", ctx.userId)
       .eq("endpoint", endpoint)
       .maybeSingle();
 
@@ -61,7 +65,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const result = await broadcastPush({
+  const result = await broadcastPush(ctx, {
     title,
     body,
     url: "/kurt",

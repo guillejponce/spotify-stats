@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import { ratingSongKey, type TrackIdentityRow } from "./rating-identity";
 import { normalizeChartInput } from "./chordpro";
 import type { ChartSearchHit, ChartTrack, SongChart } from "@/types/charts";
@@ -33,8 +33,8 @@ function mapChart(row: Record<string, unknown>): SongChart {
   };
 }
 
-async function resolveEquivalentTrackIds(trackId: string): Promise<string[]> {
-  const supabase = createServerSupabaseClient();
+async function resolveEquivalentTrackIds(ctx: UserCtx, trackId: string): Promise<string[]> {
+  const supabase = ctx.db;
   const { data: rpcIds, error: rpcError } = await supabase.rpc(
     "get_equivalent_track_ids",
     { p_track_id: trackId },
@@ -73,9 +73,10 @@ async function resolveEquivalentTrackIds(trackId: string): Promise<string[]> {
 }
 
 export async function fetchTrackForChart(
+  ctx: UserCtx,
   trackId: string,
 ): Promise<ChartTrack | null> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("tracks")
     .select(
@@ -113,9 +114,10 @@ export async function fetchTrackForChart(
 }
 
 export async function getSongChart(
+  ctx: UserCtx,
   trackId: string,
 ): Promise<SongChart | null> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase.rpc("get_song_chart", {
     p_track_id: trackId,
   });
@@ -127,7 +129,7 @@ export async function getSongChart(
     }
   }
 
-  const ids = await resolveEquivalentTrackIds(trackId);
+  const ids = await resolveEquivalentTrackIds(ctx, trackId);
   const { data: rows, error: tableError } = await supabase
     .from("song_charts")
     .select(
@@ -145,7 +147,7 @@ export async function getSongChart(
   return first ? mapChart(first as Record<string, unknown>) : null;
 }
 
-export async function upsertSongChart(input: {
+export async function upsertSongChart(ctx: UserCtx, input: {
   trackId: string;
   content: string;
   title?: string | null;
@@ -153,7 +155,7 @@ export async function upsertSongChart(input: {
   originalKey?: string | null;
   capo?: number | null;
 }): Promise<SongChart> {
-  const track = await fetchTrackForChart(input.trackId);
+  const track = await fetchTrackForChart(ctx, input.trackId);
   if (!track) throw new Error("No existe esa canción en el catálogo");
   if (!input.content.trim()) throw new Error("La cifra está vacía");
 
@@ -167,8 +169,8 @@ export async function upsertSongChart(input: {
     capo,
   });
 
-  const supabase = createServerSupabaseClient();
-  const existing = await getSongChart(input.trackId);
+  const supabase = ctx.db;
+  const existing = await getSongChart(ctx, input.trackId);
   const trackId = existing?.track_id ?? input.trackId;
   const now = new Date().toISOString();
 
@@ -203,13 +205,14 @@ export async function upsertSongChart(input: {
 }
 
 export async function searchTracksForChart(
+  ctx: UserCtx,
   query: string,
   limit = 20,
 ): Promise<ChartSearchHit[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data: rpcData, error: rpcError } = await supabase.rpc(
     "search_tracks_for_chart",
-    { search_query: query, result_limit: limit },
+    { p_user_id: ctx.userId, search_query: query, result_limit: limit },
   );
 
   if (!rpcError && rpcData) {
@@ -272,8 +275,8 @@ export async function searchTracksForChart(
   });
 }
 
-export async function listRecentCharts(limit = 12): Promise<SongChart[]> {
-  const supabase = createServerSupabaseClient();
+export async function listRecentCharts(ctx: UserCtx, limit = 12): Promise<SongChart[]> {
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("song_charts")
     .select(

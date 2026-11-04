@@ -1,6 +1,6 @@
+import type { UserCtx } from "@/lib/user-context";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { getHeatmapData } from "@/lib/stats";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
 import {
@@ -149,17 +149,18 @@ function hydrateKurtRpc(raw: Record<string, unknown>, now: Date): KurtStatus | n
   };
 }
 
-async function loadListenDaysFallback(): Promise<string[]> {
-  const supabase = createServerSupabaseClient();
+async function loadListenDaysFallback(ctx: UserCtx): Promise<string[]> {
+  const supabase = ctx.db;
   const { data: years, error } = await supabase.rpc(
     "get_calendar_available_years",
+    { p_user_id: ctx.userId },
   );
   if (error) throw error;
   const ys = (Array.isArray(years) ? years : [])
     .map((r: { year?: unknown }) => Number(r.year))
     .filter((y) => Number.isFinite(y));
 
-  const maps = await Promise.all(ys.map((y) => getHeatmapData(y)));
+  const maps = await Promise.all(ys.map((y) => getHeatmapData(ctx, y)));
   const days: string[] = [];
   for (const rows of maps) {
     for (const r of rows) {
@@ -172,10 +173,10 @@ async function loadListenDaysFallback(): Promise<string[]> {
   return days;
 }
 
-async function readKurtStatus(now: Date): Promise<KurtStatus> {
-  const supabase = createServerSupabaseClient();
+async function readKurtStatus(ctx: UserCtx, now: Date): Promise<KurtStatus> {
+  const supabase = ctx.db;
 
-  const rpc = await supabase.rpc("get_kurt_status");
+  const rpc = await supabase.rpc("get_kurt_status", { p_user_id: ctx.userId });
   if (
     !rpc.error &&
     rpc.data &&
@@ -186,7 +187,7 @@ async function readKurtStatus(now: Date): Promise<KurtStatus> {
     if (hydrated) return hydrated;
   }
 
-  const { data, error } = await supabase.rpc("get_listen_days");
+  const { data, error } = await supabase.rpc("get_listen_days", { p_user_id: ctx.userId });
   // PostgREST recorta a 1000 filas: si vienen mil, son un recorte (antes, los más viejos).
   if (!error && Array.isArray(data) && data.length > 0 && data.length < 1000) {
     const days = data
@@ -195,30 +196,30 @@ async function readKurtStatus(now: Date): Promise<KurtStatus> {
     if (days.length) return buildKurtStatus(days, now);
   }
 
-  const fallback = await loadListenDaysFallback();
+  const fallback = await loadListenDaysFallback(ctx);
   return buildKurtStatus(fallback, now);
 }
 
 export async function getKurtStatus(
+  ctx: UserCtx,
   now: Date = new Date(),
 ): Promise<KurtStatus> {
-  let status = await readKurtStatus(now);
+  let status = await readKurtStatus(ctx, now);
   if (status.listened_today) return status;
 
-  const supabase = createServerSupabaseClient();
   try {
-    await syncRecentPlaysFromSpotify(supabase, 50);
+    await syncRecentPlaysFromSpotify(ctx, 50);
   } catch (e) {
     console.warn("[kurt] recent sync", e);
   }
 
-  status = await readKurtStatus(now);
+  status = await readKurtStatus(ctx, now);
   if (status.listened_today) return status;
 
   try {
-    const credited = await creditLiveListenIfNeeded(supabase);
+    const credited = await creditLiveListenIfNeeded(ctx);
     if (credited.counted) {
-      status = await readKurtStatus(now);
+      status = await readKurtStatus(ctx, now);
       if (status.listened_today) return status;
       return overlayListenedToday(status);
     }

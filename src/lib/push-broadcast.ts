@@ -1,16 +1,17 @@
-import { createServerSupabaseClient } from "@/lib/supabase";
+import type { UserCtx } from "@/lib/user-context";
 import { sendWebPush, type PushSubscriptionJSON } from "@/lib/web-push";
 
-export async function broadcastPush(payload: {
+export async function broadcastPush(ctx: UserCtx, payload: {
   title: string;
   body: string;
   url?: string;
   tag?: string;
 }): Promise<{ sent: number; pruned: number; subscribers: number; error?: string }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data: subs, error } = await supabase
     .from("push_subscriptions")
-    .select("id, endpoint, p256dh, auth");
+    .select("id, endpoint, p256dh, auth")
+    .eq("user_id", ctx.userId);
 
   if (error) {
     return { sent: 0, pruned: 0, subscribers: 0, error: error.message };
@@ -31,7 +32,11 @@ export async function broadcastPush(payload: {
   }
 
   if (goneIds.length) {
-    await supabase.from("push_subscriptions").delete().in("id", goneIds);
+    await supabase
+      .from("push_subscriptions")
+      .delete()
+      .eq("user_id", ctx.userId)
+      .in("id", goneIds);
   }
 
   return { sent, pruned: goneIds.length, subscribers: subs.length };

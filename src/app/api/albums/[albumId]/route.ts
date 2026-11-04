@@ -4,10 +4,10 @@ import {
   fetchAlbumPeriodStats,
   fetchTrackPlayCountsInPeriod,
 } from "@/lib/album-browse";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { forceRefreshSpotifyAccessToken, getSpotifyAccessToken } from "@/lib/spotify-token";
 import { getSpotifyAlbumWithTracks } from "@/lib/spotify";
 import type { TimeFilter, TimeFilterParams } from "@/types/database";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { albumId: string } }
 ) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const albumId = decodeURIComponent(params.albumId);
     if (!albumId) {
@@ -29,14 +32,14 @@ export async function GET(
     }
 
     const filterParams = parseParams(request.nextUrl.searchParams);
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
 
     const [dbAlbum, stats] = await Promise.all([
-      fetchAlbumFromDb(albumId),
-      fetchAlbumPeriodStats(filterParams, albumId),
+      fetchAlbumFromDb(ctx, albumId),
+      fetchAlbumPeriodStats(ctx, filterParams, albumId),
     ]);
 
-    let accessToken = await getSpotifyAccessToken(supabase);
+    let accessToken = await getSpotifyAccessToken(ctx);
     let spotifyBundle: Awaited<ReturnType<typeof getSpotifyAlbumWithTracks>> | null =
       null;
 
@@ -45,7 +48,7 @@ export async function GET(
         spotifyBundle = await getSpotifyAlbumWithTracks(accessToken, albumId);
       } catch (err) {
         if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-          const fresh = await forceRefreshSpotifyAccessToken(supabase);
+          const fresh = await forceRefreshSpotifyAccessToken(ctx);
           if (fresh) {
             try {
               spotifyBundle = await getSpotifyAlbumWithTracks(fresh, albumId);
@@ -82,7 +85,7 @@ export async function GET(
     if (spotifyBundle) {
       spotifyFullTracklist = true;
       const ids = spotifyBundle.tracks.map((t) => t.id);
-      const counts = await fetchTrackPlayCountsInPeriod(filterParams, ids);
+      const counts = await fetchTrackPlayCountsInPeriod(ctx, filterParams, ids);
       const byId = new Map(counts.map((c) => [c.track_id, c]));
 
       tracks = spotifyBundle.tracks.map((t) => {
@@ -117,7 +120,7 @@ export async function GET(
 
       const list = trows ?? [];
       const ids = list.map((r) => r.id as string);
-      const counts = await fetchTrackPlayCountsInPeriod(filterParams, ids);
+      const counts = await fetchTrackPlayCountsInPeriod(ctx, filterParams, ids);
       const byId = new Map(counts.map((c) => [c.track_id, c]));
 
       tracks = list.map((r, i) => {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runKurtAlertsJob } from "@/lib/kurt-alerts";
 import { isWebPushConfigured } from "@/lib/web-push";
+import { createServerSupabaseClient } from "@/lib/supabase";
+import { forEachUser, listActiveUsersWithPush } from "@/lib/user-context";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,11 +22,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await runKurtAlertsJob();
+    const db = createServerSupabaseClient();
+    const now = new Date();
+    const users = await listActiveUsersWithPush(db);
+    const results = await forEachUser(users, (ctx) => runKurtAlertsJob(ctx, now));
     return NextResponse.json({
-      ok: true,
+      ok: results.every((r) => r.ok),
       webPushConfigured: isWebPushConfigured(),
-      ...result,
+      users: results.length,
+      results,
     });
   } catch (e) {
     console.error("[cron/kurt]", e);

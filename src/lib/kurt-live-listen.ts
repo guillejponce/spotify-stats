@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UserCtx } from "@/lib/user-context";
 import { getCurrentlyPlaying } from "@/lib/spotify";
 import {
   forceRefreshSpotifyAccessToken,
@@ -48,10 +48,10 @@ export type LiveCreditResult = { counted: boolean; inserted: boolean };
  * inserts caused by estimated vs. official `played_at` timestamps.
  */
 export async function creditLiveListenIfNeeded(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
 ): Promise<LiveCreditResult> {
   const none = { counted: false, inserted: false };
-  let token = await getSpotifyAccessToken(supabase);
+  let token = await getSpotifyAccessToken(ctx);
   if (!token) return none;
 
   let data: CurrentlyPlaying | null;
@@ -59,7 +59,7 @@ export async function creditLiveListenIfNeeded(
     data = (await getCurrentlyPlaying(token)) as CurrentlyPlaying | null;
   } catch (err) {
     if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-      const fresh = await forceRefreshSpotifyAccessToken(supabase);
+      const fresh = await forceRefreshSpotifyAccessToken(ctx);
       if (!fresh) return none;
       data = (await getCurrentlyPlaying(fresh)) as CurrentlyPlaying | null;
     } else {

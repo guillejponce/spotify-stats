@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from "./supabase";
+import type { UserCtx } from "@/lib/user-context";
 import {
   asRows,
   buildLeaderboardRangeWithPrev,
@@ -21,19 +21,21 @@ function mapTopLikeRow(r: Record<string, unknown>): TopItem {
 export type AlbumBrowseRow = TopItem;
 
 export async function fetchAlbumsLeaderboard(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number; withDelta?: boolean }
 ): Promise<AlbumBrowseRow[]> {
   if (options.withDelta === false) {
-    return fetchAlbumsLeaderboardLegacy(params, options);
+    return fetchAlbumsLeaderboardLegacy(ctx, params, options);
   }
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end, prevEnd } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc(
     "get_albums_leaderboard_with_delta",
     {
+      p_user_id: ctx.userId,
       start_date: start,
       end_date: end,
       prev_end_date: prevEnd,
@@ -48,7 +50,7 @@ export async function fetchAlbumsLeaderboard(
       error.message?.includes("get_albums_leaderboard_with_delta") ||
       error.code === "PGRST202"
     ) {
-      return await fetchAlbumsLeaderboardLegacy(params, options);
+      return await fetchAlbumsLeaderboardLegacy(ctx, params, options);
     }
     throw error;
   }
@@ -56,14 +58,16 @@ export async function fetchAlbumsLeaderboard(
 }
 
 async function fetchAlbumsLeaderboardLegacy(
+  ctx: UserCtx,
   params: TimeFilterParams,
   options: { search: string; offset: number; limit: number }
 ): Promise<AlbumBrowseRow[]> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
   const q = options.search.trim() || null;
 
   const { data, error } = await supabase.rpc("get_albums_leaderboard", {
+    p_user_id: ctx.userId,
     start_date: start,
     end_date: end,
     search_query: q,
@@ -79,13 +83,15 @@ async function fetchAlbumsLeaderboardLegacy(
 }
 
 export async function fetchAlbumPeriodStats(
+  ctx: UserCtx,
   params: TimeFilterParams,
   albumId: string
 ): Promise<{ play_count: number; total_ms_played: number }> {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_album_period_stats", {
+    p_user_id: ctx.userId,
     album_ref: albumId,
     start_date: start,
     end_date: end,
@@ -107,14 +113,16 @@ export type TrackPlayCountRow = {
 };
 
 export async function fetchTrackPlayCountsInPeriod(
+  ctx: UserCtx,
   params: TimeFilterParams,
   spotifyTrackIds: string[]
 ): Promise<TrackPlayCountRow[]> {
   if (spotifyTrackIds.length === 0) return [];
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { start, end } = buildLeaderboardRangeWithPrev(params);
 
   const { data, error } = await supabase.rpc("get_track_play_counts_in_period", {
+    p_user_id: ctx.userId,
     track_ids: spotifyTrackIds,
     start_date: start,
     end_date: end,
@@ -137,8 +145,8 @@ export type AlbumDbRow = {
   artist_name: string | null;
 };
 
-export async function fetchAlbumFromDb(albumId: string): Promise<AlbumDbRow | null> {
-  const supabase = createServerSupabaseClient();
+export async function fetchAlbumFromDb(ctx: UserCtx, albumId: string): Promise<AlbumDbRow | null> {
+  const supabase = ctx.db;
   const { data: album, error: aErr } = await supabase
     .from("albums")
     .select("id, name, image_url, spotify_url, artist_id")

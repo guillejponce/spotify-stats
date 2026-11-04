@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRatedTracks, upsertRating } from "@/lib/ratings";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -10,6 +11,9 @@ const NO_CACHE_HEADERS = {
 } as const;
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const sp = request.nextUrl.searchParams;
     const search = sp.get("q") || undefined;
@@ -21,7 +25,7 @@ export async function GET(request: NextRequest) {
       | "recent"
       | "name";
 
-    const result = await getRatedTracks({ search, offset, limit, sortBy });
+    const result = await getRatedTracks(ctx, { search, offset, limit, sortBy });
     return NextResponse.json(result, { headers: NO_CACHE_HEADERS });
   } catch (e) {
     console.error("[api/ratings GET]", e);
@@ -33,6 +37,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const body = await request.json();
     const { trackId, rating } = body as { trackId?: string; rating?: number };
@@ -44,7 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await upsertRating(trackId, rating);
+    const result = await upsertRating(ctx, trackId, rating);
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }

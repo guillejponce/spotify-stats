@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildChartFrame } from "@/lib/chart-skeleton";
 import { getTrackHarmony } from "@/lib/track-harmony";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const body = (await request.json()) as {
       title?: string;
@@ -18,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Falta el título" }, { status: 400 });
     }
 
-    const harmony = await getTrackHarmony({ dbTrackId: trackId, bypassCache: true });
+    const harmony = await getTrackHarmony(ctx, { dbTrackId: trackId, bypassCache: true });
     const content = buildChartFrame({
       title,
       artist,

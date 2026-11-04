@@ -15,18 +15,25 @@ import {
   Library,
   Star,
   CalendarDays,
-  Lock,
+  LogOut,
   Bot,
   Flame,
   Gift,
   Guitar,
+  Shield,
 } from "lucide-react";
 import { useState } from "react";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
+import { useSession } from "@/components/session-provider";
 
-const navItems = [
+const navItems: {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+}[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/agent", label: "Kurt CubAIn", icon: Bot },
+  { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
   { href: "/kurt", label: "Racha", icon: Flame },
   { href: "/tracks", label: "Canciones", icon: Music2 },
   { href: "/artists", label: "Artistas", icon: Users },
@@ -38,11 +45,15 @@ const navItems = [
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const session = useSession();
+  const isAdmin = session?.role === "admin";
+  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <>
@@ -88,7 +99,7 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 sm:px-3">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const isActive =
               item.href === "/"
                 ? pathname === "/"
@@ -120,19 +131,18 @@ export function Sidebar() {
 
         <div className="border-t border-white/5 pt-2">
           <PushNotificationsToggle />
-          <form action="/api/unlock" method="POST" className="px-2 sm:px-3">
-            <input type="hidden" name="intent" value="lock" />
+          <form action="/auth/logout" method="POST" className="px-2 sm:px-3">
             <button
               type="submit"
               className="flex min-h-[48px] w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-spotify-light-gray transition-colors hover:bg-white/5 hover:text-white active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5"
             >
-              <Lock className="h-5 w-5" />
-              Bloquear
+              <LogOut className="h-5 w-5" />
+              Cerrar sesión
             </button>
           </form>
           <div className="px-5 pb-4 sm:px-6">
-            <p className="text-xs text-spotify-light-gray/50">
-              Spotify Companion Dashboard
+            <p className="truncate text-xs text-spotify-light-gray/50">
+              {session?.displayName ?? session?.email ?? "Spotify Companion Dashboard"}
             </p>
           </div>
         </div>

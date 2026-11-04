@@ -1,7 +1,7 @@
+import type { UserCtx } from "@/lib/user-context";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { formatInTimeZone } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import {
   getDashboardBundlePayload,
   getHourlyDistribution,
@@ -366,6 +366,7 @@ function clampLimit(raw: unknown, fallback: number, max: number): number {
 }
 
 export async function executeAgentTool(
+  ctx: UserCtx,
   name: string,
   rawArgs: unknown,
 ): Promise<string> {
@@ -375,7 +376,7 @@ export async function executeAgentTool(
       : {};
 
   try {
-    const result = await dispatchTool(name, args);
+    const result = await dispatchTool(ctx, name, args);
     return JSON.stringify(result);
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
@@ -389,46 +390,46 @@ export async function executeAgentTool(
   }
 }
 
-async function dispatchTool(name: string, args: Record<string, unknown>) {
+async function dispatchTool(ctx: UserCtx, name: string, args: Record<string, unknown>) {
   switch (name) {
     case "get_listening_overview":
-      return getListeningOverview(args);
+      return getListeningOverview(ctx, args);
     case "get_top_items":
-      return getTopItems(args);
+      return getTopItems(ctx, args);
     case "search_library":
-      return searchLibrary(args);
+      return searchLibrary(ctx, args);
     case "inspect_artist":
-      return inspectArtist(args);
+      return inspectArtist(ctx, args);
     case "get_calendar_memories":
-      return getCalendarMemories(args);
+      return getCalendarMemories(ctx, args);
     case "get_on_this_day":
-      return getOnThisDay(args);
+      return getOnThisDay(ctx, args);
     case "get_ratings_snapshot":
-      return getRatingsSnapshot(args);
+      return getRatingsSnapshot(ctx, args);
     case "get_now_playing":
-      return getNowPlaying();
+      return getNowPlaying(ctx);
     case "get_listening_gap":
-      return getListeningGap();
+      return getListeningGap(ctx);
     case "get_kurt_status":
-      return getKurtSnapshot();
+      return getKurtSnapshot(ctx);
     case "control_player":
-      return controlPlayer(args);
+      return controlPlayer(ctx, args);
     case "play_tracks":
-      return playTracks(args);
+      return playTracks(ctx, args);
     case "find_unheard_tracks":
-      return findUnheardTracks(args);
+      return findUnheardTracks(ctx, args);
     case "inspect_now_playing":
-      return inspectNowPlayingDeep();
+      return inspectNowPlayingDeep(ctx);
     default:
       return { error: `Unknown tool: ${name}` };
   }
 }
 
-async function getListeningOverview(args: Record<string, unknown>) {
+async function getListeningOverview(ctx: UserCtx, args: Record<string, unknown>) {
   const params = asParams(args);
   const [bundle, hourly] = await Promise.all([
-    getDashboardBundlePayload(params, 8),
-    getHourlyDistribution(params),
+    getDashboardBundlePayload(ctx, params, 8),
+    getHourlyDistribution(ctx, params),
   ]);
 
   const topHours = [...hourly]
@@ -458,22 +459,22 @@ async function getListeningOverview(args: Record<string, unknown>) {
   };
 }
 
-async function getTopItems(args: Record<string, unknown>) {
+async function getTopItems(ctx: UserCtx, args: Record<string, unknown>) {
   const params = asParams(args);
   const kind = String(args.kind ?? "tracks");
   const limit = clampLimit(args.limit, 12, 20);
 
   const items =
     kind === "artists"
-      ? await getTopArtists(params, limit)
+      ? await getTopArtists(ctx, params, limit)
       : kind === "albums"
-        ? await getTopAlbums(params, limit)
-        : await getTopTracks(params, limit);
+        ? await getTopAlbums(ctx, params, limit)
+        : await getTopTracks(ctx, params, limit);
 
   return { kind, period: params, items: compactTop(items, limit) };
 }
 
-async function searchLibrary(args: Record<string, unknown>) {
+async function searchLibrary(ctx: UserCtx, args: Record<string, unknown>) {
   const query = String(args.query ?? "").trim();
   if (!query) return { error: "query vacío" };
   const params = asParams(args);
@@ -482,13 +483,13 @@ async function searchLibrary(args: Record<string, unknown>) {
 
   const [tracks, artists, albums] = await Promise.all([
     want("tracks")
-      ? fetchTracksLeaderboard(params, { search: query, offset: 0, limit: 8 })
+      ? fetchTracksLeaderboard(ctx, params, { search: query, offset: 0, limit: 8 })
       : Promise.resolve([]),
     want("artists")
-      ? fetchArtistsLeaderboard(params, { search: query, offset: 0, limit: 8 })
+      ? fetchArtistsLeaderboard(ctx, params, { search: query, offset: 0, limit: 8 })
       : Promise.resolve([]),
     want("albums")
-      ? fetchAlbumsLeaderboard(params, { search: query, offset: 0, limit: 8 })
+      ? fetchAlbumsLeaderboard(ctx, params, { search: query, offset: 0, limit: 8 })
       : Promise.resolve([]),
   ]);
 
@@ -501,11 +502,11 @@ async function searchLibrary(args: Record<string, unknown>) {
   };
 }
 
-async function inspectArtist(args: Record<string, unknown>) {
+async function inspectArtist(ctx: UserCtx, args: Record<string, unknown>) {
   const query = String(args.query ?? "").trim();
   if (!query) return { error: "query vacío" };
   const params = asParams(args);
-  const matches = await fetchArtistsLeaderboard(
+  const matches = await fetchArtistsLeaderboard(ctx, 
     { filter: "all" },
     {
       search: query,
@@ -519,9 +520,9 @@ async function inspectArtist(args: Record<string, unknown>) {
   }
 
   const [profile, stats, tracks] = await Promise.all([
-    fetchArtistProfile(best.id),
-    fetchArtistPeriodStats(params, best.id),
-    fetchArtistTracksInPeriod(params, best.id, 15),
+    fetchArtistProfile(ctx, best.id),
+    fetchArtistPeriodStats(ctx, params, best.id),
+    fetchArtistTracksInPeriod(ctx, params, best.id, 15),
   ]);
 
   return {
@@ -540,7 +541,7 @@ async function inspectArtist(args: Record<string, unknown>) {
   };
 }
 
-async function getCalendarMemories(args: Record<string, unknown>) {
+async function getCalendarMemories(ctx: UserCtx, args: Record<string, unknown>) {
   const year = Math.floor(Number(args.year));
   const month = Math.floor(Number(args.month));
   const dayRaw = Number(args.day ?? 0);
@@ -551,8 +552,9 @@ async function getCalendarMemories(args: Record<string, unknown>) {
     return { error: "year y month (1-12) requeridos" };
   }
 
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data, error } = await supabase.rpc("get_calendar_memories", {
+    p_user_id: ctx.userId,
     target_year: year,
     target_month: month,
     target_day: day,
@@ -587,7 +589,7 @@ async function getCalendarMemories(args: Record<string, unknown>) {
   };
 }
 
-async function getOnThisDay(args: Record<string, unknown>) {
+async function getOnThisDay(ctx: UserCtx, args: Record<string, unknown>) {
   const now = new Date();
   const month =
     typeof args.month === "number" && Number.isFinite(args.month)
@@ -598,9 +600,10 @@ async function getOnThisDay(args: Record<string, unknown>) {
       ? Math.min(31, Math.max(1, Math.floor(args.day)))
       : Number(formatInTimeZone(now, DISPLAY_TIME_ZONE, "d"));
 
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
   const { data: yearsData, error: yearsErr } = await supabase.rpc(
     "get_calendar_available_years",
+    { p_user_id: ctx.userId },
   );
   if (yearsErr) throw yearsErr;
 
@@ -613,7 +616,7 @@ async function getOnThisDay(args: Record<string, unknown>) {
   const perYear = (
     await Promise.all(
       years.map(async (year) => {
-        const slice = await getCalendarMemories({
+        const slice = await getCalendarMemories(ctx, {
           year,
           month,
           day,
@@ -639,12 +642,12 @@ async function getOnThisDay(args: Record<string, unknown>) {
   };
 }
 
-async function getRatingsSnapshot(args: Record<string, unknown>) {
+async function getRatingsSnapshot(ctx: UserCtx, args: Record<string, unknown>) {
   const search =
     typeof args.search === "string" ? args.search.trim() : "";
 
   if (search) {
-    const { tracks, total } = await getRatedTracks({
+    const { tracks, total } = await getRatedTracks(ctx, {
       search,
       offset: 0,
       limit: 12,
@@ -666,7 +669,7 @@ async function getRatingsSnapshot(args: Record<string, unknown>) {
     };
   }
 
-  const dash = await getRatingsDashboard();
+  const dash = await getRatingsDashboard(ctx);
   return {
     total_rated: dash.totalRated,
     avg_rating: dash.avgRating,
@@ -699,9 +702,9 @@ async function getRatingsSnapshot(args: Record<string, unknown>) {
   };
 }
 
-async function getNowPlaying() {
-  const supabase = createServerSupabaseClient();
-  let token = await getSpotifyAccessToken(supabase);
+async function getNowPlaying(ctx: UserCtx) {
+  const supabase = ctx.db;
+  let token = await getSpotifyAccessToken(ctx);
 
   const readLive = async (access: string) => {
     const data = await getCurrentlyPlaying(access);
@@ -729,7 +732,7 @@ async function getNowPlaying() {
       return await readLive(token);
     } catch (err) {
       if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-        const fresh = await forceRefreshSpotifyAccessToken(supabase);
+        const fresh = await forceRefreshSpotifyAccessToken(ctx);
         if (fresh) {
           try {
             return await readLive(fresh);
@@ -744,7 +747,7 @@ async function getNowPlaying() {
   const { data } = await supabase
     .from("now_playing")
     .select("is_playing, progress_ms, updated_at, track_id, artist_id")
-    .eq("id", 1)
+    .eq("user_id", ctx.userId)
     .maybeSingle();
 
   if (!data) {
@@ -762,8 +765,8 @@ async function getNowPlaying() {
   };
 }
 
-async function getListeningGap() {
-  const supabase = createServerSupabaseClient();
+async function getListeningGap(ctx: UserCtx) {
+  const supabase = ctx.db;
   const { data, error } = await supabase
     .from("plays")
     .select(
@@ -776,6 +779,7 @@ async function getListeningGap() {
       )
     `,
     )
+    .eq("user_id", ctx.userId)
     .order("played_at", { ascending: false })
     .limit(8);
 
@@ -812,7 +816,7 @@ async function getListeningGap() {
     };
   };
 
-  const kurt = await getKurtStatus().catch(() => null);
+  const kurt = await getKurtStatus(ctx).catch(() => null);
   const listenedRecently =
     Boolean(kurt?.listened_today) ||
     (typeof hoursAgo === "number" && Number.isFinite(hoursAgo) && hoursAgo < 24);
@@ -836,8 +840,8 @@ async function getListeningGap() {
   };
 }
 
-async function getKurtSnapshot() {
-  const status = await getKurtStatus();
+async function getKurtSnapshot(ctx: UserCtx) {
+  const status = await getKurtStatus(ctx);
   const mood = kurtMood(status);
   return {
     ...status,
@@ -864,7 +868,7 @@ function playerError(err: unknown) {
   throw err;
 }
 
-async function controlPlayer(args: Record<string, unknown>) {
+async function controlPlayer(ctx: UserCtx, args: Record<string, unknown>) {
   const action = String(args.action ?? "");
   if (
     action !== "play" &&
@@ -878,8 +882,8 @@ async function controlPlayer(args: Record<string, unknown>) {
     };
   }
   try {
-    await controlPlayback(action);
-    const snapshot = await getPlayerSnapshot().catch(() => null);
+    await controlPlayback(ctx, action);
+    const snapshot = await getPlayerSnapshot(ctx).catch(() => null);
     return {
       ok: true,
       action,
@@ -917,52 +921,47 @@ function normalizeTrackTitle(raw: string): string {
     .trim();
 }
 
-async function loadHeardTracksForArtist(artistId: string): Promise<
+async function loadHeardTracksForArtist(ctx: UserCtx, artistId: string): Promise<
   { id: string; name: string; spotify_id: string | null }[]
 > {
-  const supabase = createServerSupabaseClient();
+  const supabase = ctx.db;
+  const heardIds = new Set<string>();
+  for (let offset = 0; offset < 20000; offset += 1000) {
+    const { data, error } = await supabase
+      .from("plays")
+      .select("track_id")
+      .eq("user_id", ctx.userId)
+      .eq("artist_id", artistId)
+      .not("track_id", "is", null)
+      .range(offset, offset + 999);
+    if (error) throw error;
+    for (const row of data ?? []) heardIds.add(String(row.track_id));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  const ids = Array.from(heardIds);
   const rows: { id: string; name: string; spotify_id: string | null }[] = [];
-
-  const pull = async (withSpotifyId: boolean) => {
-    for (let offset = 0; offset < 4000; offset += 1000) {
-      const query = withSpotifyId
-        ? supabase
-            .from("tracks")
-            .select("id, name, spotify_id")
-            .eq("artist_id", artistId)
-            .range(offset, offset + 999)
-        : supabase
-            .from("tracks")
-            .select("id, name")
-            .eq("artist_id", artistId)
-            .range(offset, offset + 999);
-      const { data, error } = await query;
-      if (error) {
-        if (withSpotifyId && /spotify_id/i.test(error.message)) {
-          return pull(false);
-        }
-        throw error;
-      }
-      const batch = (data ?? []) as unknown as Record<string, unknown>[];
-      for (const row of batch) {
-        rows.push({
-          id: String(row.id ?? ""),
-          name: String(row.name ?? ""),
-          spotify_id:
-            typeof row.spotify_id === "string" && row.spotify_id
-              ? row.spotify_id
-              : null,
-        });
-      }
-      if (batch.length < 1000) break;
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("tracks")
+      .select("id, name, spotify_id")
+      .in("id", ids.slice(i, i + 200));
+    if (error) throw error;
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      rows.push({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        spotify_id:
+          typeof row.spotify_id === "string" && row.spotify_id
+            ? row.spotify_id
+            : null,
+      });
     }
-  };
-
-  await pull(true);
+  }
   return rows.filter((r) => r.id && r.name);
 }
 
-async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
+async function playArtistName(ctx: UserCtx, nameOrUri: string, mode: "replace" | "queue") {
   const uriFromInput = toArtistUri(nameOrUri);
   const artist = uriFromInput
     ? {
@@ -970,7 +969,7 @@ async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
         name: nameOrUri,
         uri: uriFromInput,
       }
-    : await searchSpotifyArtist(nameOrUri);
+    : await searchSpotifyArtist(ctx, nameOrUri);
   if (!artist) {
     return { ok: false, error: `No encontré al artista «${nameOrUri}» en Spotify.` };
   }
@@ -980,31 +979,31 @@ async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
   let playMode = mode;
 
   if (playMode === "queue") {
-    const snapshot = await getPlayerSnapshot().catch(() => null);
+    const snapshot = await getPlayerSnapshot(ctx).catch(() => null);
     if (!snapshot?.track && !snapshot?.is_playing) {
       playMode = "replace";
       note = "No había nada sonando: empecé al artista desde cero.";
     }
   }
 
-  const topUris = await getArtistTopTrackUris(artist.id);
+  const topUris = await getArtistTopTrackUris(ctx, artist.id);
 
   if (playMode === "queue") {
     if (!topUris.length) {
       return { ok: false, error: `No pude armar la cola de ${artist.name}.` };
     }
-    await addUrisToQueue(topUris);
+    await addUrisToQueue(ctx, topUris);
     used = "top_tracks";
   } else {
     try {
-      await startPlayingContext(artist.uri);
+      await startPlayingContext(ctx, artist.uri);
     } catch (err) {
       if (
         err instanceof SpotifyPlayerError &&
         (err.code === "RESTRICTED" || err.code === "SPOTIFY") &&
         topUris.length
       ) {
-        await startPlayingUris(topUris);
+        await startPlayingUris(ctx, topUris);
         used = "top_tracks";
         note = [
           note,
@@ -1018,7 +1017,7 @@ async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
     }
   }
 
-  const after = await getPlayerSnapshot().catch(() => null);
+  const after = await getPlayerSnapshot(ctx).catch(() => null);
   return {
     ok: true,
     mode: playMode,
@@ -1034,7 +1033,7 @@ async function playArtistName(nameOrUri: string, mode: "replace" | "queue") {
   };
 }
 
-async function playTracks(args: Record<string, unknown>) {
+async function playTracks(ctx: UserCtx, args: Record<string, unknown>) {
   const modeRaw = String(args.mode ?? "replace");
   let mode: "replace" | "queue" = modeRaw === "queue" ? "queue" : "replace";
   const artistArg = String(args.artist ?? "").trim();
@@ -1043,16 +1042,16 @@ async function playTracks(args: Record<string, unknown>) {
     : [];
 
   try {
-    if (artistArg) return await playArtistName(artistArg, mode);
+    if (artistArg) return await playArtistName(ctx, artistArg, mode);
 
     if (queries.length === 1 && toArtistUri(queries[0])) {
-      return await playArtistName(queries[0], mode);
+      return await playArtistName(ctx, queries[0], mode);
     }
 
     const albumUri = queries.length === 1 ? toAlbumUri(queries[0]) : null;
     if (albumUri && mode === "replace") {
-      await startPlayingContext(albumUri);
-      const after = await getPlayerSnapshot().catch(() => null);
+      await startPlayingContext(ctx, albumUri);
+      const after = await getPlayerSnapshot(ctx).catch(() => null);
       return {
         ok: true,
         mode,
@@ -1072,7 +1071,7 @@ async function playTracks(args: Record<string, unknown>) {
       };
     }
 
-    const { resolved, missing } = await resolveTrackQueries(queries);
+    const { resolved, missing } = await resolveTrackQueries(ctx, queries);
     const unique: typeof resolved = [];
     const seen = new Set<string>();
     for (const t of resolved) {
@@ -1082,7 +1081,7 @@ async function playTracks(args: Record<string, unknown>) {
     }
     if (!unique.length) {
       if (queries.length === 1) {
-        return await playArtistName(queries[0], mode);
+        return await playArtistName(ctx, queries[0], mode);
       }
       return {
         ok: false,
@@ -1093,7 +1092,7 @@ async function playTracks(args: Record<string, unknown>) {
 
     let note: string | null = null;
     if (mode === "queue") {
-      const snapshot = await getPlayerSnapshot().catch(() => null);
+      const snapshot = await getPlayerSnapshot(ctx).catch(() => null);
       if (!snapshot?.track && !snapshot?.is_playing) {
         mode = "replace";
         note = "No había nada sonando: empecé la lista desde cero.";
@@ -1101,10 +1100,10 @@ async function playTracks(args: Record<string, unknown>) {
     }
 
     const uris = unique.map((t) => t.uri);
-    if (mode === "queue") await addUrisToQueue(uris);
-    else await startPlayingUris(uris);
+    if (mode === "queue") await addUrisToQueue(ctx, uris);
+    else await startPlayingUris(ctx, uris);
 
-    const after = await getPlayerSnapshot().catch(() => null);
+    const after = await getPlayerSnapshot(ctx).catch(() => null);
     return {
       ok: true,
       mode,
@@ -1127,14 +1126,14 @@ async function playTracks(args: Record<string, unknown>) {
   }
 }
 
-async function findUnheardTracks(args: Record<string, unknown>) {
+async function findUnheardTracks(ctx: UserCtx, args: Record<string, unknown>) {
   const artist = String(args.artist ?? "").trim();
   if (!artist) return { error: "artist vacío" };
   const limit = clampLimit(args.limit, 12, 20);
 
   const [catalog, matches] = await Promise.all([
-    fetchArtistDiscographyTracks(artist),
-    fetchArtistsLeaderboard(
+    fetchArtistDiscographyTracks(ctx, artist),
+    fetchArtistsLeaderboard(ctx, 
       { filter: "all" },
       { search: artist, offset: 0, limit: 5 },
     ),
@@ -1158,7 +1157,7 @@ async function findUnheardTracks(args: Record<string, unknown>) {
   const heardIds = new Set<string>();
   let heardCount = 0;
   for (const libraryArtist of relevantArtists) {
-    const heard = await loadHeardTracksForArtist(libraryArtist.id);
+    const heard = await loadHeardTracksForArtist(ctx, libraryArtist.id);
     heardCount += heard.length;
     for (const t of heard) {
       const norm = normalizeTrackTitle(t.name);
@@ -1184,7 +1183,7 @@ async function findUnheardTracks(args: Record<string, unknown>) {
     return true;
   });
   const ranked = (
-    await hydrateCatalogPopularity(unheard.slice(0, 80))
+    await hydrateCatalogPopularity(ctx, unheard.slice(0, 80))
   ).sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
 
   return {
@@ -1207,10 +1206,10 @@ async function findUnheardTracks(args: Record<string, unknown>) {
   };
 }
 
-async function inspectNowPlayingDeep() {
+async function inspectNowPlayingDeep(ctx: UserCtx) {
   let snapshot;
   try {
-    snapshot = await getPlayerSnapshot();
+    snapshot = await getPlayerSnapshot(ctx);
   } catch (err) {
     return playerError(err);
   }
@@ -1227,11 +1226,11 @@ async function inspectNowPlayingDeep() {
   });
 
   const [library, artist, ratingLookup, catalog] = await Promise.all([
-    searchLibrary({ query: track.name, kind: "tracks", period: "all" }).catch(
+    searchLibrary(ctx, { query: track.name, kind: "tracks", period: "all" }).catch(
       asError,
     ),
-    inspectArtist({ query: artistQuery, period: "all" }).catch(asError),
-    lookupRatingForPlayingTrack({
+    inspectArtist(ctx, { query: artistQuery, period: "all" }).catch(asError),
+    lookupRatingForPlayingTrack(ctx, {
       spotifyTrackId: track.id,
       trackName: track.name,
       artistName: track.artist,
@@ -1243,7 +1242,7 @@ async function inspectNowPlayingDeep() {
       error: err instanceof Error ? err.message : String(err),
     })),
     track.id
-      ? getCatalogTrackFacts(track.id).catch(() => null)
+      ? getCatalogTrackFacts(ctx, track.id).catch(() => null)
       : Promise.resolve(null),
   ]);
 

@@ -4,12 +4,15 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { AgentDock } from "@/components/agent/agent-dock";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { useSession } from "@/components/session-provider";
 import { cn } from "@/lib/utils";
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname === "/unlock") {
+  const session = useSession();
+
+  if (!session || pathname === "/login" || pathname === "/pending") {
     return <>{children}</>;
   }
 

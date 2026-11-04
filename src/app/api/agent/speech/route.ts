@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { textForSpeech } from "@/lib/agent/voice";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,6 +16,9 @@ const TTS1_VOICES = new Set([
 ]);
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return Response.json({ error: "Falta OPENAI_API_KEY" }, { status: 503 });

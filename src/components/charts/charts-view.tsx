@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useIsAdmin } from "@/components/session-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { ChartPreview } from "@/components/charts/chart-preview";
 import {
@@ -56,6 +57,7 @@ export function ChartsView() {
   const [recent, setRecent] = useState<SongChart[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const canEdit = useIsAdmin();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [transpose, setTranspose] = useState(0);
@@ -123,14 +125,14 @@ export function ChartsView() {
       setHarmony({ key: json.key ?? null, tempo: json.tempo ?? null });
       if (!trackId) setRecent(json.recent ?? []);
       setDraft(json.chart?.content ?? "");
-      setEditing(!json.chart);
+      setEditing(canEdit && !json.chart);
       setTranspose(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     void loadChart(activeTrackId);
@@ -404,6 +406,7 @@ export function ChartsView() {
                   A+
                 </IconBtn>
               </ControlGroup>
+              {canEdit && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -428,6 +431,7 @@ export function ChartsView() {
                 )}
                 {chart || draft.trim() ? "Recargar tono y BPM" : "Cargar tono y BPM"}
               </Button>
+              )}
               <button
                 type="button"
                 onClick={() => setAutoscroll((v) => !v)}
@@ -440,7 +444,7 @@ export function ChartsView() {
               >
                 Autoscroll
               </button>
-              {!editing ? (
+              {!canEdit ? null : !editing ? (
                 <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
                   <Pencil className="mr-1.5 h-3.5 w-3.5" />
                   Editar
@@ -487,7 +491,7 @@ export function ChartsView() {
               </div>
             ) : (
               <>
-                {editing && (
+                {canEdit && editing && (
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}

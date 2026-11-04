@@ -1,5 +1,5 @@
+import type { UserCtx } from "@/lib/user-context";
 import { formatInTimeZone } from "date-fns-tz";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import {
   DISPLAY_TIME_ZONE,
   formatChileCalendarDayLong,
@@ -115,11 +115,12 @@ function buildRace(
 }
 
 async function listListenYears(
+  ctx: UserCtx,
   currentYear: number,
   requestedYear: number,
 ): Promise<number[]> {
-  const supabase = createServerSupabaseClient();
-  const { data, error } = await supabase.rpc("get_calendar_available_years");
+  const supabase = ctx.db;
+  const { data, error } = await supabase.rpc("get_calendar_available_years", { p_user_id: ctx.userId });
   const fromDb =
     error || !Array.isArray(data)
       ? []
@@ -155,6 +156,7 @@ function weekdayFromYmd(ymd: string): number | null {
 }
 
 export async function getWrappedPayload(
+  ctx: UserCtx,
   year: number,
   now = new Date(),
 ): Promise<WrappedPayload> {
@@ -171,32 +173,32 @@ export async function getWrappedPayload(
 
   const [bundle, heatmap, tracks, artists, albums, lastBundle, availableYears] =
     await Promise.all([
-      getDashboardBundlePayload(params, 8),
-      getHeatmapData(year).catch(() => []),
-      fetchTracksLeaderboard(params, {
+      getDashboardBundlePayload(ctx, params, 8),
+      getHeatmapData(ctx, year).catch(() => []),
+      fetchTracksLeaderboard(ctx, params, {
         search: "",
         offset: 0,
         limit: TRACK_BOARD_LIMIT,
         withDelta: false,
       }),
-      fetchArtistsLeaderboard(params, {
+      fetchArtistsLeaderboard(ctx, params, {
         search: "",
         offset: 0,
         limit: ARTIST_BOARD_LIMIT,
         withDelta: false,
       }),
-      fetchAlbumsLeaderboard(params, {
+      fetchAlbumsLeaderboard(ctx, params, {
         search: "",
         offset: 0,
         limit: ALBUM_RACE_LIMIT,
         withDelta: false,
       }),
       year > 2014
-        ? getDashboardBundlePayload({ filter: "year", year: year - 1 }, 1).catch(
+        ? getDashboardBundlePayload(ctx, { filter: "year", year: year - 1 }, 1).catch(
             () => null,
           )
         : Promise.resolve(null),
-      listListenYears(todayYear, year).catch(() => [todayYear, year]),
+      listListenYears(ctx, todayYear, year).catch(() => [todayYear, year]),
     ]);
 
   const listenDaysSet = new Set(

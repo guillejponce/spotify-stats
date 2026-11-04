@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,6 +34,9 @@ function nestedImage(
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const searchParams = request.nextUrl.searchParams;
     const offsetRaw = Number(searchParams.get("offset") ?? 0);
@@ -49,11 +52,11 @@ export async function GET(request: NextRequest) {
     /** Pedimos una fila extra para saber si hay página siguiente sin COUNT. */
     const fetchSize = Math.min(pageSize + 1, 101);
 
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
 
     if (searchParams.get("sync") === "1") {
       try {
-        await syncRecentPlaysFromSpotify(supabase, 50, {
+        await syncRecentPlaysFromSpotify(ctx, 50, {
           includeNowPlaying: true,
         });
       } catch (e) {
@@ -81,6 +84,7 @@ export async function GET(request: NextRequest) {
         )
       `,
       )
+      .eq("user_id", ctx.userId)
       .order("played_at", { ascending: false })
       .order("id", { ascending: false })
       .range(offset, offset + fetchSize - 1);
@@ -117,15 +121,6 @@ export async function GET(request: NextRequest) {
         image_url: album.image_url,
       };
     });
-
-    if (
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
-      !process.env.SUPABASE_SERVICE_ROLE_KEY
-    ) {
-      console.warn(
-        "[history] SUPABASE_SERVICE_ROLE_KEY no definida: RLS puede ocultar reproducciones en plays.",
-      );
-    }
 
     return NextResponse.json(
       {

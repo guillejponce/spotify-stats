@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,9 @@ function daysInMonth(year: number, month: number): number {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   try {
     const sp = request.nextUrl.searchParams;
     const year = Number(sp.get("year"));
@@ -30,9 +33,10 @@ export async function GET(request: NextRequest) {
     const maxDay = daysInMonth(year, month);
     const day = dayRaw > 0 ? Math.min(dayRaw, maxDay) : 0;
 
-    const supabase = createServerSupabaseClient();
+    const supabase = ctx.db;
 
     const { data, error } = await supabase.rpc("get_calendar_memories", {
+      p_user_id: ctx.userId,
       target_year: year,
       target_month: month,
       target_day: day,

@@ -1,3 +1,4 @@
+import type { UserCtx } from "@/lib/user-context";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { isSupabaseConfigured, supabaseMissingMessage } from "@/lib/agent/env";
@@ -43,6 +44,7 @@ export function normalizeHistory(input: unknown): AgentChatMessage[] {
 }
 
 export async function runAgent(
+  ctx: UserCtx,
   history: AgentChatMessage[],
   onEvent: (event: AgentStreamEvent) => void,
 ): Promise<void> {
@@ -123,7 +125,7 @@ export async function runAgent(
       } catch {
         parsed = {};
       }
-      const result = await executeAgentTool(call.name, parsed);
+      const result = await executeAgentTool(ctx, call.name, parsed);
       messages.push({
         role: "tool",
         tool_call_id: call.id,

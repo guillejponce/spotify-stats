@@ -1,32 +1,9 @@
-const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 
-/**
- * Spotify compares this byte-for-byte against "Redirect URIs" in the developer dashboard:
- * scheme (http/https), host, port, path — no trailing slash.
- */
-export function getSpotifyRedirectUri(): string {
-  const explicit = process.env.SPOTIFY_REDIRECT_URI?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
-
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ??
-    "";
-
-  if (!base) {
-    if (process.env.NODE_ENV !== "production") {
-      return "http://127.0.0.1:3000/api/spotify/callback";
-    }
-    throw new Error(
-      "Define SPOTIFY_REDIRECT_URI or NEXT_PUBLIC_APP_URL for Spotify OAuth."
-    );
-  }
-
-  return `${base}/api/spotify/callback`;
-}
-
-const SCOPES = [
+/** Scopes pedidos en el login (Supabase Auth → Spotify). user-read-email lo exige Supabase. */
+export const SPOTIFY_SCOPES = [
+  "user-read-email",
   "user-read-currently-playing",
   "user-read-playback-state",
   "user-modify-playback-state",
@@ -34,50 +11,10 @@ const SCOPES = [
   "user-top-read",
 ].join(" ");
 
-export function getSpotifyAuthUrl(): string {
-  const redirectUri = getSpotifyRedirectUri();
-  const params = new URLSearchParams({
-    client_id: process.env.SPOTIFY_CLIENT_ID!,
-    response_type: "code",
-    redirect_uri: redirectUri,
-    scope: SCOPES,
-    show_dialog: "true",
-  });
-
-  return `${SPOTIFY_AUTH_URL}?${params.toString()}`;
-}
-
-export async function getSpotifyTokens(code: string) {
-  const redirectUri = getSpotifyRedirectUri();
-  const response = await fetch(SPOTIFY_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${Buffer.from(
-        `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-      ).toString("base64")}`,
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirectUri,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error("[Spotify] token exchange failed", {
-      redirect_uri_sent: redirectUri,
-      detail,
-    });
-    throw new Error(
-      `Spotify token error: ${response.status} ${detail || response.statusText}`
-    );
-  }
-
-  return response.json();
-}
-
+/**
+ * Refresca con el client id/secret de la app de Spotify; debe ser la misma app
+ * configurada como provider en Supabase Auth.
+ */
 export async function refreshSpotifyToken(refreshToken: string) {
   const response = await fetch(SPOTIFY_TOKEN_URL, {
     method: "POST",

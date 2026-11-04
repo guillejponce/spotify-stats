@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UserCtx } from "@/lib/user-context";
 import { getRecentlyPlayed } from "@/lib/spotify";
 import {
   forceRefreshSpotifyAccessToken,
@@ -41,7 +41,7 @@ type ArtistStub = {
   external_urls?: { spotify?: string };
 };
 
-let inflight: Promise<SyncRecentResult> | null = null;
+const inflight = new Map<string, Promise<SyncRecentResult>>();
 
 function toIso(raw: string): string | null {
   const t = new Date(raw).getTime();
@@ -50,13 +50,14 @@ function toIso(raw: string): string | null {
 }
 
 async function existingPlayedAtSet(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   timestamps: string[],
 ): Promise<Set<string>> {
   if (!timestamps.length) return new Set();
-  const { data, error } = await supabase
+  const { data, error } = await ctx.db
     .from("plays")
     .select("played_at")
+    .eq("user_id", ctx.userId)
     .in("played_at", timestamps);
   if (error || !data) return new Set();
   const set = new Set<string>();
@@ -68,9 +69,10 @@ async function existingPlayedAtSet(
 }
 
 async function persistRecentEntry(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   entry: RecentEntry,
 ): Promise<"inserted" | "skipped"> {
+  const supabase = ctx.db;
   const track = entry.track;
   const playedAt = entry.played_at;
   if (!track?.id || !playedAt || typeof playedAt !== "string") return "skipped";
@@ -155,6 +157,7 @@ async function persistRecentEntry(
   const { data: nearbyPlay } = await supabase
     .from("plays")
     .select("id")
+    .eq("user_id", ctx.userId)
     .eq("track_id", dbTrackId)
     .gte("played_at", new Date(playedMs - DEDUP_WINDOW_MS).toISOString())
     .lte("played_at", new Date(playedMs + DEDUP_WINDOW_MS).toISOString())
@@ -165,6 +168,7 @@ async function persistRecentEntry(
     typeof track.duration_ms === "number" ? track.duration_ms : 180_000;
 
   const { error: insErr } = await supabase.from("plays").insert({
+    user_id: ctx.userId,
     track_id: dbTrackId,
     artist_id: artistDbId,
     album_id: albumDbId,
@@ -185,7 +189,7 @@ async function persistRecentEntry(
 }
 
 async function syncRecentPlaysFromSpotifyInner(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   limit: number,
   options: SyncRecentOptions,
 ): Promise<SyncRecentResult> {
@@ -193,7 +197,7 @@ async function syncRecentPlaysFromSpotifyInner(
   const enrichImages = Boolean(options.enrichImages);
   const includeNowPlaying = options.includeNowPlaying !== false;
 
-  let token = await getSpotifyAccessToken(supabase);
+  let token = await getSpotifyAccessToken(ctx);
   if (!token) {
     return {
       synced: 0,
@@ -213,7 +217,7 @@ async function syncRecentPlaysFromSpotifyInner(
       );
     } catch (err) {
       if (err instanceof Error && err.message === "EXPIRED_TOKEN") {
-        const fresh = await forceRefreshSpotifyAccessToken(supabase);
+        const fresh = await forceRefreshSpotifyAccessToken(ctx);
         if (!fresh) throw err;
         token = fresh;
         return await getRecentlyPlayed(
@@ -252,14 +256,14 @@ async function syncRecentPlaysFromSpotifyInner(
     }
 
     const known = await existingPlayedAtSet(
-      supabase,
+      ctx,
       withIso.map((row) => row.iso),
     );
     const fresh = withIso.filter((row) => !known.has(row.iso));
     skipped += withIso.length - fresh.length;
 
     for (const row of fresh) {
-      const result = await persistRecentEntry(supabase, row.entry);
+      const result = await persistRecentEntry(ctx, row.entry);
       if (result === "inserted") inserted++;
       else skipped++;
     }
@@ -275,7 +279,7 @@ async function syncRecentPlaysFromSpotifyInner(
 
   if (includeNowPlaying) {
     try {
-      const live = await creditLiveListenIfNeeded(supabase);
+      const live = await creditLiveListenIfNeeded(ctx);
       if (live.inserted) inserted++;
     } catch (e) {
       console.warn("[sync-recent] live credit", e);
@@ -285,7 +289,7 @@ async function syncRecentPlaysFromSpotifyInner(
   let imagesEnriched = 0;
   if (enrichImages) {
     try {
-      imagesEnriched = await enrichArtistsMissingImages(supabase, token);
+      imagesEnriched = await enrichArtistsMissingImages(ctx.db, token);
     } catch (e) {
       console.warn("[sync-recent] enrich artist images", e);
     }
@@ -302,15 +306,15 @@ async function syncRecentPlaysFromSpotifyInner(
 
 /** Pull Spotify Recently Played and append `plays` rows (source live). Requires spotify_tokens. */
 export async function syncRecentPlaysFromSpotify(
-  supabase: SupabaseClient,
+  ctx: UserCtx,
   limit: number = 50,
   options: SyncRecentOptions = {},
 ): Promise<SyncRecentResult> {
-  if (inflight) return inflight;
-  inflight = syncRecentPlaysFromSpotifyInner(supabase, limit, options).finally(
-    () => {
-      inflight = null;
-    },
-  );
-  return inflight;
+  const running = inflight.get(ctx.userId);
+  if (running) return running;
+  const job = syncRecentPlaysFromSpotifyInner(ctx, limit, options).finally(() => {
+    inflight.delete(ctx.userId);
+  });
+  inflight.set(ctx.userId, job);
+  return job;
 }

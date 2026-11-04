@@ -1,11 +1,15 @@
 import { NextRequest } from "next/server";
 import { normalizeHistory, runAgent } from "@/lib/agent/run";
+import { requireAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+  const { ctx } = auth;
   if (!process.env.OPENAI_API_KEY?.trim()) {
     return Response.json(
       {
@@ -45,7 +49,7 @@ export async function POST(request: NextRequest) {
         );
       };
       try {
-        await runAgent(history, send);
+        await runAgent(ctx, history, send);
         send({ type: "done" });
       } catch (err) {
         const message =

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runRankingAlertsJob } from "@/lib/ranking-alerts";
 import { isWebPushConfigured } from "@/lib/web-push";
+import { createServerSupabaseClient } from "@/lib/supabase";
+import { forEachUser, listActiveUserIds } from "@/lib/user-context";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,11 +23,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await runRankingAlertsJob();
+    const db = createServerSupabaseClient();
+    const now = new Date();
+    const users = await listActiveUserIds(db);
+    const results = await forEachUser(users, (ctx) => runRankingAlertsJob(ctx, now));
     return NextResponse.json({
-      ok: true,
+      ok: results.every((r) => r.ok),
       webPushConfigured: isWebPushConfigured(),
-      ...result,
+      users: results.length,
+      results,
     });
   } catch (e) {
     console.error("[cron/ranking-alerts]", e);

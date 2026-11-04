@@ -35,7 +35,7 @@ export default function ImportPage() {
       case "failed":
         return <AlertCircle className="h-4 w-4 text-red-400" />;
       case "processing":
-        return <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />;
+        return <Loader2 className="h-4 w-4 text-spotify-green" />;
       default:
         return <Clock className="h-4 w-4 text-spotify-light-gray" />;
     }
@@ -72,6 +72,8 @@ export default function ImportPage() {
                     <p className="text-xs text-spotify-light-gray">
                       {imp.processed_records} processed · {imp.skipped_records}{" "}
                       skipped
+                      {imp.status === "processing" &&
+                        " · a medias: sube el mismo archivo para seguir"}
                     </p>
                   </div>
                 </div>
