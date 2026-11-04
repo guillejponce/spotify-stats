@@ -25,6 +25,31 @@ BEGIN
   FROM auth.users u WHERE u.id = v_admin
   ON CONFLICT (id) DO UPDATE SET role = 'admin', status = 'active', updated_at = now();
 
+  -- Lo que se sincronizó al iniciar sesión ya existe con user_id; la copia vieja sobra.
+  DELETE FROM public.plays o
+  WHERE o.user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.plays n
+                WHERE n.user_id = v_admin AND n.track_id = o.track_id AND n.played_at = o.played_at);
+  DELETE FROM public.song_ratings o
+  WHERE o.user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.song_ratings n
+                WHERE n.user_id = v_admin AND n.track_id = o.track_id);
+  DELETE FROM public.ranking_snapshots o
+  WHERE o.user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.ranking_snapshots n
+                WHERE n.user_id = v_admin AND n.snapshot_date = o.snapshot_date
+                  AND n.entity_type = o.entity_type AND n.entity_id = o.entity_id);
+  DELETE FROM public.ranking_notifications_sent o
+  WHERE o.user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.ranking_notifications_sent n
+                WHERE n.user_id = v_admin AND n.entity_type = o.entity_type
+                  AND n.entity_id = o.entity_id AND n.snapshot_date = o.snapshot_date
+                  AND n.kind = o.kind);
+  DELETE FROM public.kurt_push_log o
+  WHERE o.user_id IS NULL
+    AND EXISTS (SELECT 1 FROM public.kurt_push_log n
+                WHERE n.user_id = v_admin AND n.chile_day = o.chile_day AND n.kind = o.kind);
+
   UPDATE public.plays SET user_id = v_admin WHERE user_id IS NULL;
   UPDATE public.song_ratings SET user_id = v_admin WHERE user_id IS NULL;
   UPDATE public.imports SET user_id = v_admin WHERE user_id IS NULL;
