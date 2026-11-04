@@ -25,6 +25,9 @@ BEGIN
   FROM auth.users u WHERE u.id = v_admin
   ON CONFLICT (id) DO UPDATE SET role = 'admin', status = 'active', updated_at = now();
 
+  -- El cron de rankings solo compara con ayer y hace 30 días.
+  DELETE FROM public.ranking_snapshots WHERE snapshot_date < current_date - 35;
+
   -- Lo que se sincronizó al iniciar sesión ya existe con user_id; la copia vieja sobra.
   DELETE FROM public.plays o
   WHERE o.user_id IS NULL

@@ -280,6 +280,14 @@ export async function runRankingAlertsJob(
     saveSnapshot(ctx, "album", snapshotDate, albums),
   ]);
 
+  // Solo se comparan ayer y hace 30 días; lo anterior ocupa disco sin uso.
+  const keepFrom = formatInTimeZone(subDays(now, 35), DISPLAY_TIME_ZONE, "yyyy-MM-dd");
+  await ctx.db
+    .from("ranking_snapshots")
+    .delete()
+    .eq("user_id", ctx.userId)
+    .lt("snapshot_date", keepFrom);
+
   const [yTracks, yArtists, mTracks, mArtists] = await Promise.all([
     loadSnapshotMap(ctx, "track", yesterdayDate),
     loadSnapshotMap(ctx, "artist", yesterdayDate),
