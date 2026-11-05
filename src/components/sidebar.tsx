@@ -21,8 +21,11 @@ import {
   Gift,
   Guitar,
   Shield,
+  UserRound,
+  UsersRound,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { UserAvatar } from "@/components/friends/user-avatar";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
 import { useSession } from "@/components/session-provider";
 
@@ -35,6 +38,7 @@ const navItems: {
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
   { href: "/kurt", label: "Racha", icon: Flame },
+  { href: "/friends", label: "Amigos", icon: UsersRound },
   { href: "/tracks", label: "Canciones", icon: Music2 },
   { href: "/artists", label: "Artistas", icon: Users },
   { href: "/albums", label: "Álbumes", icon: Library },
@@ -54,6 +58,20 @@ export function Sidebar() {
   const session = useSession();
   const isAdmin = session?.role === "admin";
   const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const [incoming, setIncoming] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/friends/count", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { incoming: 0 }))
+      .then((d) => {
+        if (!cancelled) setIncoming(Number(d.incoming) || 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   return (
     <>
@@ -124,6 +142,11 @@ export function Sidebar() {
                   )}
                 />
                 {item.label}
+                {item.href === "/friends" && incoming > 0 && (
+                  <span className="ml-auto rounded-full bg-spotify-green px-2 py-0.5 text-xs font-semibold text-black">
+                    {incoming}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -140,10 +163,22 @@ export function Sidebar() {
               Cerrar sesión
             </button>
           </form>
-          <div className="px-5 pb-4 sm:px-6">
-            <p className="truncate text-xs text-spotify-light-gray/50">
-              {session?.displayName ?? session?.email ?? "Spotify Companion Dashboard"}
-            </p>
+          <div className="px-2 pb-3 sm:px-3">
+            <Link
+              href="/profile"
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "flex min-h-[48px] items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-white/5 sm:min-h-0 sm:rounded-lg",
+                pathname === "/profile" ? "bg-spotify-medium-gray text-white" : "text-spotify-light-gray"
+              )}
+            >
+              {session?.avatarUrl ? (
+                <UserAvatar url={session.avatarUrl} name={session.displayName} className="h-7 w-7" />
+              ) : (
+                <UserRound className="h-5 w-5" />
+              )}
+              <span className="truncate">{session?.displayName ?? session?.email ?? "Mi perfil"}</span>
+            </Link>
           </div>
         </div>
       </aside>

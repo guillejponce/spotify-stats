@@ -4,6 +4,7 @@ const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 /** Scopes pedidos en el login (Supabase Auth → Spotify). user-read-email lo exige Supabase. */
 export const SPOTIFY_SCOPES = [
   "user-read-email",
+  "user-read-private",
   "user-read-currently-playing",
   "user-read-playback-state",
   "user-modify-playback-state",
@@ -87,6 +88,36 @@ export async function getSpotifyClientCredentialsToken(): Promise<string | null>
   } catch {
     return null;
   }
+}
+
+export type SpotifyMeProfile = {
+  display_name: string | null;
+  avatar_url: string | null;
+  country: string | null;
+  followers: number | null;
+  product: string | null;
+  spotify_url: string | null;
+};
+
+/** Perfil de `/me`. Spotify puede omitir campos (p. ej. en apps en modo desarrollo). */
+export async function getSpotifyMe(accessToken: string): Promise<SpotifyMeProfile | null> {
+  const response = await fetch(`${SPOTIFY_API_BASE}/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+  const me = (await response.json()) as Record<string, unknown>;
+  const images = Array.isArray(me.images) ? (me.images as { url?: string }[]) : [];
+  const followers = (me.followers as { total?: unknown } | undefined)?.total;
+  const urls = me.external_urls as { spotify?: unknown } | undefined;
+  return {
+    display_name: typeof me.display_name === "string" ? me.display_name : null,
+    avatar_url: images[0]?.url ?? null,
+    country: typeof me.country === "string" ? me.country : null,
+    followers: typeof followers === "number" ? followers : null,
+    product: typeof me.product === "string" ? me.product : null,
+    spotify_url: typeof urls?.spotify === "string" ? urls.spotify : null,
+  };
 }
 
 export async function getCurrentlyPlaying(accessToken: string) {

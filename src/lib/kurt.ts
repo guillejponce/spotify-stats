@@ -173,7 +173,8 @@ async function loadListenDaysFallback(ctx: UserCtx): Promise<string[]> {
   return days;
 }
 
-async function readKurtStatus(ctx: UserCtx, now: Date): Promise<KurtStatus> {
+/** Racha desde la base, sin sincronizar con Spotify. */
+export async function readKurtStatus(ctx: UserCtx, now: Date = new Date()): Promise<KurtStatus> {
   const supabase = ctx.db;
 
   const rpc = await supabase.rpc("get_kurt_status", { p_user_id: ctx.userId });

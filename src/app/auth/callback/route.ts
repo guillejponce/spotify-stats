@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionSupabaseClient, getProfile } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { SPOTIFY_SCOPES } from "@/lib/spotify";
+import { SPOTIFY_SCOPES, getSpotifyMe } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +68,18 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", user.id);
+
+  const me = session.provider_token ? await getSpotifyMe(session.provider_token) : null;
+  if (me) {
+    const extra: Record<string, unknown> = {};
+    for (const key of ["display_name", "avatar_url", "country", "followers", "product", "spotify_url"] as const) {
+      if (me[key] != null) extra[key] = me[key];
+    }
+    if (Object.keys(extra).length) {
+      const { error: meErr } = await db.from("profiles").update(extra).eq("id", user.id);
+      if (meErr) console.error("[auth/callback] profile /me update failed", meErr);
+    }
+  }
 
   const profile = await getProfile(user.id);
   if (profile?.status !== "active") {
