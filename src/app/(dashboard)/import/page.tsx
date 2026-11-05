@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { FileUploader } from "@/components/import/file-uploader";
+import { ImportGuide } from "@/components/import/import-guide";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
 import type { Import } from "@/types/database";
@@ -44,18 +45,20 @@ export default function ImportPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-white">Import Data</h1>
+        <h1 className="text-2xl font-bold text-white">Importar historial</h1>
         <p className="text-sm text-spotify-light-gray">
-          Upload your Spotify Extended Streaming History
+          Sube el historial de streaming extendido que te manda Spotify
         </p>
       </div>
+
+      {!loadingImports && <ImportGuide defaultOpen={imports.length === 0} />}
 
       <FileUploader onImportComplete={fetchImports} />
 
       {imports.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Previous Imports</CardTitle>
+            <CardTitle>Importaciones anteriores</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {imports.map((imp) => (
@@ -70,8 +73,8 @@ export default function ImportPage() {
                       {imp.filename}
                     </p>
                     <p className="text-xs text-spotify-light-gray">
-                      {imp.processed_records} processed · {imp.skipped_records}{" "}
-                      skipped
+                      {imp.processed_records} procesadas · {imp.skipped_records}{" "}
+                      omitidas
                       {imp.status === "processing" &&
                         " · a medias: sube el mismo archivo para seguir"}
                     </p>
