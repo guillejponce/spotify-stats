@@ -92,24 +92,6 @@ function normalizeDashboardRpcPayload(data: unknown): Record<string, unknown> | 
   return null;
 }
 
-function aggregateByMonthNumber(buckets: MonthBucket[]): MonthBucket[] {
-  const map = new Map<string, { ms: number; count: number }>();
-  for (const b of buckets) {
-    const monthNum = b.period.length >= 7 ? b.period.slice(5, 7) : b.period;
-    const prev = map.get(monthNum) ?? { ms: 0, count: 0 };
-    prev.ms += b.ms_played;
-    prev.count += b.play_count;
-    map.set(monthNum, prev);
-  }
-  return Array.from(map.entries())
-    .map(([period, v]) => ({
-      period,
-      ms_played: v.ms,
-      play_count: v.count,
-    }))
-    .sort((a, b) => Number(a.period) - Number(b.period));
-}
-
 function rollupMonthsTopFromDays(days: ListeningTimeData[]): MonthBucket[] {
   const map = new Map<string, { ms: number; count: number }>();
   for (const d of days) {
@@ -206,14 +188,8 @@ function parseDashboardBundleJson(root: Record<string, unknown>): DashboardBundl
     }),
   );
 
-  const rawMonths = asRpcRows<Record<string, unknown>>(root.months_top).map(
-    (r) => ({
-      period: String(r.period ?? ""),
-      ms_played: numeric(r.ms_played),
-      play_count: numeric(r.play_count),
-    }),
-  );
-  const monthsTop = aggregateByMonthNumber(rawMonths);
+  // `months_top` del RPC es un top-36 de año-mes: sumarlo por mes omite los meses flojos de algunos años.
+  const monthsTop = rollupMonthsTopFromDays(listeningRows);
 
   const yearsBreakdown = asRpcRows<Record<string, unknown>>(root.years).map(
     (r) => ({
