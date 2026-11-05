@@ -142,7 +142,7 @@ export function WrappedView() {
               ? `Día ${data.progress.elapsed_days} de ${data.progress.total_days}`
               : `Año cerrado · ${data.progress.total_days} días`}
           </p>
-          <p className="text-xs tabular-nums text-white/45">
+          <p className="text-xs tabular-nums text-white/60">
             {live
               ? `${data.progress.pct}% · quedan ${data.progress.remaining_days} días`
               : "100%"}
@@ -177,7 +177,7 @@ export function WrappedView() {
           />
         </div>
         {vs && (
-          <p className="mt-3 text-xs text-white/50">
+          <p className="mt-3 text-xs text-white/60">
             {live
               ? `Contra ${vs.last_year} a esta altura: `
               : `Contra ${vs.last_year} (año completo): `}
@@ -203,7 +203,7 @@ export function WrappedView() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/45">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/60">
           {live ? "La carrera" : "Los premios"}
         </h2>
         <div className="grid gap-4 lg:grid-cols-3">
@@ -214,7 +214,7 @@ export function WrappedView() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/45">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/60">
           Ranking completo
         </h2>
         <div className="grid gap-4 lg:grid-cols-2">
@@ -242,21 +242,21 @@ export function WrappedView() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/45">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-white/60">
           {live ? "Cómo viene el año" : `Cómo fue ${data.year}`}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {data.facts.map((fact) => (
             <Card key={fact.label} className="border-white/[0.06]">
               <CardContent className="p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
                   {fact.label}
                 </p>
                 <p className="mt-1 text-lg font-semibold leading-tight text-white">
                   {fact.value}
                 </p>
                 {fact.hint && (
-                  <p className="mt-0.5 text-xs text-white/40">{fact.hint}</p>
+                  <p className="mt-0.5 text-xs text-white/60">{fact.hint}</p>
                 )}
               </CardContent>
             </Card>
@@ -271,13 +271,13 @@ export function WrappedView() {
             <h3 className="text-base font-semibold text-white sm:text-lg">
               Días más escuchados
             </h3>
-            <p className="mt-0.5 text-xs text-white/40">
+            <p className="mt-0.5 text-xs text-white/60">
               {live
                 ? `Los picos del ${data.year} hasta ahora`
                 : `Los picos de ${data.year}`}
             </p>
             {data.top_days.length === 0 ? (
-              <p className="py-8 text-center text-sm text-white/45">
+              <p className="py-8 text-center text-sm text-white/60">
                 {live
                   ? "Todavía no hay un día que se escape."
                   : "No hubo un día que se escape."}
@@ -290,7 +290,7 @@ export function WrappedView() {
                     className="flex items-center justify-between gap-3 text-sm"
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <span className="w-5 text-xs tabular-nums text-white/30">
+                      <span className="w-5 text-xs tabular-nums text-white/60">
                         {i + 1}
                       </span>
                       <span className="truncate capitalize text-white">
@@ -299,7 +299,7 @@ export function WrappedView() {
                     </span>
                     <span className="shrink-0 text-right text-xs tabular-nums text-white/55">
                       {formatMs(day.ms_played)}
-                      <span className="ml-2 text-white/30">
+                      <span className="ml-2 text-white/60">
                         {formatReproductionCount(day.play_count)}
                       </span>
                     </span>
@@ -336,13 +336,13 @@ function HeroStat({
 }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
         {label}
       </p>
       <p className="mt-0.5 text-xl font-semibold tabular-nums text-white sm:text-2xl">
         {value}
       </p>
-      {hint && <p className="text-[11px] text-white/40">{hint}</p>}
+      {hint && <p className="text-[11px] text-white/60">{hint}</p>}
     </div>
   );
 }

@@ -18,7 +18,7 @@ import {
   ChartTip,
   chartAxis,
   chartGrid,
-  useChartHeight,
+  ChartBox,
 } from "@/components/charts/chart-ui";
 import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { YearBucket } from "@/types/database";
@@ -31,7 +31,6 @@ interface YearBarChartProps {
 }
 
 export function YearBarChart({ title, data, loading = false }: YearBarChartProps) {
-  const height = useChartHeight(210, 268);
   const [picked, setPicked] = useState<number | null>(null);
   const formatted = useMemo(
     () =>
@@ -56,42 +55,44 @@ export function YearBarChart({ title, data, loading = false }: YearBarChartProps
       empty={data.length === 0}
       emptyMessage="Sin datos en este rango"
     >
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={formatted} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
-          <CartesianGrid {...chartGrid} />
-          <XAxis dataKey="label" {...chartAxis} />
-          <YAxis {...chartAxis} width={44} />
-          <Tooltip
-            cursor={{ fill: "rgba(29,185,84,0.08)" }}
-            content={
-              <ChartTip
-                title={(row) => `Año ${String(row.year ?? "")}`}
-                body={(row) =>
-                  `${formatReproductionCount(Number(row.play_count))} repros · ${msToHours(Number(row.ms_played))} h`
-                }
-              />
-            }
-          />
-          <Bar
-            dataKey="play_count"
-            radius={[6, 6, 0, 0]}
-            maxBarSize={48}
-            onClick={(row) => {
-              const year = Number((row as YearBucket).year);
-              if (Number.isFinite(year)) setPicked(year);
-            }}
-          >
-            {formatted.map((entry) => (
-              <Cell
-                key={entry.year}
-                cursor="pointer"
-                fill={entry.year === peak.year ? CHART_GREEN_BRIGHT : CHART_GREEN}
-                opacity={picked == null || picked === entry.year ? 1 : 0.28}
-              />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <ChartBox mobile={210} desktop={268}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={formatted} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
+            <CartesianGrid {...chartGrid} />
+            <XAxis dataKey="label" {...chartAxis} />
+            <YAxis {...chartAxis} width={44} />
+            <Tooltip
+              cursor={{ fill: "rgba(29,185,84,0.08)" }}
+              content={
+                <ChartTip
+                  title={(row) => `Año ${String(row.year ?? "")}`}
+                  body={(row) =>
+                    `${formatReproductionCount(Number(row.play_count))} repros · ${msToHours(Number(row.ms_played))} h`
+                  }
+                />
+              }
+            />
+            <Bar
+              dataKey="play_count"
+              radius={[6, 6, 0, 0]}
+              maxBarSize={48}
+              onClick={(row) => {
+                const year = Number((row as YearBucket).year);
+                if (Number.isFinite(year)) setPicked(year);
+              }}
+            >
+              {formatted.map((entry) => (
+                <Cell
+                  key={entry.year}
+                  cursor="pointer"
+                  fill={entry.year === peak.year ? CHART_GREEN_BRIGHT : CHART_GREEN}
+                  opacity={picked == null || picked === entry.year ? 1 : 0.28}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartBox>
       {selected && (
         <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
           <span className="font-medium text-white">{selected.year}</span>

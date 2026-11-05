@@ -23,7 +23,7 @@ export function ChartPreview({
 
   if (!content.trim()) {
     return (
-      <p className="py-8 text-center text-sm text-white/45">
+      <p className="py-8 text-center text-sm text-white/60">
         Todavía no hay cifra para mostrar.
       </p>
     );
@@ -40,7 +40,7 @@ export function ChartPreview({
         }
         if (line.kind === "comment") {
           return (
-            <p key={i} className="mt-3 text-[0.85em] italic text-white/40">
+            <p key={i} className="mt-3 text-[0.85em] italic text-white/60">
               {line.text}
             </p>
           );

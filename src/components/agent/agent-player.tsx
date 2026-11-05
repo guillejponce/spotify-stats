@@ -132,7 +132,7 @@ function QueueList({ queue }: { queue: PlayerTrack[] }) {
           key={`${item.uri ?? item.id ?? item.name}-${i}`}
           className="flex items-center gap-3 rounded-lg px-1 py-1.5"
         >
-          <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-spotify-light-gray/40">
+          <span className="w-4 shrink-0 text-right text-[11px] tabular-nums text-spotify-light-gray/75">
             {i + 1}
           </span>
           <div className="h-9 w-9 shrink-0 overflow-hidden rounded bg-spotify-medium-gray">
@@ -356,7 +356,7 @@ export function AgentPlayer({ className }: { className?: string }) {
                   {track.artist}
                 </p>
                 {catalogLine ? (
-                  <p className="truncate text-[10px] text-spotify-light-gray/60">
+                  <p className="truncate text-[10px] text-spotify-light-gray/75">
                     {catalogLine}
                   </p>
                 ) : null}
@@ -432,7 +432,7 @@ export function AgentPlayer({ className }: { className?: string }) {
                       {track.artist}
                     </p>
                     {track.album ? (
-                      <p className="truncate text-[11px] text-spotify-light-gray/60">
+                      <p className="truncate text-[11px] text-spotify-light-gray/75">
                         {track.album}
                       </p>
                     ) : null}

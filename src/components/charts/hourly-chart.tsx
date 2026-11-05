@@ -18,7 +18,7 @@ import {
   ChartTip,
   chartAxis,
   chartGrid,
-  useChartHeight,
+  ChartBox,
 } from "@/components/charts/chart-ui";
 import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { HourlyData } from "@/types/database";
@@ -40,7 +40,6 @@ export function HourlyChart({
   loading = false,
   highlightHour = null,
 }: HourlyChartProps) {
-  const height = useChartHeight(200, 268);
   const [picked, setPicked] = useState<number | null>(null);
   const formattedData = useMemo(
     () =>
@@ -68,59 +67,61 @@ export function HourlyChart({
       loading={loading}
       empty={data.length === 0}
     >
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart
-          data={formattedData}
-          margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
-        >
-          <defs>
-            <linearGradient id="hourlyBar" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={CHART_GREEN_BRIGHT} />
-              <stop offset="100%" stopColor={CHART_GREEN} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid {...chartGrid} />
-          <XAxis dataKey="axisTick" {...chartAxis} fontSize={10} interval={2} />
-          <YAxis
-            {...chartAxis}
-            width={44}
-            tickFormatter={(v) => `${msToHours(v)}h`}
-          />
-          <Tooltip
-            cursor={{ fill: "rgba(29,185,84,0.08)" }}
-            content={
-              <ChartTip
-                title={(row) => `Franja ${String(row.slotLabel ?? "")}`}
-                body={(row) =>
-                  `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
-                }
-              />
-            }
-          />
-          <Bar
-            dataKey="ms_played"
-            radius={[4, 4, 0, 0]}
-            maxBarSize={18}
-            onClick={(row) => {
-              const hour = Number((row as HourlyData).hour);
-              if (Number.isFinite(hour)) setPicked(hour);
-            }}
+      <ChartBox mobile={200} desktop={268}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={formattedData}
+            margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
           >
-            {formattedData.map((entry) => {
-              const isActive = activeHour == null || entry.hour === activeHour;
-              const isPeak = entry.hour === peak.hour;
-              return (
-                <Cell
-                  key={entry.hour}
-                  cursor="pointer"
-                  fill={isPeak ? CHART_GREEN_BRIGHT : "url(#hourlyBar)"}
-                  opacity={isActive ? 1 : 0.28}
+            <defs>
+              <linearGradient id="hourlyBar" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_GREEN_BRIGHT} />
+                <stop offset="100%" stopColor={CHART_GREEN} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid {...chartGrid} />
+            <XAxis dataKey="axisTick" {...chartAxis} fontSize={10} interval={2} />
+            <YAxis
+              {...chartAxis}
+              width={44}
+              tickFormatter={(v) => `${msToHours(v)}h`}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(29,185,84,0.08)" }}
+              content={
+                <ChartTip
+                  title={(row) => `Franja ${String(row.slotLabel ?? "")}`}
+                  body={(row) =>
+                    `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
+                  }
                 />
-              );
-            })}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+              }
+            />
+            <Bar
+              dataKey="ms_played"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={18}
+              onClick={(row) => {
+                const hour = Number((row as HourlyData).hour);
+                if (Number.isFinite(hour)) setPicked(hour);
+              }}
+            >
+              {formattedData.map((entry) => {
+                const isActive = activeHour == null || entry.hour === activeHour;
+                const isPeak = entry.hour === peak.hour;
+                return (
+                  <Cell
+                    key={entry.hour}
+                    cursor="pointer"
+                    fill={isPeak ? CHART_GREEN_BRIGHT : "url(#hourlyBar)"}
+                    opacity={isActive ? 1 : 0.28}
+                  />
+                );
+              })}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartBox>
       {selected && selected.ms_played > 0 && (
         <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
           <span className="font-medium text-white">{selected.slotLabel}</span>

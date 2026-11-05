@@ -19,6 +19,7 @@ import { YearBarChart } from "@/components/charts/year-bar-chart";
 import { Heatmap } from "@/components/charts/heatmap";
 import { WeekdayChart } from "@/components/charts/weekday-chart";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Music2,
@@ -49,6 +50,8 @@ import {
   CHILE_TIMEZONE_LABEL,
   currentCalendarYearChile,
 } from "@/lib/chile-time";
+
+const TOP_PREVIEW = 10;
 
 export default function DashboardPage() {
   const statsHydratedRef = useRef(false);
@@ -182,6 +185,18 @@ export default function DashboardPage() {
   }, []);
 
   const connected = Boolean(spotifySession?.connected);
+  /** Las páginas de detalle solo entienden períodos de calendario; los rolantes caen a “todo”. */
+  const detailQs = (() => {
+    const p = new URLSearchParams();
+    if (timeFilter.filter === "year" || timeFilter.filter === "month") {
+      p.set("filter", timeFilter.filter);
+      if (timeFilter.year != null) p.set("year", String(timeFilter.year));
+      if (timeFilter.month != null) p.set("month", String(timeFilter.month));
+    } else {
+      p.set("filter", "all");
+    }
+    return p.toString();
+  })();
 
   return (
     <div className="space-y-5 sm:space-y-8">
@@ -192,42 +207,100 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Tu escucha
-          </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-spotify-light-gray">
+      <PageHeader
+        className="flex-row items-start justify-between"
+        title="Tu escucha"
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             <span>Stats en vivo, en hora de Chile.</span>
             <StatsSyncBanner phase={syncPhase} inserted={syncInserted} />
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {spotifySession && connected && (
-            <span className="hidden items-center gap-1.5 rounded-full border border-spotify-green/20 bg-spotify-green/10 px-2.5 py-1 text-[11px] font-medium text-spotify-green sm:inline-flex">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Spotify
-            </span>
-          )}
-          <a
-            href="/api/spotify/auth"
-            className={cn(
-              buttonVariants({ variant: connected ? "ghost" : "outline", size: "sm" }),
-              "min-h-10 px-3 sm:min-h-0"
+          </span>
+        }
+        actions={
+          <>
+            {spotifySession && connected && (
+              <span className="hidden items-center gap-1.5 rounded-full border border-spotify-green/20 bg-spotify-green/10 px-2.5 py-1 text-[11px] font-medium text-spotify-green sm:inline-flex">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Spotify
+              </span>
             )}
-          >
-            <LogIn className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">
-              {connected ? "Reconectar" : "Connect Spotify"}
-            </span>
-            <span className="sm:hidden">{connected ? "Cuenta" : "Conectar"}</span>
-          </a>
-        </div>
+            <a
+              href="/api/spotify/auth"
+              className={cn(
+                buttonVariants({ variant: connected ? "ghost" : "outline", size: "sm" }),
+                "min-h-10 px-3 sm:min-h-0"
+              )}
+            >
+              <LogIn className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">
+                {connected ? "Reconectar" : "Conectar Spotify"}
+              </span>
+              <span className="sm:hidden">{connected ? "Cuenta" : "Conectar"}</span>
+            </a>
+          </>
+        }
+      />
+
+      <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
+        <NowPlayingCard />
+        <KurtStreakCard />
       </div>
 
-      <NowPlayingCard />
+      <DashboardPeriodBar>
+        <TimeFilterControl
+          variant="dashboard"
+          value={timeFilter}
+          onChange={setTimeFilter}
+          busy={refreshing}
+        />
+      </DashboardPeriodBar>
 
-      <KurtStreakCard />
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
+        <StatCard
+          title="Tiempo de escucha"
+          value={formatMs(stats.totalMs)}
+          subtitle={formatListeningTimeSubtitle(stats.totalMs)}
+          icon={Clock}
+          loading={blockingLoad}
+        />
+        <StatCard
+          title="Reproducciones"
+          value={formatReproductionCount(stats.playCount)}
+          subtitle={
+            stats.sessionCount > 0
+              ? `${formatReproductionCount(stats.sessionCount)} sesiones (~15 min mismo tema)`
+              : undefined
+          }
+          icon={Music2}
+          loading={blockingLoad}
+        />
+        <StatCard
+          title="Artista top"
+          value={stats.topArtists[0]?.name || "—"}
+          subtitle={
+            stats.topArtists[0]
+              ? `${formatReproductionCount(stats.topArtists[0].play_count)} reproducciones`
+              : undefined
+          }
+          icon={Disc3}
+          imageUrl={stats.topArtists[0]?.image_url}
+          wrapValue
+          loading={blockingLoad}
+        />
+        <StatCard
+          title="Canción top"
+          value={stats.topTracks[0]?.name || "—"}
+          subtitle={
+            stats.topTracks[0]
+              ? `${formatReproductionCount(stats.topTracks[0].play_count)} reproducciones`
+              : undefined
+          }
+          icon={TrendingUp}
+          imageUrl={stats.topTracks[0]?.image_url}
+          wrapValue
+          loading={blockingLoad}
+        />
+      </div>
 
       {!blockingLoad && (
         <ListeningInsights
@@ -245,21 +318,108 @@ export default function DashboardPage() {
         />
       )}
 
-      <DashboardPeriodBar>
-        <TimeFilterControl
-          variant="dashboard"
-          value={timeFilter}
-          onChange={setTimeFilter}
-          busy={refreshing}
-        />
-      </DashboardPeriodBar>
+      <div className="grid gap-5 sm:gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] xl:items-start">
+        <div className="order-2 min-w-0 space-y-5 sm:space-y-8 xl:order-1">
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <ListeningChart
+              title="Escucha en el tiempo"
+              data={stats.listeningOverTime}
+              loading={blockingLoad}
+            />
+            <div ref={hourlySectionRef}>
+              <HourlyChart
+                title="Horas más activas"
+                data={stats.hourlyData}
+                loading={blockingLoad}
+                highlightHour={highlightHour}
+              />
+            </div>
+          </div>
+
+          <div ref={weekdaySectionRef}>
+            <WeekdayChart
+              title="Días de la semana"
+              data={stats.listeningOverTime}
+              loading={blockingLoad}
+              highlightWeekday={highlightWeekday}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <MonthRankChart
+              title="Meses con más reproducciones"
+              data={stats.monthsTop}
+              loading={blockingLoad}
+            />
+            <YearBarChart
+              title="Por año"
+              data={stats.yearsBreakdown}
+              loading={blockingLoad}
+            />
+          </div>
+
+          <Heatmap
+            title={`Mapa ${timeFilter.year ?? currentCalendarYearChile()}`}
+            data={stats.heatmapData}
+            loading={blockingLoad}
+            year={timeFilter.year ?? currentCalendarYearChile()}
+          />
+        </div>
+
+        <section
+          aria-label="Tops del período"
+          className="order-1 min-w-0 xl:sticky xl:top-6 xl:order-2"
+        >
+          <Tabs defaultValue="tracks" className="w-full min-w-0">
+            <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]">
+              <TabsList className="inline-flex w-max flex-nowrap gap-1">
+                <TabsTrigger value="tracks">Canciones</TabsTrigger>
+                <TabsTrigger value="artists">Artistas</TabsTrigger>
+                <TabsTrigger value="albums">Álbumes</TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="tracks" className="mt-3">
+              <TopItemsList
+                title="Canciones top"
+                items={stats.topTracks}
+                loading={blockingLoad}
+                hideTitle
+                initialCount={TOP_PREVIEW}
+                moreHref="/tracks"
+              />
+            </TabsContent>
+            <TabsContent value="artists" className="mt-3">
+              <TopItemsList
+                title="Artistas top"
+                items={stats.topArtists}
+                loading={blockingLoad}
+                hideTitle
+                initialCount={TOP_PREVIEW}
+                hrefFor={(a) => `/artists/${encodeURIComponent(a.id)}?${detailQs}`}
+                moreHref="/artists"
+              />
+            </TabsContent>
+            <TabsContent value="albums" className="mt-3">
+              <TopItemsList
+                title="Álbumes top"
+                items={stats.topAlbums}
+                loading={blockingLoad}
+                hideTitle
+                initialCount={TOP_PREVIEW}
+                hrefFor={(a) => `/albums/${encodeURIComponent(a.id)}?${detailQs}`}
+                moreHref="/albums"
+              />
+            </TabsContent>
+          </Tabs>
+        </section>
+      </div>
 
       <details className="group rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs text-spotify-light-gray/80 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md text-xs text-spotify-light-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green [&::-webkit-details-marker]:hidden">
           <span>Cómo se cuentan las stats</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
         </summary>
-        <p className="mt-2 text-xs leading-relaxed text-spotify-light-gray/65">
+        <p className="mt-2 text-xs leading-relaxed text-spotify-light-gray/80">
           Últimos 6 meses / último mes / última semana son ventanas móviles (desde ahora hacia atrás);
           “Este año” y el selector de año/mes usan el calendario civil. El número grande cuenta{" "}
           <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
@@ -270,115 +430,6 @@ export default function DashboardPage() {
           <span className="text-spotify-light-gray">año civil actual en Chile</span>.
         </p>
       </details>
-
-      <div className="space-y-5 sm:space-y-8">
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
-          <StatCard
-            title="Tiempo de escucha"
-            value={formatMs(stats.totalMs)}
-            subtitle={formatListeningTimeSubtitle(stats.totalMs)}
-            icon={Clock}
-            loading={blockingLoad}
-          />
-          <StatCard
-            title="Reproducciones"
-            value={formatReproductionCount(stats.playCount)}
-            subtitle={
-              stats.sessionCount > 0
-                ? `${formatReproductionCount(stats.sessionCount)} sesiones (~15 min mismo tema)`
-                : undefined
-            }
-            icon={Music2}
-            loading={blockingLoad}
-          />
-          <StatCard
-            title="Top Artist"
-            value={stats.topArtists[0]?.name || "—"}
-            subtitle={
-              stats.topArtists[0]
-                ? `${formatReproductionCount(stats.topArtists[0].play_count)} reproducciones`
-                : undefined
-            }
-            icon={Disc3}
-            loading={blockingLoad}
-          />
-          <StatCard
-            title="Top Track"
-            value={stats.topTracks[0]?.name || "—"}
-            subtitle={
-              stats.topTracks[0]
-                ? `${formatReproductionCount(stats.topTracks[0].play_count)} reproducciones`
-                : undefined
-            }
-            icon={TrendingUp}
-            loading={blockingLoad}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-          <ListeningChart
-            title="Escucha en el tiempo"
-            data={stats.listeningOverTime}
-            loading={blockingLoad}
-          />
-          <div ref={hourlySectionRef}>
-            <HourlyChart
-              title="Horas más activas"
-              data={stats.hourlyData}
-              loading={blockingLoad}
-              highlightHour={highlightHour}
-            />
-          </div>
-        </div>
-
-        <div ref={weekdaySectionRef}>
-          <WeekdayChart
-            title="Días de la semana"
-            data={stats.listeningOverTime}
-            loading={blockingLoad}
-            highlightWeekday={highlightWeekday}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
-          <MonthRankChart
-            title="Meses con más reproducciones"
-            data={stats.monthsTop}
-            loading={blockingLoad}
-          />
-          <YearBarChart
-            title="Por año"
-            data={stats.yearsBreakdown}
-            loading={blockingLoad}
-          />
-        </div>
-
-        <Heatmap
-          title={`Mapa ${timeFilter.year ?? currentCalendarYearChile()}`}
-          data={stats.heatmapData}
-          loading={blockingLoad}
-          year={timeFilter.year ?? currentCalendarYearChile()}
-        />
-
-        <Tabs defaultValue="tracks" className="w-full min-w-0">
-          <div className="-mx-1 max-w-full overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]">
-            <TabsList className="inline-flex w-max flex-nowrap gap-1">
-              <TabsTrigger value="tracks">Top Tracks</TabsTrigger>
-              <TabsTrigger value="artists">Top Artists</TabsTrigger>
-              <TabsTrigger value="albums">Top Albums</TabsTrigger>
-            </TabsList>
-          </div>
-          <TabsContent value="tracks" className="mt-3">
-            <TopItemsList title="Top Tracks" items={stats.topTracks} loading={blockingLoad} hideTitle />
-          </TabsContent>
-          <TabsContent value="artists" className="mt-3">
-            <TopItemsList title="Top Artists" items={stats.topArtists} loading={blockingLoad} hideTitle />
-          </TabsContent>
-          <TabsContent value="albums" className="mt-3">
-            <TopItemsList title="Top Albums" items={stats.topAlbums} loading={blockingLoad} hideTitle />
-          </TabsContent>
-        </Tabs>
-      </div>
     </div>
   );
 }

@@ -222,7 +222,7 @@ export function PushNotificationsToggle({
 
   if (status === "unsupported" || status === "disabled") {
     return (
-      <p className="px-3 py-2 text-[11px] leading-snug text-spotify-light-gray/60">
+      <p className="px-3 py-2 text-[11px] leading-snug text-spotify-light-gray/75">
         {message || "Push no disponible en este dispositivo."}
       </p>
     );
@@ -280,7 +280,7 @@ export function PushNotificationsToggle({
           Activar notificaciones
         </Button>
       )}
-      <p className="px-1 text-[11px] leading-snug text-spotify-light-gray/55">
+      <p className="px-1 text-[11px] leading-snug text-spotify-light-gray/75">
         Kurt te amenaza si un día no escuchas (y también avisa subidas de ranking).
       </p>
       {iosHint && (

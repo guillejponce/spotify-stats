@@ -32,7 +32,7 @@ function PlaybackMeta({
   return (
     <p
       className={cn(
-        "text-[11px] leading-snug text-spotify-light-gray/65",
+        "text-[11px] leading-snug text-spotify-light-gray/75",
         className,
       )}
     >

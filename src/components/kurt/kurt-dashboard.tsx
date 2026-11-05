@@ -120,7 +120,7 @@ export function KurtDashboard() {
             <p className="mt-1 text-3xl font-bold tabular-nums text-white">
               {status.current_streak}
             </p>
-            <p className="mt-1 text-xs text-spotify-light-gray/60">
+            <p className="mt-1 text-xs text-spotify-light-gray/75">
               {status.listened_today
                 ? "Hoy ya hay música. Kurt respira."
                 : status.at_risk
@@ -137,7 +137,7 @@ export function KurtDashboard() {
             <p className="mt-1 text-3xl font-bold tabular-nums text-white">
               {status.longest_streak}
             </p>
-            <p className="mt-1 text-xs text-spotify-light-gray/60">
+            <p className="mt-1 text-xs text-spotify-light-gray/75">
               {status.incidents} corte{status.incidents === 1 ? "" : "s"} en la
               historia
             </p>
@@ -151,7 +151,7 @@ export function KurtDashboard() {
             <p className="mt-1 text-3xl font-bold tabular-nums text-white">
               {status.total_listen_days}
             </p>
-            <p className="mt-1 text-xs text-spotify-light-gray/60">
+            <p className="mt-1 text-xs text-spotify-light-gray/75">
               {status.last_listen_day
                 ? `Último: ${formatChileCalendarDayLong(status.last_listen_day)}`
                 : "Sin plays de 30s+"}
@@ -183,12 +183,12 @@ export function KurtDashboard() {
               );
             })}
           </div>
-          <div className="mt-2 grid grid-cols-7 text-center text-[10px] text-spotify-light-gray/50">
+          <div className="mt-2 grid grid-cols-7 text-center text-[10px] text-spotify-light-gray/75">
             {status.recent.slice(-7).map((day) => (
               <span key={`w-${day.date}`}>{weekdayShort(day.date)}</span>
             ))}
           </div>
-          <p className="mt-3 text-xs text-spotify-light-gray/55">
+          <p className="mt-3 text-xs text-spotify-light-gray/75">
             Un día cuenta si hay al menos una reproducción de 30 segundos. Un skip
             no salva a Kurt. Zona: Chile.
           </p>
@@ -201,7 +201,7 @@ export function KurtDashboard() {
             Hablar con Kurt
           </Link>
         )}
-        <p className="text-xs text-spotify-light-gray/60">
+        <p className="text-xs text-spotify-light-gray/75">
           Si no escuchas un día, la racha cae a 0 y Kurt se dispara. Estilo
           Duolingo: amenaza de cartón, no de verdad.
         </p>
@@ -210,7 +210,7 @@ export function KurtDashboard() {
       <Card>
         <CardContent className="space-y-2 p-4 sm:p-5">
           <p className="text-sm font-medium text-white">Amenazas push</p>
-          <p className="text-xs text-spotify-light-gray/60">
+          <p className="text-xs text-spotify-light-gray/75">
             Kurt avisa al mediodía, de noche y a última hora si hoy todavía no hay
             música. En iPhone hay que abrir la app desde la pantalla de inicio.
           </p>

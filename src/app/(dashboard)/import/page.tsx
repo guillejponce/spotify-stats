@@ -6,6 +6,7 @@ import { ImportGuide } from "@/components/import/import-guide";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
 import type { Import } from "@/types/database";
+import { PageHeader } from "@/components/ui/page-header";
 
 export default function ImportPage() {
   const [imports, setImports] = useState<Import[]>([]);
@@ -44,12 +45,10 @@ export default function ImportPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Importar historial</h1>
-        <p className="text-sm text-spotify-light-gray">
-          Sube el historial de streaming extendido que te manda Spotify
-        </p>
-      </div>
+      <PageHeader
+        title="Importar historial"
+        description="Sube el historial de streaming extendido que te manda Spotify."
+      />
 
       {!loadingImports && <ImportGuide defaultOpen={imports.length === 0} />}
 

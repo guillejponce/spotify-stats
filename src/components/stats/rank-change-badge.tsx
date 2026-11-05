@@ -55,7 +55,7 @@ export function RankChangeBadge({
       }
     >
       {showRank && rank != null && (
-        <span className="text-xs font-medium tabular-nums text-spotify-light-gray/50">
+        <span className="text-xs font-medium tabular-nums text-spotify-light-gray/75">
           {rank}
         </span>
       )}
@@ -77,7 +77,7 @@ export function RankChangeBadge({
         </span>
       )}
       {tone === "flat" && (
-        <span className="inline-flex items-center text-[10px] text-spotify-light-gray/35">
+        <span className="inline-flex items-center text-[10px] text-spotify-light-gray/75">
           <Minus className="h-3 w-3" />
         </span>
       )}

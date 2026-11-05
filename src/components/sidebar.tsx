@@ -48,7 +48,7 @@ type NavGroup = {
 
 const pinnedItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/now-playing", label: "Now Playing", icon: Radio },
+  { href: "/now-playing", label: "Sonando ahora", icon: Radio },
 ];
 
 const navGroups: NavGroup[] = [
@@ -68,7 +68,7 @@ const navGroups: NavGroup[] = [
     label: "Historial",
     icon: Clock,
     items: [
-      { href: "/history", label: "History", icon: Clock },
+      { href: "/history", label: "Reproducciones", icon: Clock },
       { href: "/calendar", label: "Calendario", icon: CalendarDays },
       { href: "/wrapped", label: "Wrapped", icon: Gift },
     ],
@@ -89,7 +89,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/charts", label: "Cifras", icon: Guitar },
       { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
-      { href: "/import", label: "Import", icon: Upload },
+      { href: "/import", label: "Importar", icon: Upload },
       { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },
     ],
   },
@@ -211,8 +211,8 @@ export function Sidebar() {
             <Music2 className="h-5 w-5 text-black" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Spotify Stats</h1>
-            <p className="text-xs text-spotify-light-gray">Your music data</p>
+            <p className="text-lg font-bold text-white">Statsify</p>
+            <p className="text-xs text-spotify-light-gray">Tus datos de música</p>
           </div>
         </div>
 

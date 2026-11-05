@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
 import type { TooltipProps } from "recharts";
 import {
   Card,
@@ -14,21 +15,29 @@ import { cn } from "@/lib/utils";
 export const CHART_GREEN = "#1DB954";
 export const CHART_GREEN_BRIGHT = "#1ED760";
 
-export function useIsDesktop() {
-  const [desktop, setDesktop] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 640px)");
-    const apply = () => setDesktop(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-  return desktop;
-}
-
-export function useChartHeight(mobile = 196, desktop = 268) {
-  const isDesktop = useIsDesktop();
-  return isDesktop ? desktop : mobile;
+/** Alto fijo por breakpoint en CSS (sin esperar a JS, evita salto de layout al hidratar). */
+export function ChartBox({
+  mobile = 196,
+  desktop = 268,
+  children,
+}: {
+  mobile?: number;
+  desktop?: number;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="h-[var(--chart-h)] w-full sm:h-[var(--chart-h-sm)]"
+      style={
+        {
+          "--chart-h": `${mobile}px`,
+          "--chart-h-sm": `${desktop}px`,
+        } as CSSProperties
+      }
+    >
+      {children}
+    </div>
+  );
 }
 
 export function ChartSkeleton({ height = 196 }: { height?: number }) {
@@ -53,8 +62,15 @@ export function ChartSkeleton({ height = 196 }: { height?: number }) {
 
 export function ChartEmpty({ message = "Sin datos en este período" }: { message?: string }) {
   return (
-    <div className="flex h-44 items-center justify-center sm:h-64">
+    <div className="flex h-44 flex-col items-center justify-center gap-1.5 px-4 text-center sm:h-64">
       <p className="text-sm text-spotify-light-gray">{message}</p>
+      <p className="text-xs text-spotify-light-gray/75">
+        Prueba con otro período o{" "}
+        <Link href="/import" className="font-medium text-spotify-green hover:underline">
+          importa tu historial
+        </Link>
+        .
+      </p>
     </div>
   );
 }
@@ -114,7 +130,7 @@ export function ChartTip({
   const row = payload[0].payload as TipRow;
   return (
     <div className="rounded-xl border border-white/10 bg-[#141414]/95 px-3 py-2 shadow-2xl backdrop-blur-md">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-white/45">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-white/60">
         {title(row)}
       </p>
       <p className="mt-0.5 text-sm font-semibold tabular-nums text-white">{body(row)}</p>

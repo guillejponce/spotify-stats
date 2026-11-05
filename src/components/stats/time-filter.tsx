@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Loader2 } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -132,6 +132,18 @@ export function TimeFilterControl({
 
 const THIS_YEAR_TAB = "this_year";
 const ALL_MONTHS = "0";
+/** Atajos 1–5 en el orden de las pestañas. */
+const SHORTCUT_TABS = ["all", THIS_YEAR_TAB, "last_6_months", "last_month", "last_week"];
+
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return (
+    el.isContentEditable ||
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT"
+  );
+}
 
 /** Año calendario en curso (Chile) se muestra como la pestaña “Este año”; cualquier otro año/mes vive en los selectores. */
 function isThisYear(value: TimeFilterParams): boolean {
@@ -192,6 +204,21 @@ function DashboardTimeFilter({
     }
   };
 
+  const handleTabRef = useRef(handleTab);
+  handleTabRef.current = handleTab;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
+      const tab = SHORTCUT_TABS[Number(e.key) - 1];
+      if (!tab) return;
+      e.preventDefault();
+      handleTabRef.current(tab);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const emitSpecific = (year: number, month: string) => {
     if (month === ALL_MONTHS) onChange({ filter: "year", year });
     else onChange({ filter: "month", year, month: Number(month) });
@@ -216,23 +243,23 @@ function DashboardTimeFilter({
             className="min-w-0"
           >
             <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
-              <TabsTrigger value="all">
+              <TabsTrigger value="all" title="Atajo: 1">
                 <span className="sm:hidden">Todo</span>
                 <span className="hidden sm:inline">Todo el tiempo</span>
               </TabsTrigger>
-              <TabsTrigger value={THIS_YEAR_TAB}>
+              <TabsTrigger value={THIS_YEAR_TAB} title="Atajo: 2">
                 <span className="sm:hidden">Año</span>
                 <span className="hidden sm:inline">Este año</span>
               </TabsTrigger>
-              <TabsTrigger value="last_6_months">
+              <TabsTrigger value="last_6_months" title="Atajo: 3">
                 <span className="sm:hidden">6 meses</span>
                 <span className="hidden sm:inline">Últimos 6 meses</span>
               </TabsTrigger>
-              <TabsTrigger value="last_month">
+              <TabsTrigger value="last_month" title="Atajo: 4">
                 <span className="sm:hidden">Mes</span>
                 <span className="hidden sm:inline">Último mes</span>
               </TabsTrigger>
-              <TabsTrigger value="last_week">
+              <TabsTrigger value="last_week" title="Atajo: 5">
                 <span className="sm:hidden">Semana</span>
                 <span className="hidden sm:inline">Última semana</span>
               </TabsTrigger>
@@ -255,7 +282,7 @@ function DashboardTimeFilter({
         <CalendarDays
           className={cn(
             "h-4 w-4 shrink-0",
-            isSpecific ? "text-spotify-green" : "text-spotify-light-gray/60",
+            isSpecific ? "text-spotify-green" : "text-spotify-light-gray/75",
           )}
           aria-hidden
         />

@@ -139,7 +139,7 @@ function ArtistDetailInner({
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <p className="text-xs leading-relaxed text-spotify-light-gray/65">
+      <p className="text-xs leading-relaxed text-spotify-light-gray/75">
         Estadísticas del período en {CHILE_TIMEZONE_LABEL}.
       </p>
 
@@ -226,7 +226,7 @@ function ArtistDetailInner({
                       className="flex flex-col gap-2 rounded-xl border border-white/5 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-2"
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <span className="w-7 shrink-0 text-right text-xs text-spotify-light-gray/50">
+                        <span className="w-7 shrink-0 text-right text-xs text-spotify-light-gray/75">
                           {i + 1}
                         </span>
                         <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-spotify-medium-gray sm:h-10 sm:w-10">

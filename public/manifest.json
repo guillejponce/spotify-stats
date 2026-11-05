@@ -1,7 +1,7 @@
 {
   "name": "Statsify",
   "short_name": "Statsify",
-  "description": "Personal Spotify companion dashboard — live and historical listening data.",
+  "description": "Dashboard personal de Spotify: tu escucha en vivo e histórica.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#121212",

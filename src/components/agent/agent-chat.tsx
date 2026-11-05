@@ -657,7 +657,7 @@ export function AgentChat({
               : "Habla con Kurt"
           }
           disabled={busy || recording}
-          className="min-h-[2.75rem] max-h-24 flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-spotify-light-gray/50 focus:border-spotify-green focus:ring-2 focus:ring-spotify-green/30 disabled:opacity-60 lg:py-3"
+          className="min-h-[2.75rem] max-h-24 flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-spotify-light-gray/75 focus:border-spotify-green focus:ring-2 focus:ring-spotify-green/30 disabled:opacity-60 lg:py-3"
         />
         <Button type="submit" disabled={busy || recording || !input.trim()} className="h-11 px-4">
           {busy ? (

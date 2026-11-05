@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn, formatNumber, formatReproductionCount } from "@/lib/utils";
 import { ratingSongKey } from "@/lib/rating-identity";
+import { PageHeader } from "@/components/ui/page-header";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ function RatingDistributionBar({
           </div>
           <span className="w-12 text-right text-[11px] text-spotify-light-gray">
             {d.count}{" "}
-            <span className="text-spotify-light-gray/50">
+            <span className="text-spotify-light-gray/75">
               ({total > 0 ? Math.round((d.count / total) * 100) : 0}%)
             </span>
           </span>
@@ -216,7 +217,7 @@ function RankBadge({ rank }: { rank: number }) {
     return <span className="w-5 text-center text-sm">{emoji}</span>;
   }
   return (
-    <span className="w-5 text-right text-xs font-medium text-spotify-light-gray/50">
+    <span className="w-5 text-right text-xs font-medium text-spotify-light-gray/75">
       {rank}
     </span>
   );
@@ -541,15 +542,10 @@ export default function RatingsPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-          Valoraciones
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Rateá canciones del 1 al 10. Singles y versiones de álbum comparten
-          nota. Rankings calculados por promedio.
-        </p>
-      </div>
+      <PageHeader
+        title="Valoraciones"
+        description="Rateá canciones del 1 al 10. Singles y versiones de álbum comparten nota. Rankings calculados por promedio."
+      />
 
       <Tabs
         value={activeTab}
@@ -597,7 +593,7 @@ export default function RatingsPage() {
             </div>
 
             <div className="relative w-full max-w-none sm:max-w-lg">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/50" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/75" />
               <input
                 type="search"
                 placeholder={
@@ -607,7 +603,7 @@ export default function RatingsPage() {
                 }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-full border border-white/10 bg-spotify-dark-gray py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/50 focus:border-spotify-green/50 focus:outline-none focus:ring-1 focus:ring-spotify-green/30"
+                className="w-full rounded-full border border-white/10 bg-spotify-dark-gray py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/75 focus:border-spotify-green/50 focus:outline-none focus:ring-1 focus:ring-spotify-green/30"
               />
             </div>
 
@@ -745,7 +741,7 @@ export default function RatingsPage() {
                             <p className="truncate text-xs text-spotify-light-gray">
                               {album.artist_name}
                               {album.track_count > 0 && (
-                                <span className="text-spotify-light-gray/50">
+                                <span className="text-spotify-light-gray/75">
                                   {" · "}
                                   {album.track_count} canción
                                   {album.track_count === 1 ? "" : "es"}
@@ -881,7 +877,7 @@ export default function RatingsPage() {
                               <p className="truncate text-xs text-spotify-light-gray">
                                 {r.artist_name}
                                 {r.album_name && (
-                                  <span className="text-spotify-light-gray/50">
+                                  <span className="text-spotify-light-gray/75">
                                     {" · "}
                                     {r.album_name}
                                   </span>
@@ -890,9 +886,9 @@ export default function RatingsPage() {
                             </div>
                             <RatingBadge value={r.rating} size="md" />
                             {isOpen ? (
-                              <ChevronUp className="h-4 w-4 shrink-0 text-spotify-light-gray/50" />
+                              <ChevronUp className="h-4 w-4 shrink-0 text-spotify-light-gray/75" />
                             ) : (
-                              <ChevronDown className="h-4 w-4 shrink-0 text-spotify-light-gray/50" />
+                              <ChevronDown className="h-4 w-4 shrink-0 text-spotify-light-gray/75" />
                             )}
                           </button>
 
@@ -930,7 +926,7 @@ export default function RatingsPage() {
                                     void handleDelete(r.track_id);
                                   }}
                                   disabled={deletingTrack === r.track_id}
-                                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-spotify-light-gray/50 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-spotify-light-gray/75 transition-colors hover:bg-red-500/10 hover:text-red-400"
                                 >
                                   {deletingTrack === r.track_id ? (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -947,7 +943,7 @@ export default function RatingsPage() {
                                   <Clock className="h-3.5 w-3.5" />
                                   Historial de reproducciones
                                   {!trackPlaysLoading && (
-                                    <span className="font-normal text-spotify-light-gray/50">
+                                    <span className="font-normal text-spotify-light-gray/75">
                                       ({formatReproductionCount(trackPlaysTotal)})
                                     </span>
                                   )}
@@ -955,7 +951,7 @@ export default function RatingsPage() {
                                 {trackPlaysLoading ? (
                                   <LoadingLine text="Cargando reproducciones…" />
                                 ) : trackPlays.length === 0 ? (
-                                  <p className="py-3 text-center text-xs text-spotify-light-gray/50">
+                                  <p className="py-3 text-center text-xs text-spotify-light-gray/75">
                                     Sin reproducciones registradas.
                                   </p>
                                 ) : (
@@ -981,7 +977,7 @@ export default function RatingsPage() {
                                             minute: "2-digit",
                                           })}
                                         </span>
-                                        <span className="text-spotify-light-gray/50">
+                                        <span className="text-spotify-light-gray/75">
                                           {Math.round(p.ms_played / 1000 / 60)}
                                           :{String(
                                             Math.round(
@@ -1138,7 +1134,7 @@ export default function RatingsPage() {
                               "rounded-full p-1.5 transition-colors",
                               comparing
                                 ? "bg-spotify-green/20 text-spotify-green"
-                                : "text-spotify-light-gray/40 hover:bg-white/5 hover:text-white"
+                                : "text-spotify-light-gray/75 hover:bg-white/5 hover:text-white"
                             )}
                             title="Comparar"
                           >
@@ -1258,7 +1254,7 @@ function DashboardTab({
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-4 w-4 text-spotify-green" />
               Top canciones
-              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/50">
+              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/75">
                 {data.topTracks.length}
               </span>
             </CardTitle>
@@ -1289,7 +1285,7 @@ function DashboardTab({
             <button
               type="button"
               onClick={() => setShowAllTracks((p) => !p)}
-              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/75 transition-colors hover:text-white"
             >
               {showAllTracks ? "Ver menos" : `Ver las ${data.topTracks.length}`}
             </button>
@@ -1316,7 +1312,7 @@ function DashboardTab({
             <CardTitle className="flex items-center gap-2 text-base">
               <Disc3 className="h-4 w-4 text-spotify-green" />
               Top álbumes
-              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/50">
+              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/75">
                 promedio
               </span>
             </CardTitle>
@@ -1353,7 +1349,7 @@ function DashboardTab({
             <button
               type="button"
               onClick={() => setShowAllAlbums((p) => !p)}
-              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/75 transition-colors hover:text-white"
             >
               {showAllAlbums ? "Ver menos" : `Ver los ${data.topAlbums.length}`}
             </button>
@@ -1365,7 +1361,7 @@ function DashboardTab({
             <CardTitle className="flex items-center gap-2 text-base">
               <Users className="h-4 w-4 text-spotify-green" />
               Top artistas
-              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/50">
+              <span className="ml-auto text-[11px] font-normal text-spotify-light-gray/75">
                 promedio
               </span>
             </CardTitle>
@@ -1409,7 +1405,7 @@ function DashboardTab({
             <button
               type="button"
               onClick={() => setShowAllArtists((p) => !p)}
-              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/60 transition-colors hover:text-white"
+              className="w-full border-t border-white/5 py-2 text-xs text-spotify-light-gray/75 transition-colors hover:text-white"
             >
               {showAllArtists ? "Ver menos" : `Ver los ${data.topArtists.length}`}
             </button>
@@ -1677,7 +1673,7 @@ function DiscoverTab({
                     {current.artist_name}
                   </p>
                   {current.album_name && (
-                    <p className="mt-0.5 text-xs text-white/50 drop-shadow-lg">
+                    <p className="mt-0.5 text-xs text-white/60 drop-shadow-lg">
                       {current.album_name}
                     </p>
                   )}
@@ -1703,7 +1699,7 @@ function DiscoverTab({
 
               {/* Rating section */}
               <div className="space-y-3 p-5">
-                <p className="text-center text-xs text-spotify-light-gray/60">
+                <p className="text-center text-xs text-spotify-light-gray/75">
                   {isRated ? "Valoración guardada" : "¿Qué nota le das?"}
                 </p>
                 <div className="flex justify-center">
@@ -1826,7 +1822,7 @@ function StatCard({
         <p className="mt-2 text-2xl font-bold text-white">{value}</p>
         <p className="truncate text-[11px] text-spotify-light-gray">{label}</p>
         {sublabel && (
-          <p className="truncate text-[10px] text-spotify-light-gray/50">
+          <p className="truncate text-[10px] text-spotify-light-gray/75">
             {sublabel}
           </p>
         )}
@@ -1856,7 +1852,7 @@ function TrackRatingList({
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
               {numbered && (
-                <span className="w-5 text-right text-xs font-medium text-spotify-light-gray/50">
+                <span className="w-5 text-right text-xs font-medium text-spotify-light-gray/75">
                   {idx + 1}
                 </span>
               )}
@@ -1868,7 +1864,7 @@ function TrackRatingList({
                 <p className="truncate text-xs text-spotify-light-gray">
                   {track.artist_name}
                   {track.album_name && (
-                    <span className="text-spotify-light-gray/50">
+                    <span className="text-spotify-light-gray/75">
                       {" · "}
                       {track.album_name}
                     </span>
@@ -1981,7 +1977,7 @@ function ExpandableAlbumRow({
             "rounded-full p-1.5 transition-colors",
             isComparing
               ? "bg-spotify-green/20 text-spotify-green"
-              : "text-spotify-light-gray/40 hover:bg-white/5 hover:text-white"
+              : "text-spotify-light-gray/75 hover:bg-white/5 hover:text-white"
           )}
           title="Comparar"
         >
@@ -1992,9 +1988,9 @@ function ExpandableAlbumRow({
           )}
         </button>
         {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-spotify-light-gray/50" />
+          <ChevronUp className="h-4 w-4 text-spotify-light-gray/75" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-spotify-light-gray/50" />
+          <ChevronDown className="h-4 w-4 text-spotify-light-gray/75" />
         )}
       </button>
 
@@ -2035,7 +2031,7 @@ function ExpandableAlbumRow({
                     key={t.id}
                     className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/5"
                   >
-                    <span className="w-5 text-right text-[11px] text-spotify-light-gray/40">
+                    <span className="w-5 text-right text-[11px] text-spotify-light-gray/75">
                       {idx + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -2096,7 +2092,7 @@ function ComparePanel({
           <button
             type="button"
             onClick={onClear}
-            className="text-xs text-spotify-light-gray/50 hover:text-white"
+            className="text-xs text-spotify-light-gray/75 hover:text-white"
           >
             Limpiar
           </button>
@@ -2122,7 +2118,7 @@ function ComparePanel({
                   <span className="text-lg font-bold text-spotify-green">
                     {fmtAvg(item.avg_rating)}
                   </span>
-                  <span className="text-[11px] text-spotify-light-gray/50">
+                  <span className="text-[11px] text-spotify-light-gray/75">
                     ({item.count}{item.total ? `/${item.total}` : ""} canción{(item.total || item.count) === 1 ? "" : "es"})
                   </span>
                 </div>
@@ -2130,7 +2126,7 @@ function ComparePanel({
               <button
                 type="button"
                 onClick={() => onRemove(item.id)}
-                className="rounded-full p-1 text-spotify-light-gray/30 hover:text-white"
+                className="rounded-full p-1 text-spotify-light-gray/75 hover:text-white"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
