@@ -171,7 +171,11 @@ export async function getWrappedPayload(
   const params: TimeFilterParams = { filter: "year", year };
   const yearQs = `filter=year&year=${year}`;
 
-  const [bundle, heatmap, tracks, artists, albums, lastBundle, availableYears] =
+  // Calcular fechas del año para diversity score
+  const yearStart = new Date(year, 0, 1).toISOString();
+  const yearEnd = isCurrent ? now.toISOString() : new Date(year, 11, 31, 23, 59, 59).toISOString();
+
+  const [bundle, heatmap, tracks, artists, albums, lastBundle, availableYears, diversityScore] =
     await Promise.all([
       getDashboardBundlePayload(ctx, params, 8),
       getHeatmapData(ctx, year).catch(() => []),
@@ -199,6 +203,11 @@ export async function getWrappedPayload(
           )
         : Promise.resolve(null),
       listListenYears(ctx, todayYear, year).catch(() => [todayYear, year]),
+      ctx.db.rpc("calculate_diversity_score", {
+        p_user_id: ctx.userId,
+        p_start_date: yearStart,
+        p_end_date: yearEnd,
+      }).then(({ data }) => data).catch(() => null),
     ]);
 
   const listenDaysSet = new Set(
@@ -355,6 +364,29 @@ export async function getWrappedPayload(
       label: "Si seguís así",
       value: formatMs(projectedMs),
       hint: `proyección a fin de ${year}`,
+    });
+  }
+
+  // Diversity Score
+  if (diversityScore && typeof diversityScore.overall_score === "number") {
+    const score = Math.round(diversityScore.overall_score * 100);
+    const diversity = diversityScore as {
+      overall_score: number;
+      unique_artists: number;
+      unique_genres: number;
+    };
+    
+    let diversityLabel = "";
+    if (score >= 80) diversityLabel = "Explorador";
+    else if (score >= 60) diversityLabel = "Variado";
+    else if (score >= 40) diversityLabel = "Equilibrado";
+    else if (score >= 20) diversityLabel = "Enfocado";
+    else diversityLabel = "Monocorde";
+
+    facts.push({
+      label: "Diversidad",
+      value: diversityLabel,
+      hint: `${diversity.unique_artists} artistas · ${diversity.unique_genres} géneros`,
     });
   }
 

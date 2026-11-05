@@ -83,11 +83,19 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    id: "analysis",
+    label: "Análisis",
+    icon: Wrench,
+    items: [
+      { href: "/mood", label: "Mood Musical", icon: Bot },
+      { href: "/charts", label: "Cifras", icon: Guitar },
+    ],
+  },
+  {
     id: "tools",
     label: "Herramientas",
     icon: Wrench,
     items: [
-      { href: "/charts", label: "Cifras", icon: Guitar },
       { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
       { href: "/import", label: "Importar", icon: Upload },
       { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },

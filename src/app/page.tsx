@@ -8,6 +8,8 @@ import { TimeFilterControl } from "@/components/stats/time-filter";
 import { DashboardPeriodBar } from "@/components/stats/dashboard-period-bar";
 import { KurtStreakCard } from "@/components/kurt/kurt-streak-card";
 import { ListeningInsights } from "@/components/stats/listening-insights";
+import { TrendingWidget } from "@/components/trends/trending-widget";
+import { FriendActivityFeed } from "@/components/friends/friend-activity-feed";
 import {
   StatsSyncBanner,
   type RecentSyncPhase,
@@ -316,6 +318,20 @@ export default function DashboardPage() {
             weekdaySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
           }}
         />
+      )}
+
+      {/* Sección de Trending y Actividad Social */}
+      {!blockingLoad && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TrendingWidget />
+          <div>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <span className="text-2xl">👥</span>
+              Actividad de Amigos
+            </h3>
+            <FriendActivityFeed limit={5} compact />
+          </div>
+        </div>
       )}
 
       <div className="grid gap-5 sm:gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] xl:items-start">
