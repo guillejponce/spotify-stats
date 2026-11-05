@@ -5,6 +5,9 @@
 /** Valor en DB para sync vía Recently Played (API no indica dispositivo). */
 export const PLAYBACK_PLATFORM_SPOTIFY_SYNC = "spotify_recent_api" as const;
 
+/** Valor en DB para plays traídos desde Last.fm (tampoco indica dispositivo). */
+export const PLAYBACK_PLATFORM_LASTFM = "lastfm" as const;
+
 export function formatPlaybackPlatform(raw: string | null | undefined): string {
   const s = String(raw ?? "").trim();
   const lower = s.toLowerCase();
@@ -21,6 +24,9 @@ export function formatPlaybackPlatform(raw: string | null | undefined): string {
   if (lower === PLAYBACK_PLATFORM_SPOTIFY_SYNC) {
     return "Últimos escuchados (API Spotify)";
   }
+  if (lower === PLAYBACK_PLATFORM_LASTFM) {
+    return "Last.fm";
+  }
 
   /* Export extendido suele usar slugs tipo ANDROID_TV o IPHONE_IOS */
   if (/^[a-z0-9_/]+$/i.test(s.replace(/\s+/g, "")) && /[_\/]/.test(s)) {
@@ -36,6 +42,7 @@ export function formatPlaybackSource(raw: string | null | undefined): string {
   if (!s || s === "null") return "Sin clasificar";
   if (s === "live") return "Últimos escuchados (sync)";
   if (s === "spotify_export") return "Histórico (export Spotify)";
+  if (s === "lastfm") return "Last.fm";
   return String(raw ?? "").trim();
 }
 

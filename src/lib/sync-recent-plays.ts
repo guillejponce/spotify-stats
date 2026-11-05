@@ -5,11 +5,7 @@ import {
   getSpotifyAccessToken,
 } from "@/lib/spotify-token";
 import { enrichArtistsMissingImages } from "@/lib/enrich-artist-images";
-import { upsertTrackAndGetPk } from "@/lib/spotify-tracks-db";
-import {
-  upsertArtistAndGetDbId,
-  upsertAlbumAndGetDbId,
-} from "@/lib/spotify-graph-db";
+import { persistSpotifyTrackGraph } from "@/lib/spotify-track-graph";
 import { PLAYBACK_PLATFORM_SPOTIFY_SYNC } from "@/lib/playback-platform";
 import { creditLiveListenIfNeeded } from "@/lib/kurt-live-listen";
 
@@ -33,13 +29,6 @@ export type SyncRecentOptions = {
 };
 
 type RecentEntry = { track?: Record<string, unknown>; played_at?: string };
-
-type ArtistStub = {
-  id: string;
-  name: string;
-  images?: { url?: string }[];
-  external_urls?: { spotify?: string };
-};
 
 const inflight = new Map<string, Promise<SyncRecentResult>>();
 
@@ -77,75 +66,9 @@ async function persistRecentEntry(
   const playedAt = entry.played_at;
   if (!track?.id || !playedAt || typeof playedAt !== "string") return "skipped";
 
-  const artists = track.artists as ArtistStub[] | undefined;
-  const album = track.album as
-    | {
-        id: string;
-        name: string;
-        images?: { url?: string }[];
-        release_date?: string;
-        album_type?: string;
-        external_urls?: { spotify?: string };
-      }
-    | undefined;
-
-  const FALLBACK_ARTIST: ArtistStub = {
-    id: `unknown_${String(track.name ?? "x").slice(0, 20)}`,
-    name: "Unknown",
-  };
-
-  const primaryArtist = artists?.[0] ?? FALLBACK_ARTIST;
-  const spotifyArtistKey =
-    primaryArtist?.id ||
-    String(track.name ?? "unknown")
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "_");
-
-  const artistDbId = await upsertArtistAndGetDbId(supabase, {
-    spotifyArtistId: spotifyArtistKey,
-    name: primaryArtist.name || "Unknown",
-    image_url:
-      primaryArtist.images?.[0]?.url ?? album?.images?.[0]?.url ?? null,
-    spotify_url: primaryArtist.external_urls?.spotify ?? null,
-  });
-
-  if (!artistDbId) {
-    console.error("[sync-recent] artist upsert failed", spotifyArtistKey);
-    return "skipped";
-  }
-
-  let albumDbId: string | null = null;
-  if (album?.name) {
-    albumDbId = await upsertAlbumAndGetDbId(supabase, {
-      spotifyAlbumId: album?.id ?? null,
-      name: album.name,
-      artist_db_id: artistDbId,
-      image_url: album.images?.[0]?.url ?? null,
-      release_date: album.release_date ?? null,
-      album_type: album.album_type ?? null,
-      spotify_url: album.external_urls?.spotify ?? null,
-    });
-  }
-
-  const dbTrackId = await upsertTrackAndGetPk(supabase, {
-    spotifyTrackId: track.id as string,
-    name: track.name as string,
-    artist_id: artistDbId,
-    album_id: albumDbId,
-    duration_ms: typeof track.duration_ms === "number" ? track.duration_ms : 0,
-    explicit: Boolean(track.explicit),
-    preview_url: (track.preview_url as string | null) ?? null,
-    spotify_url:
-      (track.external_urls as { spotify?: string } | undefined)?.spotify ??
-      null,
-    popularity:
-      typeof track.popularity === "number" ? (track.popularity as number) : null,
-  });
-
-  if (!dbTrackId) {
-    console.error("[sync-recent] tracks upsert failed", track.id);
-    return "skipped";
-  }
+  const persisted = await persistSpotifyTrackGraph(supabase, track);
+  if (!persisted) return "skipped";
+  const { trackId: dbTrackId, artistId: artistDbId, albumId: albumDbId } = persisted;
 
   const playedAtTs = new Date(playedAt).toISOString();
 

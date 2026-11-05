@@ -11,8 +11,57 @@ import {
 } from "@/lib/spotify-graph-db";
 import { getTrackHarmony } from "@/lib/track-harmony";
 import { requireUser } from "@/lib/auth";
+import type { UserCtx } from "@/lib/user-context";
+import { loadLastfmAccount, syncLastfmForUser } from "@/lib/lastfm-sync";
 
 export const dynamic = "force-dynamic";
+
+/** Last.fm no da progreso ni pausa: solo "sonando ahora" sí/no. `undefined` = sin Last.fm. */
+async function lastfmNowPlaying(ctx: UserCtx) {
+  const account = await loadLastfmAccount(ctx.db, ctx.userId);
+  if (!account) return undefined;
+  await syncLastfmForUser(ctx, { minIntervalMs: 30_000 });
+
+  const { data: np } = await ctx.db
+    .from("now_playing")
+    .select("is_playing, track_id")
+    .eq("user_id", ctx.userId)
+    .maybeSingle();
+  if (!np?.is_playing || !np.track_id) return null;
+
+  const [{ data: track }, { data: rating }] = await Promise.all([
+    ctx.db
+      .from("tracks")
+      .select("id, name, duration_ms, artist_id, artists(name), albums(name, image_url)")
+      .eq("id", np.track_id)
+      .maybeSingle(),
+    ctx.db
+      .from("song_ratings")
+      .select("rating")
+      .eq("user_id", ctx.userId)
+      .eq("track_id", np.track_id)
+      .maybeSingle(),
+  ]);
+  if (!track) return null;
+  const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
+  const artist = one(track.artists as { name: string } | { name: string }[] | null);
+  const album = one(track.albums as { name: string; image_url: string | null } | { name: string; image_url: string | null }[] | null);
+
+  return {
+    track_id: track.id,
+    artist_id: track.artist_id,
+    track_name: track.name,
+    artist_name: artist?.name ?? "",
+    album_name: album?.name ?? null,
+    album_art_url: album?.image_url ?? null,
+    duration_ms: track.duration_ms ?? 0,
+    progress_ms: 0,
+    is_playing: true,
+    current_rating: (rating?.rating as number | undefined) ?? null,
+    key: null,
+    tempo: null,
+  };
+}
 
 export async function GET() {
   const auth = await requireUser();
@@ -23,6 +72,8 @@ export async function GET() {
     let accessToken = await getSpotifyAccessToken(ctx);
 
     if (!accessToken) {
+      const fromLastfm = await lastfmNowPlaying(ctx);
+      if (fromLastfm !== undefined) return NextResponse.json({ nowPlaying: fromLastfm, source: "lastfm" });
       return NextResponse.json(
         { error: "Not authenticated with Spotify" },
         { status: 401 }

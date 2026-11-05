@@ -32,7 +32,8 @@ export async function refreshSpotifyToken(refreshToken: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`Spotify refresh error: ${response.statusText}`);
+    const body = await response.text().catch(() => "");
+    throw new Error(`Spotify refresh error: ${response.status} ${body.slice(0, 200)}`);
   }
 
   return response.json();

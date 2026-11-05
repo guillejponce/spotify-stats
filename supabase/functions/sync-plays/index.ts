@@ -293,6 +293,13 @@ async function syncUser(
       "[sync-plays] Token refresh failed — response:",
       JSON.stringify(tokenParsed),
     );
+    // Spotify vence los refresh tokens a los 6 meses: la app pide reconectar.
+    if (tokenParsed.error === "invalid_grant") {
+      await supabase
+        .from("spotify_tokens")
+        .update({ needs_reconnect: true, updated_at: new Date().toISOString() })
+        .eq("user_id", row.user_id);
+    }
     return { status: 500, body: { error: "Token refresh failed" } };
   }
 
@@ -666,7 +673,8 @@ Deno.serve(async (req) => {
     const { data: tokenRows, error: tokenErr } = await supabase
       .from("spotify_tokens")
       .select("user_id, access_token, refresh_token, expires_at")
-      .not("user_id", "is", null);
+      .not("user_id", "is", null)
+      .eq("needs_reconnect", false);
     if (tokenErr) {
       console.error("[sync-plays] spotify_tokens query error", tokenErr);
       return new Response(JSON.stringify({ error: String(tokenErr.message) }), {

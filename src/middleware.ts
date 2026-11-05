@@ -4,7 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 /** Rutas sin sesión: login/OAuth y endpoints que se autentican con CRON_SECRET. */
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/login" || pathname.startsWith("/auth/")) return true;
-  if (pathname === "/api/spotify/auth") return true;
+  if (pathname === "/api/spotify/auth" || pathname === "/api/auth/google") return true;
   if (pathname.startsWith("/api/cron/")) return true;
   if (pathname === "/api/spotify/sync-recent") return true;
   return false;

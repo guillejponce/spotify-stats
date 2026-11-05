@@ -71,6 +71,15 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     ),
   },
   {
+    q: "Uso Last.fm, ¿se duplican las canciones?",
+    a: (
+      <>
+        No. Las canciones que ya llegaron por Last.fm se reconocen y no se cuentan dos veces. Puedes subir el zip
+        antes o después de conectar Last.fm.
+      </>
+    ),
+  },
+  {
     q: "Se cortó a la mitad",
     a: (
       <>

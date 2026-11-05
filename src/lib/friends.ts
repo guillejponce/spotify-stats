@@ -314,7 +314,37 @@ export type ProfileView = {
     topAlbums: TopItem[];
   } | null;
   listening: ListeningNow | null;
+  source: DataSource | null;
 };
+
+/** De dónde llegan las canciones nuevas de la persona. */
+export type DataSource =
+  | { kind: "spotify" }
+  | { kind: "lastfm"; username: string; profileUrl: string | null }
+  | { kind: "history"; lastPlayAt: string | null };
+
+async function loadDataSource(db: SupabaseClient, userId: string): Promise<DataSource> {
+  const [{ data: token }, { data: lastfm }] = await Promise.all([
+    db.from("spotify_tokens").select("refresh_token, needs_reconnect").eq("user_id", userId).maybeSingle(),
+    db.from("lastfm_accounts").select("username, profile_url").eq("user_id", userId).maybeSingle(),
+  ]);
+  if (token?.refresh_token && !token.needs_reconnect) return { kind: "spotify" };
+  if (lastfm) {
+    return {
+      kind: "lastfm",
+      username: lastfm.username as string,
+      profileUrl: (lastfm.profile_url as string | null) ?? null,
+    };
+  }
+  const { data: last } = await db
+    .from("plays")
+    .select("played_at")
+    .eq("user_id", userId)
+    .order("played_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return { kind: "history", lastPlayAt: (last?.played_at as string | undefined) ?? null };
+}
 
 /** Stats solo para uno mismo o amigos aceptados; el resto ve la ficha pública. */
 export async function getProfileView(
@@ -331,14 +361,15 @@ export async function getProfileView(
   const relation = await relationBetween(db, viewerId, targetId);
   const resolved = periodParams(period);
   if (relation !== "self" && relation !== "friends") {
-    return { profile, relation, period: resolved.period, stats: null, listening: null };
+    return { profile, relation, period: resolved.period, stats: null, listening: null, source: null };
   }
 
   const ctx = { db, userId: targetId };
-  const [bundle, kurt, listening] = await Promise.all([
+  const [bundle, kurt, listening, source] = await Promise.all([
     getDashboardBundlePayload(ctx, resolved.params, 10),
     readKurtStatus(ctx).catch(() => null),
     loadListening(db, targetId).catch(() => null),
+    loadDataSource(db, targetId).catch(() => null),
   ]);
 
   return {
@@ -355,5 +386,6 @@ export async function getProfileView(
       topAlbums: bundle.topAlbums,
     },
     listening,
+    source,
   };
 }

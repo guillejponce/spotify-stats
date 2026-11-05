@@ -1,24 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionSupabaseClient, getProfile } from "@/lib/auth";
 import { createServerSupabaseClient } from "@/lib/supabase";
-import { SPOTIFY_SCOPES, getSpotifyMe } from "@/lib/spotify";
+import { saveSpotifyConnection, needsOnboarding } from "@/lib/spotify-connect";
+import { safeNextPath } from "@/lib/app-url";
 
 export const dynamic = "force-dynamic";
 
-function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("://")) {
-    return "/";
-  }
-  return value;
-}
-
 /**
- * Vuelta de Supabase Auth (Spotify). Supabase entrega provider_token y
- * provider_refresh_token solo en este momento, así que se guardan acá.
+ * Vuelta de Supabase Auth (Spotify o Google). Con Spotify, Supabase entrega
+ * provider_token y provider_refresh_token solo en este momento: se guardan acá.
  */
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const next = safeNext(request.nextUrl.searchParams.get("next"));
+  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
   const sp = request.nextUrl.searchParams;
   const oauthError = sp.get("error_description") || sp.get("error_code") || sp.get("error");
 
@@ -41,49 +35,38 @@ export async function GET(request: NextRequest) {
 
   const { session, user } = data;
   const db = createServerSupabaseClient();
-
-  if (session.provider_token) {
-    const row: Record<string, unknown> = {
-      id: user.id,
-      user_id: user.id,
-      access_token: session.provider_token,
-      expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-      scope: SPOTIFY_SCOPES,
-    };
-    if (session.provider_refresh_token) row.refresh_token = session.provider_refresh_token;
-    const { error: tokenErr } = await db
-      .from("spotify_tokens")
-      .upsert(row, { onConflict: "user_id" });
-    if (tokenErr) console.error("[auth/callback] spotify_tokens upsert failed", tokenErr);
-  }
+  const viaSpotify = sp.get("via") !== "google";
 
   const meta = user.user_metadata ?? {};
+  const { data: current } = await db
+    .from("profiles")
+    .select("display_name, avatar_url")
+    .eq("id", user.id)
+    .maybeSingle();
   await db
     .from("profiles")
     .update({
-      display_name: meta.full_name ?? meta.name ?? null,
-      avatar_url: meta.avatar_url ?? meta.picture ?? null,
-      spotify_user_id: meta.provider_id ?? meta.sub ?? null,
+      display_name: meta.full_name ?? meta.name ?? current?.display_name ?? null,
+      avatar_url: meta.avatar_url ?? meta.picture ?? current?.avatar_url ?? null,
+      ...(viaSpotify ? { spotify_user_id: meta.provider_id ?? meta.sub ?? null } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", user.id);
 
-  const me = session.provider_token ? await getSpotifyMe(session.provider_token) : null;
-  if (me) {
-    const extra: Record<string, unknown> = {};
-    for (const key of ["display_name", "avatar_url", "country", "followers", "product", "spotify_url"] as const) {
-      if (me[key] != null) extra[key] = me[key];
-    }
-    if (Object.keys(extra).length) {
-      const { error: meErr } = await db.from("profiles").update(extra).eq("id", user.id);
-      if (meErr) console.error("[auth/callback] profile /me update failed", meErr);
-    }
+  // Con Google, `provider_token` es de Google: no sirve para la API de Spotify.
+  if (viaSpotify && session.provider_token) {
+    await saveSpotifyConnection(db, user.id, {
+      accessToken: session.provider_token,
+      refreshToken: session.provider_refresh_token,
+    });
   }
 
   const profile = await getProfile(user.id);
   if (profile?.status !== "active") {
     return NextResponse.redirect(new URL("/pending", request.url));
+  }
+  if (next === "/" && (await needsOnboarding(db, user.id))) {
+    return NextResponse.redirect(new URL("/welcome", request.url));
   }
   return NextResponse.redirect(new URL(next, request.url));
 }

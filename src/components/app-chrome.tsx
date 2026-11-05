@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { AgentDock } from "@/components/agent/agent-dock";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { SetupBanner } from "@/components/onboarding/setup-banner";
 import { useSession } from "@/components/session-provider";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
               : "mx-auto max-w-7xl px-3 py-6 pt-[max(4.25rem,env(safe-area-inset-top)+3rem)] sm:px-4 sm:py-8 lg:px-8 lg:pt-8",
           )}
         >
+          {!isAgent && <SetupBanner />}
           {children}
         </div>
       </main>

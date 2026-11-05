@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase";
 import { isCronAuthorized, requireUser } from "@/lib/auth";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
 import { forEachUser, listActiveUsersWithSpotify } from "@/lib/user-context";
+import { syncLastfmForUser } from "@/lib/lastfm-sync";
 
 /**
  * Con `Authorization: Bearer CRON_SECRET` sincroniza a todos los usuarios activos;
@@ -25,6 +26,16 @@ export async function GET(request: NextRequest) {
     const result = await syncRecentPlaysFromSpotify(auth.ctx, 50);
 
     if (!result.ok && result.error === "no_tokens") {
+      const lastfm = await syncLastfmForUser(auth.ctx);
+      if (lastfm.skippedReason !== "not_connected") {
+        return NextResponse.json({
+          synced: lastfm.inserted,
+          skipped: lastfm.duplicates + lastfm.unmatched,
+          polled: lastfm.polled,
+          source: "lastfm",
+          ...(lastfm.error ? { error: lastfm.error } : {}),
+        });
+      }
       return NextResponse.json(
         { error: "No Spotify tokens; connect Spotify first." },
         { status: 401 }

@@ -23,6 +23,7 @@ import {
   Shield,
   UserRound,
   UsersRound,
+  ListChecks,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/friends/user-avatar";
@@ -49,6 +50,7 @@ const navItems: {
   { href: "/now-playing", label: "Now Playing", icon: Radio },
   { href: "/history", label: "History", icon: Clock },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/welcome", label: "Conexiones", icon: ListChecks },
   { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },
 ];
 

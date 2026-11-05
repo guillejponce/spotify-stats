@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionSupabaseClient } from "@/lib/auth";
 import { SPOTIFY_SCOPES } from "@/lib/spotify";
+import { appOrigin, safeNextPath } from "@/lib/app-url";
 
 export const dynamic = "force-dynamic";
 
-function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("://")) {
-    return "/";
-  }
-  return value;
-}
-
 /** Login y reconexión: Supabase Auth con Spotify (también renueva los scopes del token). */
 export async function GET(request: NextRequest) {
-  const next = safeNext(request.nextUrl.searchParams.get("next"));
-  const origin = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") || request.nextUrl.origin;
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+  const redirectTo = `${appOrigin(request)}/auth/callback?via=spotify&next=${encodeURIComponent(next)}`;
 
   const supabase = createSessionSupabaseClient();
   const { data, error } = await supabase.auth.signInWithOAuth({

@@ -3,6 +3,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
 import { getHeatmapData } from "@/lib/stats";
 import { syncRecentPlaysFromSpotify } from "@/lib/sync-recent-plays";
+import { syncLastfmForUser } from "@/lib/lastfm-sync";
 import {
   creditLiveListenIfNeeded,
   overlayListenedToday,
@@ -209,7 +210,8 @@ export async function getKurtStatus(
   if (status.listened_today) return status;
 
   try {
-    await syncRecentPlaysFromSpotify(ctx, 50);
+    const spotify = await syncRecentPlaysFromSpotify(ctx, 50);
+    if (!spotify.ok && spotify.error === "no_tokens") await syncLastfmForUser(ctx);
   } catch (e) {
     console.warn("[kurt] recent sync", e);
   }

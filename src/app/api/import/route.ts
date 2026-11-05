@@ -147,6 +147,9 @@ async function finalize(ctx: UserCtx, body: FinalizeBody) {
   const row = await loadImport(ctx, body.import_id);
   if (!row) return bad("Import no encontrado", 404);
 
+  const { error: dedupeErr } = await ctx.db.rpc("dedupe_lastfm_plays", { p_user_id: ctx.userId });
+  if (dedupeErr) console.warn("[import] dedupe_lastfm_plays", dedupeErr.message);
+
   // El trigger de plays ya mantiene los rollups; esto los recalcula por si algún lote quedó a medias.
   const { error: rollupErr } = await ctx.db.rpc("refresh_stats_rollups_for_user", {
     p_user_id: ctx.userId,

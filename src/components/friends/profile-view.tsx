@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAvatar } from "@/components/friends/user-avatar";
 import { FriendAction } from "@/components/friends/friend-action";
 import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
-import type { ProfilePeriod, ProfileView as ProfileViewData } from "@/lib/friends";
+import type { DataSource, ProfilePeriod, ProfileView as ProfileViewData } from "@/lib/friends";
 import type { TopItem } from "@/types/database";
 
 const PERIODS: { id: ProfilePeriod; label: string }[] = [
@@ -39,6 +39,35 @@ function timeAgo(iso: string): string {
   if (hours < 24) return `hace ${hours} h`;
   const days = Math.round(hours / 24);
   return `hace ${days} ${days === 1 ? "día" : "días"}`;
+}
+
+function SourceLine({ source }: { source: DataSource }) {
+  const text =
+    source.kind === "spotify"
+      ? "Datos en vivo desde Spotify"
+      : source.kind === "lastfm"
+        ? "Datos en vivo vía Last.fm"
+        : source.lastPlayAt
+          ? `Solo historial, hasta el ${new Date(source.lastPlayAt).toLocaleDateString("es-CL")}`
+          : "Todavía sin datos";
+  return (
+    <p className="mt-1 text-xs text-spotify-light-gray">
+      {text}
+      {source.kind === "lastfm" && (
+        <>
+          {" · "}
+          <a
+            href={source.profileUrl ?? `https://www.last.fm/user/${encodeURIComponent(source.username)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 text-spotify-green hover:underline"
+          >
+            {source.username} <ExternalLink className="h-3 w-3" />
+          </a>
+        </>
+      )}
+    </p>
+  );
 }
 
 function TopList({ title, items }: { title: string; items: TopItem[] }) {
@@ -150,6 +179,7 @@ export function ProfileView({ userId }: { userId: string }) {
                 Ver en Spotify <ExternalLink className="h-3 w-3" />
               </a>
             )}
+            {view.source && <SourceLine source={view.source} />}
           </div>
         </div>
         <FriendAction userId={profile.id} relation={relation} onChange={load} onError={setError} />

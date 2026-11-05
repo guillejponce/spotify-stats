@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { NowPlayingCard } from "@/components/now-playing/now-playing-card";
 import { StatCard } from "@/components/stats/stat-card";
@@ -209,19 +210,16 @@ export default function DashboardPage() {
               Spotify
             </span>
           )}
-          <a
-            href="/api/spotify/auth"
+          <Link
+            href="/welcome"
             className={cn(
               buttonVariants({ variant: connected ? "ghost" : "outline", size: "sm" }),
               "min-h-10 px-3 sm:min-h-0"
             )}
           >
             <LogIn className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">
-              {connected ? "Reconectar" : "Connect Spotify"}
-            </span>
-            <span className="sm:hidden">{connected ? "Cuenta" : "Conectar"}</span>
-          </a>
+            <span className="hidden sm:inline">Conexiones</span>
+          </Link>
         </div>
       </div>
 

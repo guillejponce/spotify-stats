@@ -4,12 +4,14 @@ import type { UserCtx } from "@/lib/user-context";
 /** Renovar un poco antes de `expires_at` (relojes / sesión real vs BD). */
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
+/** Marcado cuando Spotify rechaza el refresh (vence a los 6 meses): hay que volver a autorizar. */
 async function loadTokenRow(ctx: UserCtx) {
   const { data } = await ctx.db
     .from("spotify_tokens")
     .select("*")
     .eq("user_id", ctx.userId)
     .maybeSingle();
+  if (data?.needs_reconnect) return null;
   return data;
 }
 
@@ -18,7 +20,18 @@ async function persistRefreshedTokens(
   refreshToken: string,
   previousRefreshToken: string
 ) {
-  const newTokens = await refreshSpotifyToken(refreshToken);
+  let newTokens;
+  try {
+    newTokens = await refreshSpotifyToken(refreshToken);
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("invalid_grant")) {
+      await ctx.db
+        .from("spotify_tokens")
+        .update({ needs_reconnect: true, updated_at: new Date().toISOString() })
+        .eq("user_id", ctx.userId);
+    }
+    throw e;
+  }
 
   await ctx.db
     .from("spotify_tokens")
@@ -29,6 +42,7 @@ async function persistRefreshedTokens(
         Date.now() + newTokens.expires_in * 1000
       ).toISOString(),
       updated_at: new Date().toISOString(),
+      needs_reconnect: false,
     })
     .eq("user_id", ctx.userId);
 
