@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Confirma tu email</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#121212;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#121212;">
+      <tr>
+        <td align="center" style="padding:40px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:440px;">
+            <tr>
+              <td align="center" style="padding-bottom:24px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" valign="middle" width="56" height="56" style="width:56px;height:56px;border-radius:28px;background-color:#1DB954;font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:56px;color:#000000;">
+                      &#9835;
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:bold;color:#FFFFFF;padding-bottom:8px;">
+                Statsify
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#B3B3B3;padding-bottom:28px;">
+                Tus estadísticas de Spotify
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color:#181818;border:1px solid #282828;border-radius:12px;padding:28px 24px;">
+                <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;color:#FFFFFF;">
+                  Confirma tu email
+                </p>
+                <p style="margin:0 0 24px 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:21px;color:#B3B3B3;">
+                  Entraste a Statsify con tu cuenta de Spotify ({{ .Email }}). Confirma que este email es tuyo para terminar de crear tu cuenta.
+                </p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center" style="border-radius:999px;background-color:#1DB954;">
+                      <a href="{{ .ConfirmationURL }}" target="_blank" style="display:block;padding:14px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#000000;text-decoration:none;border-radius:999px;">
+                        Confirmar y entrar
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#7A7A7A;">
+                  Después de confirmar, vuelve a la app y aprieta <strong style="color:#B3B3B3;">Entrar con Spotify</strong>. Si no fuiste tú, ignora este correo.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-top:20px;font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#535353;">
+                El acceso a Statsify es solo por invitación.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
