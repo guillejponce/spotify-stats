@@ -260,7 +260,8 @@ export default function DashboardPage() {
           <ChevronDown className="h-3.5 w-3.5 shrink-0 transition group-open:rotate-180" />
         </summary>
         <p className="mt-2 text-xs leading-relaxed text-spotify-light-gray/65">
-          Las tarjetas rápidas usan ventanas móviles (desde ahora hacia atrás). El número grande cuenta{" "}
+          Últimos 6 meses / último mes / última semana son ventanas móviles (desde ahora hacia atrás);
+          “Este año” y el selector de año/mes usan el calendario civil. El número grande cuenta{" "}
           <span className="text-spotify-light-gray">cada reproducción registrada</span> en la base
           (segmentos de escucha)—igual que las barras por día / mes / año. Las listas Top ordenan por{" "}
           <span className="text-spotify-light-gray">sesiones</span> (~15 min: mismo tema con pausas
