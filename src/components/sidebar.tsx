@@ -23,41 +23,112 @@ import {
   Shield,
   UserRound,
   UsersRound,
+  ChevronDown,
+  Disc3,
+  Wrench,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { UserAvatar } from "@/components/friends/user-avatar";
 import { PushNotificationsToggle } from "@/components/push-notifications-toggle";
 import { useSession } from "@/components/session-provider";
 
-const navItems: {
+type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
   adminOnly?: boolean;
-}[] = [
+};
+
+type NavGroup = {
+  id: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  items: NavItem[];
+};
+
+const pinnedItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
-  { href: "/kurt", label: "Racha", icon: Flame },
-  { href: "/friends", label: "Amigos", icon: UsersRound },
-  { href: "/tracks", label: "Canciones", icon: Music2 },
-  { href: "/artists", label: "Artistas", icon: Users },
-  { href: "/albums", label: "Álbumes", icon: Library },
-  { href: "/ratings", label: "Valoraciones", icon: Star },
-  { href: "/calendar", label: "Calendario", icon: CalendarDays },
-  { href: "/wrapped", label: "Wrapped", icon: Gift },
-  { href: "/charts", label: "Cifras", icon: Guitar },
   { href: "/now-playing", label: "Now Playing", icon: Radio },
-  { href: "/history", label: "History", icon: Clock },
-  { href: "/import", label: "Import", icon: Upload },
-  { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },
 ];
+
+const navGroups: NavGroup[] = [
+  {
+    id: "library",
+    label: "Biblioteca",
+    icon: Library,
+    items: [
+      { href: "/tracks", label: "Canciones", icon: Music2 },
+      { href: "/artists", label: "Artistas", icon: Users },
+      { href: "/albums", label: "Álbumes", icon: Disc3 },
+      { href: "/ratings", label: "Valoraciones", icon: Star },
+    ],
+  },
+  {
+    id: "history",
+    label: "Historial",
+    icon: Clock,
+    items: [
+      { href: "/history", label: "History", icon: Clock },
+      { href: "/calendar", label: "Calendario", icon: CalendarDays },
+      { href: "/wrapped", label: "Wrapped", icon: Gift },
+    ],
+  },
+  {
+    id: "social",
+    label: "Social",
+    icon: UsersRound,
+    items: [
+      { href: "/friends", label: "Amigos", icon: UsersRound },
+      { href: "/kurt", label: "Racha", icon: Flame },
+    ],
+  },
+  {
+    id: "tools",
+    label: "Herramientas",
+    icon: Wrench,
+    items: [
+      { href: "/charts", label: "Cifras", icon: Guitar },
+      { href: "/agent", label: "Kurt CubAIn", icon: Bot, adminOnly: true },
+      { href: "/import", label: "Import", icon: Upload },
+      { href: "/admin", label: "Usuarios", icon: Shield, adminOnly: true },
+    ],
+  },
+];
+
+const OPEN_GROUPS_KEY = "sidebar:open-groups";
+
+function isActivePath(pathname: string, href: string): boolean {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+const itemClass = (active: boolean) =>
+  cn(
+    "flex min-h-[48px] items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5",
+    active
+      ? "bg-spotify-medium-gray text-white"
+      : "text-spotify-light-gray hover:bg-white/5 hover:text-white"
+  );
+
+function IncomingBadge({ count }: { count: number }) {
+  return (
+    <span className="ml-auto rounded-full bg-spotify-green px-2 py-0.5 text-xs font-semibold text-black">
+      {count}
+    </span>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const session = useSession();
   const isAdmin = session?.role === "admin";
-  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleGroups = navGroups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((item) => !item.adminOnly || isAdmin),
+    }))
+    .filter((g) => g.items.length > 0);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [incoming, setIncoming] = useState(0);
 
   useEffect(() => {
@@ -72,6 +143,35 @@ export function Sidebar() {
       cancelled = true;
     };
   }, [pathname]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(OPEN_GROUPS_KEY) ?? "[]");
+      if (Array.isArray(saved)) setOpenGroups(new Set(saved.map(String)));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const activeGroup = navGroups.find((g) =>
+      g.items.some((item) => isActivePath(pathname, item.href))
+    );
+    if (!activeGroup) return;
+    setOpenGroups((prev) =>
+      prev.has(activeGroup.id) ? prev : new Set(prev).add(activeGroup.id)
+    );
+  }, [pathname]);
+
+  const toggleGroup = (id: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
 
   return (
     <>
@@ -117,37 +217,79 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 sm:px-3">
-          {visibleItems.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
-
+          {pinnedItems.map((item) => {
+            const isActive = isActivePath(pathname, item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex min-h-[48px] items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5",
-                  isActive
-                    ? "bg-spotify-medium-gray text-white"
-                    : "text-spotify-light-gray hover:bg-white/5 hover:text-white"
-                )}
+                className={itemClass(isActive)}
               >
-                <item.icon
-                  className={cn(
-                    "h-5 w-5",
-                    isActive ? "text-spotify-green" : ""
-                  )}
-                />
+                <item.icon className={cn("h-5 w-5", isActive && "text-spotify-green")} />
                 {item.label}
-                {item.href === "/friends" && incoming > 0 && (
-                  <span className="ml-auto rounded-full bg-spotify-green px-2 py-0.5 text-xs font-semibold text-black">
-                    {incoming}
-                  </span>
-                )}
               </Link>
+            );
+          })}
+
+          {visibleGroups.map((group) => {
+            const open = openGroups.has(group.id);
+            const groupActive = group.items.some((item) =>
+              isActivePath(pathname, item.href)
+            );
+            const groupIncoming = group.items.some((i) => i.href === "/friends")
+              ? incoming
+              : 0;
+
+            return (
+              <div key={group.id} className="pt-1">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => toggleGroup(group.id)}
+                  className={cn(
+                    "flex min-h-[48px] w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors hover:bg-white/5 hover:text-white active:opacity-90 sm:min-h-0 sm:rounded-lg sm:py-2.5",
+                    groupActive && !open ? "text-white" : "text-spotify-light-gray"
+                  )}
+                >
+                  <group.icon
+                    className={cn("h-5 w-5", groupActive && !open && "text-spotify-green")}
+                  />
+                  {group.label}
+                  {!open && groupIncoming > 0 && <IncomingBadge count={groupIncoming} />}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 transition-transform",
+                      !(!open && groupIncoming > 0) && "ml-auto",
+                      open && "rotate-180"
+                    )}
+                  />
+                </button>
+
+                {open && (
+                  <div className="ml-5 mt-0.5 space-y-0.5 border-l border-white/[0.08] pl-2">
+                    {group.items.map((item) => {
+                      const isActive = isActivePath(pathname, item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={itemClass(isActive)}
+                        >
+                          <item.icon
+                            className={cn("h-4 w-4", isActive && "text-spotify-green")}
+                          />
+                          {item.label}
+                          {item.href === "/friends" && incoming > 0 && (
+                            <IncomingBadge count={incoming} />
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
