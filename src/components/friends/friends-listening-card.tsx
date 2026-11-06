@@ -57,8 +57,8 @@ export function FriendsListeningCard() {
   }, []);
 
   return (
-    <Card className="flex h-full min-h-0 flex-col border-white/[0.08] bg-spotify-dark-gray">
-      <CardContent className="flex min-h-0 flex-1 flex-col p-3.5 sm:p-4">
+    <Card className="flex min-h-0 flex-col border-white/[0.06] bg-white/[0.03] shadow-none lg:h-full lg:border-white/[0.08] lg:bg-spotify-dark-gray lg:shadow-sm">
+      <CardContent className="flex min-h-0 flex-1 flex-col p-3 lg:p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
             Amigos
@@ -87,15 +87,15 @@ export function FriendsListeningCard() {
         )}
 
         {rows && rows.length > 0 && (
-          <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+          <ul className="flex gap-2 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] lg:block lg:min-h-0 lg:flex-1 lg:space-y-0.5 lg:overflow-y-auto lg:overflow-x-hidden">
             {rows.map((row) => {
               const name = row.profile.display_name ?? "Sin nombre";
               const live = row.listening?.is_playing;
               return (
-                <li key={row.profile.id}>
+                <li key={row.profile.id} className="w-[15rem] shrink-0 lg:w-auto">
                   <Link
                     href={`/u/${row.profile.id}`}
-                    className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 hover:bg-white/5"
+                    className="flex items-center gap-2.5 rounded-lg bg-white/[0.04] px-2 py-1.5 hover:bg-white/10 lg:bg-transparent lg:px-1.5"
                   >
                     <UserAvatar url={row.profile.avatar_url} name={name} className="h-8 w-8 text-xs" />
                     <span className="min-w-0 flex-1">

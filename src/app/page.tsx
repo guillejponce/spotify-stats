@@ -242,8 +242,8 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,1fr)] lg:items-stretch">
-        <div className="flex min-w-0 flex-col gap-3">
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,1fr)] lg:items-stretch lg:gap-4">
+        <div className="flex min-w-0 flex-col gap-2 lg:gap-3">
           <NowPlayingCard />
           <KurtStreakCard />
         </div>

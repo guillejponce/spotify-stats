@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -224,42 +224,41 @@ function DashboardTimeFilter({
     else onChange({ filter: "month", year, month: Number(month) });
   };
 
+  const controlClass = "h-9 min-h-0 text-sm";
+
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
       <div
         className={cn(
-          "flex items-center gap-2",
-          busy && "[&>[data-slot=scroll]]:opacity-90"
+          "flex min-w-0 flex-1 items-center gap-2",
+          busy && "opacity-90",
         )}
       >
-        <div
-          data-slot="scroll"
-          className="-mx-1 min-w-0 max-w-full flex-1 overflow-x-auto overscroll-x-contain pb-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-x]"
-        >
+        <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [touch-action:pan-x]">
           <Tabs
             defaultValue="all"
             value={tabValue}
             onValueChange={handleTab}
             className="min-w-0"
           >
-            <TabsList className="inline-flex w-max flex-nowrap gap-1 sm:flex-wrap sm:gap-1">
-              <TabsTrigger value="all" title="Atajo: 1">
+            <TabsList className="h-9 w-max flex-nowrap gap-0.5 p-0.5">
+              <TabsTrigger value="all" title="Atajo: 1" className="h-full px-2.5 py-0 text-xs sm:px-3 sm:text-sm">
                 <span className="sm:hidden">Todo</span>
                 <span className="hidden sm:inline">Todo el tiempo</span>
               </TabsTrigger>
-              <TabsTrigger value={THIS_YEAR_TAB} title="Atajo: 2">
+              <TabsTrigger value={THIS_YEAR_TAB} title="Atajo: 2" className="h-full px-2.5 py-0 text-xs sm:px-3 sm:text-sm">
                 <span className="sm:hidden">Año</span>
                 <span className="hidden sm:inline">Este año</span>
               </TabsTrigger>
-              <TabsTrigger value="last_6_months" title="Atajo: 3">
+              <TabsTrigger value="last_6_months" title="Atajo: 3" className="h-full px-2.5 py-0 text-xs sm:px-3 sm:text-sm">
                 <span className="sm:hidden">6 meses</span>
                 <span className="hidden sm:inline">Últimos 6 meses</span>
               </TabsTrigger>
-              <TabsTrigger value="last_month" title="Atajo: 4">
+              <TabsTrigger value="last_month" title="Atajo: 4" className="h-full px-2.5 py-0 text-xs sm:px-3 sm:text-sm">
                 <span className="sm:hidden">Mes</span>
                 <span className="hidden sm:inline">Último mes</span>
               </TabsTrigger>
-              <TabsTrigger value="last_week" title="Atajo: 5">
+              <TabsTrigger value="last_week" title="Atajo: 5" className="h-full px-2.5 py-0 text-xs sm:px-3 sm:text-sm">
                 <span className="sm:hidden">Semana</span>
                 <span className="hidden sm:inline">Última semana</span>
               </TabsTrigger>
@@ -267,39 +266,28 @@ function DashboardTimeFilter({
           </Tabs>
         </div>
         {busy && (
-          <span
-            className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-spotify-light-gray/80"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <Loader2 className="h-4 w-4 animate-spin text-spotify-green" aria-hidden />
-            <span className="hidden min-[340px]:inline">Actualizando</span>
-          </span>
+          <Loader2
+            className="h-4 w-4 shrink-0 animate-spin text-spotify-green"
+            aria-label="Actualizando"
+          />
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <CalendarDays
-          className={cn(
-            "h-4 w-4 shrink-0",
-            isSpecific ? "text-spotify-green" : "text-spotify-light-gray/75",
-          )}
-          aria-hidden
-        />
-        <div className="min-w-0 flex-1 sm:max-w-[9rem] sm:flex-none">
+      <div className="grid grid-cols-2 gap-2 lg:flex lg:shrink-0">
+        <div className="min-w-0 lg:w-[7.75rem]">
           <Select
             aria-label="Año específico"
             value={pickedYear != null ? String(pickedYear) : ""}
             placeholder="Año"
             onChange={(e) => emitSpecific(Number(e.target.value), pickedMonth)}
-            className={cn(isSpecific && "border-spotify-green/60")}
+            className={cn(controlClass, isSpecific && "border-spotify-green/60")}
             options={availableYears.map((y) => ({
               value: String(y),
               label: String(y),
             }))}
           />
         </div>
-        <div className="min-w-0 flex-1 sm:max-w-[12rem] sm:flex-none">
+        <div className="min-w-0 lg:w-[10rem]">
           <Select
             aria-label="Mes específico"
             value={isSpecific ? pickedMonth : ""}
@@ -307,7 +295,7 @@ function DashboardTimeFilter({
             onChange={(e) =>
               emitSpecific(pickedYear ?? thisYear, e.target.value)
             }
-            className={cn(isSpecific && "border-spotify-green/60")}
+            className={cn(controlClass, isSpecific && "border-spotify-green/60")}
             options={[
               { value: ALL_MONTHS, label: "Todo el año" },
               ...months.map((m, i) => ({ value: String(i + 1), label: m })),
