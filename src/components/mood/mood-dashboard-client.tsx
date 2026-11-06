@@ -110,9 +110,14 @@ export function MoodDashboardClient() {
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold mb-2">Tu Mood Musical</h1>
+        <div className="mb-2 flex items-center gap-3">
+          <h1 className="text-3xl font-bold">Tu Mood Musical</h1>
+          <span className="rounded-full border border-white/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Beta
+          </span>
+        </div>
         <p className="text-gray-400">
-          Sale de la hora de Chile en que escuchaste.
+          En prueba. Spotify ya no manda la energía ni el ánimo de cada canción, así que por ahora usa la hora en que escuchaste y el estilo del artista.
         </p>
       </div>
 
