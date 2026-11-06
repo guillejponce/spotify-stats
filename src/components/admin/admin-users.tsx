@@ -133,7 +133,7 @@ export function AdminUsers() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="email de la cuenta de Spotify"
-              className="h-10 flex-1 rounded-full border border-white/10 bg-spotify-black px-4 text-sm text-white placeholder:text-spotify-light-gray/60 focus:border-spotify-green focus:outline-none"
+              className="h-10 flex-1 rounded-full border border-white/10 bg-spotify-black px-4 text-sm text-white placeholder:text-spotify-light-gray/75 focus:border-spotify-green focus:outline-none"
             />
             <Button type="submit" disabled={busy === "invite"}>
               {busy === "invite" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Invitar"}

@@ -268,7 +268,7 @@ export function ChartsView() {
       </header>
 
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/60" />
         <input
           type="search"
           value={query}
@@ -278,7 +278,7 @@ export function ChartsView() {
           }}
           onFocus={() => setSearchOpen(true)}
           placeholder="Buscar en tu catálogo…"
-          className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/35 outline-none focus:border-spotify-green/50"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-white placeholder:text-white/60 outline-none focus:border-spotify-green/50"
         />
         {searchOpen && hits.length > 0 && (
           <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-white/10 bg-spotify-dark-gray shadow-xl">
@@ -294,13 +294,13 @@ export function ChartsView() {
                       <Image src={hit.image_url} alt="" fill sizes="36px" className="object-cover" />
                     ) : (
                       <span className="flex h-full w-full items-center justify-center">
-                        <Guitar className="h-3.5 w-3.5 text-white/30" />
+                        <Guitar className="h-3.5 w-3.5 text-white/60" />
                       </span>
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-white">{hit.name}</span>
-                    <span className="block truncate text-[11px] text-white/40">
+                    <span className="block truncate text-[11px] text-white/60">
                       {hit.artist_name}
                     </span>
                   </span>
@@ -331,7 +331,7 @@ export function ChartsView() {
           Seguir en vivo
         </button>
         {nowPlaying?.track_name && (
-          <span className="text-xs text-white/40">
+          <span className="text-xs text-white/60">
             {nowPlaying.is_playing ? "Suena" : "Pausado"}: {nowPlaying.track_name}
           </span>
         )}
@@ -348,7 +348,7 @@ export function ChartsView() {
                   <Image src={headerArt} alt="" fill sizes="56px" className="object-cover" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center">
-                    <Guitar className="h-5 w-5 text-white/30" />
+                    <Guitar className="h-5 w-5 text-white/60" />
                   </span>
                 )}
               </span>
@@ -356,8 +356,8 @@ export function ChartsView() {
                 <h2 className="truncate text-lg font-semibold text-white">
                   {headerTitle || "Cargando…"}
                 </h2>
-                <p className="truncate text-sm text-white/50">{headerArtist}</p>
-                <p className="mt-1 text-[11px] tabular-nums text-white/35">
+                <p className="truncate text-sm text-white/60">{headerArtist}</p>
+                <p className="mt-1 text-[11px] tabular-nums text-white/60">
                   {displayKey || sourceTempo != null ? (
                     <>
                       Tono {displayKey || "—"}
@@ -485,7 +485,7 @@ export function ChartsView() {
             {error && <p className="text-sm text-rose-300">{error}</p>}
 
             {loading ? (
-              <div className="flex items-center gap-2 text-sm text-white/50">
+              <div className="flex items-center gap-2 text-sm text-white/60">
                 <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />
                 Cargando cifra…
               </div>
@@ -534,7 +534,7 @@ function EmptyCatalog({
     <div className="space-y-4">
       <Card className="border-white/[0.06]">
         <CardContent className="p-6 text-center">
-          <PlayCircle className="mx-auto h-8 w-8 text-white/30" />
+          <PlayCircle className="mx-auto h-8 w-8 text-white/60" />
           <p className="mt-2 text-sm text-white/60">
             No hay nada sonando. Poné un tema o buscá en tu catálogo.
           </p>
@@ -542,7 +542,7 @@ function EmptyCatalog({
       </Card>
       {recent.length > 0 && (
         <div>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/40">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/60">
             Últimas cifras
           </h2>
           <ul className="space-y-1">
@@ -555,7 +555,7 @@ function EmptyCatalog({
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-white">{item.title}</span>
-                    <span className="block truncate text-[11px] text-white/40">
+                    <span className="block truncate text-[11px] text-white/60">
                       {item.artist_name}
                     </span>
                   </span>
@@ -580,7 +580,7 @@ function EmptyChart({
   return (
     <div className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center">
       <p className="text-sm text-white/60">Todavía no hay cifra para este tema.</p>
-      <p className="mt-1 text-xs text-white/40">
+      <p className="mt-1 text-xs text-white/60">
         Cargar tono y BPM deja las secciones vacías. Los acordes los pegás vos.
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">

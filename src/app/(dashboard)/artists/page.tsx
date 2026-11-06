@@ -18,6 +18,7 @@ import {
 import { cn, formatMs, formatNumber, formatReproductionCount } from "@/lib/utils";
 import { CHILE_TIMEZONE_LABEL } from "@/lib/chile-time";
 import type { TimeFilterParams, TopItem } from "@/types/database";
+import { PageHeader } from "@/components/ui/page-header";
 
 const PAGE_SIZE = 36;
 
@@ -134,27 +135,21 @@ export default function ArtistsPage() {
 
   return (
     <div className="space-y-6 sm:space-y-8">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-          Artistas
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-spotify-light-gray sm:mt-1">
-          Ranking por reproducciones ({CHILE_TIMEZONE_LABEL}). Las flechas muestran
-          el cambio de puesto en los últimos 7 días. Expandí cada fila para ver
-          tus canciones más escuchadas de ese artista.
-        </p>
-      </div>
+      <PageHeader
+        title="Artistas"
+        description={`Ranking por reproducciones (${CHILE_TIMEZONE_LABEL}). Las flechas muestran el cambio de puesto en los últimos 7 días. Expandí cada fila para ver tus canciones más escuchadas de ese artista.`}
+      />
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
       <div className="relative w-full max-w-none sm:max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/50" />
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-spotify-light-gray/75" />
         <input
           type="search"
           placeholder="Buscar por nombre de artista…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-full border border-white/10 bg-spotify-dark-gray py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/50 focus:border-spotify-green/50 focus:outline-none focus:ring-1 focus:ring-spotify-green/30"
+          className="w-full rounded-full border border-white/10 bg-spotify-dark-gray py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/75 focus:border-spotify-green/50 focus:outline-none focus:ring-1 focus:ring-spotify-green/30"
         />
       </div>
 
@@ -211,7 +206,7 @@ export default function ArtistsPage() {
                     <p className="font-medium leading-snug text-white">{a.name}</p>
                     <p className="mt-0.5 text-xs leading-relaxed text-spotify-light-gray">
                       <span className="break-words">{formatReproductionCount(a.play_count)} reproducciones</span>
-                      <span className="text-spotify-light-gray/50"> · </span>
+                      <span className="text-spotify-light-gray/75"> · </span>
                       <span>{formatMs(a.total_ms_played)}</span>
                     </p>
                   </div>
@@ -254,7 +249,7 @@ export default function ArtistsPage() {
                               key={`${t.id}-${ti}`}
                               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-white/5"
                             >
-                              <span className="w-6 text-right text-xs text-spotify-light-gray/60">
+                              <span className="w-6 text-right text-xs text-spotify-light-gray/75">
                                 {ti + 1}
                               </span>
                               <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded bg-spotify-medium-gray">

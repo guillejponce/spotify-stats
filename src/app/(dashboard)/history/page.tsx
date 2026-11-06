@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { HistoryPlayRow } from "@/components/history/history-play-row";
 import { useHistoryPlays } from "@/hooks/use-history-plays";
+import { PageHeader } from "@/components/ui/page-header";
 
 function HistorySkeletonRows() {
   return (
@@ -70,33 +71,28 @@ export default function HistoryPage() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-4">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-              Historial
-            </h1>
-            {page === 0 && (silentBusy || pullingSpotify) && !loading && (
+        <PageHeader
+          title="Historial"
+          badge={
+            page === 0 && (silentBusy || pullingSpotify) && !loading ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-spotify-light-gray/90">
                 <Loader2 className="h-3 w-3 animate-spin text-spotify-green" />
                 {pullingSpotify ? "Trayendo de Spotify…" : "Actualizando…"}
               </span>
-            )}
-          </div>
-          <p className="max-w-xl text-sm leading-relaxed text-spotify-light-gray">
-            Ordenado del más reciente al más antiguo (hora Chile). Actualizar
-            pide a Spotify los últimos escuchados —incluido lo que está sonando—
-            y completa la lista. El poll cada unos segundos solo relee la base.
-          </p>
+            ) : null
+          }
+          description="Ordenado del más reciente al más antiguo (hora Chile). Actualizar pide a Spotify los últimos escuchados —incluido lo que está sonando— y completa la lista. El poll cada unos segundos solo relee la base."
+        >
           {page === 0 && lastSyncLabel && (
             <p
               key={tick}
-              className="text-xs text-spotify-light-gray/55"
+              className="text-xs text-spotify-light-gray/75"
               suppressHydrationWarning
             >
               Última lectura al servidor {lastSyncLabel}
             </p>
           )}
-        </div>
+        </PageHeader>
         <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {page > 0 && (
             <Button

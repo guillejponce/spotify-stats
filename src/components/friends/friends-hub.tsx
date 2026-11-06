@@ -158,7 +158,7 @@ export function FriendsHub() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Nombre en Spotify"
-              className="h-10 w-full rounded-full border border-white/10 bg-spotify-black pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/60 focus:border-spotify-green focus:outline-none"
+              className="h-10 w-full rounded-full border border-white/10 bg-spotify-black pl-10 pr-4 text-sm text-white placeholder:text-spotify-light-gray/75 focus:border-spotify-green focus:outline-none"
             />
             {searching && (
               <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-spotify-light-gray" />

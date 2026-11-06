@@ -116,7 +116,7 @@ export function ListeningInsights({
               <span className="block truncate text-sm font-semibold text-white">
                 {chip.value}
               </span>
-              <span className="block truncate text-[11px] text-spotify-light-gray/60">
+              <span className="block truncate text-[11px] text-spotify-light-gray/75">
                 {chip.hint}
               </span>
             </span>

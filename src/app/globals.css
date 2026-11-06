@@ -37,6 +37,12 @@ body {
   * {
     border-color: rgba(255, 255, 255, 0.05);
   }
+
+  /* Anillo de foco por defecto para teclado; los componentes con su propio ring lo reemplazan. */
+  :where(a, button, summary, select, input, textarea, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid #1db954;
+    outline-offset: 2px;
+  }
 }
 
 @keyframes eq-bar {
@@ -69,5 +75,14 @@ body {
   .eq-bar {
     animation: none;
     height: 8px;
+  }
+
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

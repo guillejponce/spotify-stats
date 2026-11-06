@@ -16,9 +16,9 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Spotify Stats - Your Music Dashboard",
+  title: "Statsify · Tu escucha en Spotify",
   description:
-    "Personal Spotify companion dashboard showing live and historical listening data.",
+    "Dashboard personal de Spotify con tu escucha en vivo e histórica.",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -57,7 +57,7 @@ export default async function RootLayout({
 }) {
   const session = await loadClientSession();
   return (
-    <html lang="en" className="dark">
+    <html lang="es" className="dark">
       <body className={`${inter.variable} font-sans antialiased`}>
         <SessionProvider session={session}>
           <AppChrome>{children}</AppChrome>

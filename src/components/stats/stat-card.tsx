@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,10 @@ interface StatCardProps {
   trend?: { value: number; label: string };
   className?: string;
   loading?: boolean;
+  /** Valor de texto (nombres): hasta 2 líneas en vez de cortarse en una. */
+  wrapValue?: boolean;
+  /** Portada en lugar del ícono. */
+  imageUrl?: string | null;
 }
 
 export function StatCard({
@@ -21,6 +26,8 @@ export function StatCard({
   trend,
   className,
   loading = false,
+  wrapValue = false,
+  imageUrl,
 }: StatCardProps) {
   return (
     <Card
@@ -42,18 +49,30 @@ export function StatCard({
               </>
             ) : (
               <>
-                <p className="truncate text-xl font-bold tabular-nums tracking-tight text-white sm:text-2xl">
+                <p
+                  className={cn(
+                    "font-bold tracking-tight text-white",
+                    wrapValue
+                      ? "line-clamp-2 break-words text-base leading-snug sm:text-lg"
+                      : "truncate text-xl tabular-nums sm:text-2xl",
+                  )}
+                  title={wrapValue ? value : undefined}
+                >
                   {value}
                 </p>
                 {subtitle && (
-                  <p className="text-[11px] leading-snug text-spotify-light-gray/65 sm:text-xs">
+                  <p className="text-[11px] leading-snug text-spotify-light-gray/80 sm:text-xs">
                     {subtitle}
                   </p>
                 )}
               </>
             )}
           </div>
-          {Icon && (
+          {imageUrl && !loading ? (
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg sm:h-12 sm:w-12">
+              <Image src={imageUrl} alt="" fill sizes="48px" className="object-cover" />
+            </div>
+          ) : Icon && (
             <div className="shrink-0 rounded-xl bg-spotify-green/10 p-2">
               <Icon className="h-4 w-4 text-spotify-green sm:h-5 sm:w-5" />
             </div>
@@ -70,7 +89,7 @@ export function StatCard({
               {trend.value >= 0 ? "+" : ""}
               {trend.value}%
             </span>
-            <span className="text-xs text-spotify-light-gray/60">
+            <span className="text-xs text-spotify-light-gray/80">
               {trend.label}
             </span>
           </div>

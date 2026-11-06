@@ -146,7 +146,7 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
 
       <TimeFilterControl value={timeFilter} onChange={setTimeFilter} />
 
-      <p className="text-xs leading-relaxed text-spotify-light-gray/65">
+      <p className="text-xs leading-relaxed text-spotify-light-gray/75">
         Reproducciones y tiempos por canción para {CHILE_TIMEZONE_LABEL} en el período elegido.
       </p>
 
@@ -260,7 +260,7 @@ function AlbumDetailInner({ params }: { params: { albumId: string } }) {
                       )}
                     >
                       <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-                        <span className="w-8 shrink-0 pt-0.5 text-right text-xs tabular-nums text-spotify-light-gray/60 sm:pt-0">
+                        <span className="w-8 shrink-0 pt-0.5 text-right text-xs tabular-nums text-spotify-light-gray/75 sm:pt-0">
                           {t.track_number}
                         </span>
                         <div className="min-w-0 flex-1">

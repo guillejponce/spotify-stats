@@ -13,7 +13,7 @@ export function CompactListenRanks({
 }) {
   if (!track && !artist) return null;
   return (
-    <p className="mt-1 truncate text-[10px] leading-tight tabular-nums text-white/40 sm:text-[11px]">
+    <p className="mt-1 truncate text-[10px] leading-tight tabular-nums text-white/60 sm:text-[11px]">
       <RankInline kind="tema" rank={track} />
       <span className="mx-1.5 text-white/15" aria-hidden>
         ·
@@ -47,7 +47,7 @@ function RankInline({
         </>
       )}
       {kind}{" "}
-      <span className="text-white/35">
+      <span className="text-white/60">
         {formatReproductionCount(rank.plays)}
       </span>
     </span>
@@ -91,7 +91,7 @@ function RankTile({
 }) {
   const inner = (
     <>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
         {kind}
       </p>
       {rank && rank.plays > 0 && rank.rank != null ? (
@@ -99,12 +99,12 @@ function RankTile({
           <p className="mt-0.5 text-lg font-semibold tabular-nums leading-tight text-white sm:text-xl">
             #{formatReproductionCount(rank.rank)}
             {rank.among > 0 && (
-              <span className="ml-1 text-xs font-medium text-white/35">
+              <span className="ml-1 text-xs font-medium text-white/60">
                 de {formatReproductionCount(rank.among)}
               </span>
             )}
           </p>
-          <p className="mt-0.5 text-[11px] tabular-nums text-white/50">
+          <p className="mt-0.5 text-[11px] tabular-nums text-white/60">
             {formatReproductionCount(rank.plays)} repros
             {rank.ms_played > 0 ? ` · ${formatMs(rank.ms_played)}` : ""}
           </p>
@@ -113,7 +113,7 @@ function RankTile({
         <p className="mt-0.5 text-sm font-medium text-white/70">Primera vez</p>
       )}
       {subtitle && (
-        <p className="mt-0.5 truncate text-[11px] text-white/40">{subtitle}</p>
+        <p className="mt-0.5 truncate text-[11px] text-white/60">{subtitle}</p>
       )}
     </>
   );

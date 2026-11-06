@@ -183,7 +183,7 @@ export function Heatmap({ title, data, loading = false, year }: HeatmapProps) {
           </div>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-1 text-[10px] text-spotify-light-gray/60">
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-1 text-[10px] text-spotify-light-gray/75">
           <span>Menos</span>
           <div className="h-3 w-3 rounded-sm bg-white/5" />
           <div className="h-3 w-3 rounded-sm bg-spotify-green/25" />

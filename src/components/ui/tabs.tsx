@@ -58,6 +58,7 @@ function TabsList({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      role="tablist"
       className={cn(
         "inline-flex items-center gap-1 rounded-lg bg-spotify-medium-gray p-1",
         className
@@ -86,8 +87,10 @@ function TabsTrigger({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={isActive}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-all sm:py-1.5 sm:text-sm",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md px-3 py-2 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green focus-visible:ring-offset-1 focus-visible:ring-offset-spotify-medium-gray sm:py-1.5 sm:text-sm",
         isActive
           ? "bg-spotify-green text-black shadow-sm"
           : "text-spotify-light-gray hover:text-white hover:bg-white/5",

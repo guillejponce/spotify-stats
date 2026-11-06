@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RankChangeBadge } from "@/components/stats/rank-change-badge";
 import { cn, formatMs, formatReproductionCount } from "@/lib/utils";
-import { Music2 } from "lucide-react";
+import { ArrowRight, ChevronDown, Music2 } from "lucide-react";
 import type { TopItem } from "@/types/database";
 
 interface TopItemsListProps {
@@ -14,6 +16,13 @@ interface TopItemsListProps {
   loading?: boolean;
   showIndex?: boolean;
   hideTitle?: boolean;
+  /** Si devuelve una ruta, la fila navega al detalle. */
+  hrefFor?: (item: TopItem) => string | undefined;
+  /** Filas visibles antes de “Ver más”. Sin valor: todas. */
+  initialCount?: number;
+  /** Enlace al ranking completo. */
+  moreHref?: string;
+  moreLabel?: string;
 }
 
 export function TopItemsList({
@@ -22,7 +31,13 @@ export function TopItemsList({
   loading = false,
   showIndex = true,
   hideTitle = false,
+  hrefFor,
+  initialCount,
+  moreHref,
+  moreLabel = "Ver ranking completo",
 }: TopItemsListProps) {
+  const [expanded, setExpanded] = useState(false);
+
   if (loading) {
     return (
       <Card className="overflow-hidden border-white/[0.06]">
@@ -55,15 +70,24 @@ export function TopItemsList({
           </CardHeader>
         )}
         <CardContent className={cn("px-3 pb-4", hideTitle ? "pt-4" : "sm:p-6 sm:pt-0")}>
-          <p className="py-8 text-center text-sm text-spotify-light-gray">
-            No data available. Import your listening history to see stats.
-          </p>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <p className="text-sm text-spotify-light-gray">Sin datos en este período.</p>
+            <Link
+              href="/import"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-spotify-green transition-colors hover:bg-spotify-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
+            >
+              Importar historial
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
   const maxValue = Math.max(...items.map((i) => i.play_count));
+  const limited = initialCount != null && !expanded && items.length > initialCount;
+  const visible = limited ? items.slice(0, initialCount) : items;
 
   return (
     <Card className="overflow-hidden border-white/[0.06]">
@@ -73,13 +97,20 @@ export function TopItemsList({
         </CardHeader>
       )}
       <CardContent className={cn("space-y-1 px-2 pb-3 sm:px-3", hideTitle ? "pt-2" : "sm:p-6 sm:pt-0")}>
-        {items.map((item, index) => {
+        {visible.map((item, index) => {
           const barWidth = maxValue > 0 ? (item.play_count / maxValue) * 100 : 0;
+          const href = hrefFor?.(item);
+          const Row = href ? Link : "div";
 
           return (
-            <div
+            <Row
               key={item.id}
-              className="group relative flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-white/[0.06] active:bg-white/10 sm:p-2.5"
+              href={href as string}
+              className={cn(
+                "group relative flex items-center gap-3 rounded-xl p-2.5 sm:p-2.5",
+                href &&
+                  "transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green active:bg-white/10",
+              )}
             >
               {showIndex && (
                 item.rank_delta !== undefined || item.prev_rank !== undefined ? (
@@ -90,7 +121,7 @@ export function TopItemsList({
                     className="shrink-0"
                   />
                 ) : (
-                  <span className="w-6 shrink-0 text-right text-sm font-medium tabular-nums text-spotify-light-gray/60">
+                  <span className="w-6 shrink-0 text-right text-sm font-medium tabular-nums text-spotify-light-gray/75">
                     {item.rank ?? index + 1}
                   </span>
                 )
@@ -102,6 +133,7 @@ export function TopItemsList({
                     src={item.image_url}
                     alt={item.name}
                     fill
+                    sizes="44px"
                     className="object-cover"
                   />
                 ) : (
@@ -119,8 +151,8 @@ export function TopItemsList({
                   <span className="text-xs text-spotify-light-gray">
                     {formatReproductionCount(item.play_count)} reproducciones
                   </span>
-                  <span className="text-xs text-spotify-light-gray/40">·</span>
-                  <span className="text-xs text-spotify-light-gray/60">
+                  <span className="text-xs text-spotify-light-gray/75" aria-hidden>·</span>
+                  <span className="text-xs text-spotify-light-gray/80">
                     {formatMs(item.total_ms_played)}
                   </span>
                 </div>
@@ -131,9 +163,34 @@ export function TopItemsList({
                   />
                 </div>
               </div>
-            </div>
+            </Row>
           );
         })}
+        {(limited || moreHref) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-2">
+            {limited ? (
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
+              >
+                Ver más ({items.length - visible.length})
+                <ChevronDown className="h-4 w-4" aria-hidden />
+              </button>
+            ) : (
+              <span />
+            )}
+            {moreHref && (
+              <Link
+                href={moreHref}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-spotify-green transition-colors hover:bg-spotify-green/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green"
+              >
+                {moreLabel}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

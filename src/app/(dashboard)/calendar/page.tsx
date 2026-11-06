@@ -25,6 +25,7 @@ import type {
   CalendarArtist,
   CalendarAlbum,
 } from "@/types/database";
+import { PageHeader } from "@/components/ui/page-header";
 
 type Mode = "day" | "month";
 
@@ -84,7 +85,7 @@ function ItemImage({
   }
   return (
     <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-spotify-medium-gray">
-      <Icon className="h-5 w-5 text-spotify-light-gray/50" />
+      <Icon className="h-5 w-5 text-spotify-light-gray/75" />
     </div>
   );
 }
@@ -92,7 +93,7 @@ function ItemImage({
 function TrackRow({ track, rank }: { track: CalendarTrack; rank: number }) {
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.03]">
-      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/40">
+      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/75">
         {rank}
       </span>
       <ItemImage src={track.image_url} alt={track.name} fallbackIcon={Music2} />
@@ -110,7 +111,7 @@ function TrackRow({ track, rank }: { track: CalendarTrack; rank: number }) {
 function ArtistRow({ artist, rank }: { artist: CalendarArtist; rank: number }) {
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.03]">
-      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/40">
+      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/75">
         {rank}
       </span>
       <ItemImage src={artist.image_url} alt={artist.name} fallbackIcon={Users} />
@@ -128,7 +129,7 @@ function ArtistRow({ artist, rank }: { artist: CalendarArtist; rank: number }) {
 function AlbumRow({ album, rank }: { album: CalendarAlbum; rank: number }) {
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.03]">
-      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/40">
+      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-spotify-light-gray/75">
         {rank}
       </span>
       <ItemImage src={album.image_url} alt={album.name} fallbackIcon={Disc3} />
@@ -251,14 +252,10 @@ export default function CalendarPage() {
     <div className="flex min-h-[calc(100dvh-6rem)] flex-col space-y-6 pb-28 sm:space-y-8">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-            Calendario Musical
-          </h1>
-          <p className="mt-1 text-sm text-spotify-light-gray">
-            Revive lo que escuchabas en esta fecha en años anteriores.
-          </p>
-        </div>
+        <PageHeader
+          title="Calendario musical"
+          description="Revive lo que escuchabas en esta fecha en años anteriores."
+        />
 
         {/* Day / Month toggle */}
         <div className="flex rounded-xl border border-white/10 bg-spotify-dark-gray p-1">
@@ -389,7 +386,7 @@ export default function CalendarPage() {
         ) : !hasData ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-spotify-medium-gray">
-              <CalendarDays className="h-8 w-8 text-spotify-light-gray/50" />
+              <CalendarDays className="h-8 w-8 text-spotify-light-gray/75" />
             </div>
             <h3 className="text-lg font-semibold text-white">
               Sin recuerdos para esta fecha
@@ -418,7 +415,7 @@ export default function CalendarPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-spotify-light-gray/50">
+                  <p className="py-6 text-center text-sm text-spotify-light-gray/75">
                     Sin datos
                   </p>
                 )}
@@ -441,7 +438,7 @@ export default function CalendarPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-spotify-light-gray/50">
+                  <p className="py-6 text-center text-sm text-spotify-light-gray/75">
                     Sin datos
                   </p>
                 )}
@@ -464,7 +461,7 @@ export default function CalendarPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="py-6 text-center text-sm text-spotify-light-gray/50">
+                  <p className="py-6 text-center text-sm text-spotify-light-gray/75">
                     Sin datos
                   </p>
                 )}
@@ -489,7 +486,7 @@ export default function CalendarPage() {
           onChange={setSelectedYear}
         />
       ) : (
-        <p className="py-6 text-center text-sm text-spotify-light-gray/50">
+        <p className="py-6 text-center text-sm text-spotify-light-gray/75">
           No hay años con datos de escucha
         </p>
       )}

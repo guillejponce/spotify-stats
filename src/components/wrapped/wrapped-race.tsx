@@ -33,7 +33,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
     <section className={cn("overflow-hidden rounded-2xl border", tone)}>
       <div className="flex items-end justify-between gap-3 px-4 pb-1 pt-4 sm:px-5">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
             {race.trophy}
           </p>
           <h2 className="text-lg font-semibold tracking-tight text-white sm:text-xl">
@@ -46,7 +46,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
       </div>
 
       {race.items.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-white/45 sm:px-5">
+        <p className="px-4 py-8 text-center text-sm text-white/60 sm:px-5">
           {race.locked
             ? "No hubo suficientes repros este año."
             : "Todavía no hay suficientes repros este año."}
@@ -57,7 +57,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
             const width = Math.max(4, (item.play_count / max) * 100);
             const inner = (
               <>
-                <span className="w-6 shrink-0 text-center text-xs font-semibold tabular-nums text-white/40">
+                <span className="w-6 shrink-0 text-center text-xs font-semibold tabular-nums text-white/60">
                   {item.rank}
                 </span>
                 <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-white/5 sm:h-11 sm:w-11">
@@ -71,7 +71,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
                     />
                   ) : (
                     <span className="flex h-full w-full items-center justify-center">
-                      <Music2 className="h-4 w-4 text-white/30" />
+                      <Music2 className="h-4 w-4 text-white/60" />
                     </span>
                   )}
                 </span>
@@ -79,7 +79,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
                   <span className="block truncate text-sm font-medium text-white">
                     {item.name}
                   </span>
-                  <span className="block truncate text-[11px] text-white/40">
+                  <span className="block truncate text-[11px] text-white/60">
                     {item.subtitle || gapLabel(leader!, item, race.locked)}
                     {item.subtitle
                       ? ` · ${gapLabel(leader!, item, race.locked)}`
@@ -99,7 +99,7 @@ export function WrappedRaceBoard({ race }: { race: WrappedRace }) {
                   <span className="block text-xs font-semibold tabular-nums text-white">
                     {formatReproductionCount(item.play_count)}
                   </span>
-                  <span className="block text-[10px] tabular-nums text-white/35">
+                  <span className="block text-[10px] tabular-nums text-white/60">
                     {formatMs(item.ms_played)}
                   </span>
                 </span>

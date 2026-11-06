@@ -18,7 +18,7 @@ import {
   ChartTip,
   chartAxis,
   chartGrid,
-  useChartHeight,
+  ChartBox,
 } from "@/components/charts/chart-ui";
 import { formatReproductionCount, msToHours } from "@/lib/utils";
 import type { ListeningTimeData } from "@/types/database";
@@ -43,7 +43,6 @@ export function WeekdayChart({
   loading = false,
   highlightWeekday = null,
 }: WeekdayChartProps) {
-  const height = useChartHeight(200, 248);
   const [picked, setPicked] = useState<number | null>(null);
   const rows = useMemo(() => {
     const acc = CHILE_WEEKDAY_ROWS.map((label, weekday) => ({
@@ -77,49 +76,51 @@ export function WeekdayChart({
       empty={rows.length === 0}
       className="min-w-0"
     >
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
-          <CartesianGrid {...chartGrid} />
-          <XAxis dataKey="label" {...chartAxis} />
-          <YAxis
-            {...chartAxis}
-            width={44}
-            tickFormatter={(v) => `${msToHours(v)}h`}
-          />
-          <Tooltip
-            cursor={{ fill: "rgba(29,185,84,0.08)" }}
-            content={
-              <ChartTip
-                title={(row) => String(row.label ?? "")}
-                body={(row) =>
-                  `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
-                }
-              />
-            }
-          />
-          <Bar
-            dataKey="ms_played"
-            radius={[6, 6, 0, 0]}
-            maxBarSize={48}
-            onClick={(row) => {
-              const w = Number((row as { weekday?: number }).weekday);
-              if (Number.isFinite(w)) setPicked(w);
-            }}
-          >
-            {rows.map((entry) => {
-              const isActive = active == null || entry.weekday === active;
-              return (
-                <Cell
-                  key={entry.weekday}
-                  cursor="pointer"
-                  fill={entry.weekday === peak.weekday ? CHART_GREEN_BRIGHT : CHART_GREEN}
-                  opacity={isActive ? 1 : 0.28}
+      <ChartBox mobile={200} desktop={248}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
+            <CartesianGrid {...chartGrid} />
+            <XAxis dataKey="label" {...chartAxis} />
+            <YAxis
+              {...chartAxis}
+              width={44}
+              tickFormatter={(v) => `${msToHours(v)}h`}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(29,185,84,0.08)" }}
+              content={
+                <ChartTip
+                  title={(row) => String(row.label ?? "")}
+                  body={(row) =>
+                    `${msToHours(Number(row.ms_played))} h · ${formatReproductionCount(Number(row.play_count))} repros`
+                  }
                 />
-              );
-            })}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+              }
+            />
+            <Bar
+              dataKey="ms_played"
+              radius={[6, 6, 0, 0]}
+              maxBarSize={48}
+              onClick={(row) => {
+                const w = Number((row as { weekday?: number }).weekday);
+                if (Number.isFinite(w)) setPicked(w);
+              }}
+            >
+              {rows.map((entry) => {
+                const isActive = active == null || entry.weekday === active;
+                return (
+                  <Cell
+                    key={entry.weekday}
+                    cursor="pointer"
+                    fill={entry.weekday === peak.weekday ? CHART_GREEN_BRIGHT : CHART_GREEN}
+                    opacity={isActive ? 1 : 0.28}
+                  />
+                );
+              })}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartBox>
       {selected && (
         <p className="mt-2 px-2 text-xs text-spotify-light-gray sm:px-0">
           <span className="font-medium text-white">{selected.label}</span>

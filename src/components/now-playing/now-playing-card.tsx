@@ -139,7 +139,7 @@ export function NowPlayingCard({
             <Music2 className="h-7 w-7 text-spotify-light-gray" />
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
               Reproductor
             </p>
             <p className="mt-0.5 text-sm font-semibold text-white">Nada sonando</p>
@@ -225,7 +225,7 @@ export function NowPlayingCard({
               {nowPlaying.track_name}
             </p>
             <p className="mt-0.5 truncate text-sm text-white/75">{nowPlaying.artist_name}</p>
-            <p className="truncate text-xs text-white/40">{nowPlaying.album_name}</p>
+            <p className="truncate text-xs text-white/60">{nowPlaying.album_name}</p>
             <HarmonyLine keyName={nowPlaying.key} tempo={nowPlaying.tempo} />
             {variant === "compact" && (
               <CompactListenRanks track={trackRank} artist={artistRank} />
@@ -233,7 +233,7 @@ export function NowPlayingCard({
 
             <div className="mt-3 hidden sm:block">
               <ProgressLine percent={progressPercent} />
-              <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-white/45">
+              <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-white/60">
                 <span>{formatClock(liveProgress)}</span>
                 <span>{formatClock(nowPlaying.duration_ms)}</span>
               </div>
@@ -243,7 +243,7 @@ export function NowPlayingCard({
 
         <div className="px-3.5 pb-2 sm:hidden">
           <ProgressLine percent={progressPercent} />
-          <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-white/45">
+          <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-white/60">
             <span>{formatClock(liveProgress)}</span>
             <span>{formatClock(nowPlaying.duration_ms)}</span>
           </div>
@@ -274,7 +274,7 @@ export function NowPlayingCard({
                     "flex h-8 min-w-0 flex-1 items-center justify-center rounded-lg text-[11px] font-semibold tabular-nums transition sm:h-9 sm:text-xs",
                     shownRating >= n
                       ? "bg-spotify-green text-black shadow-[0_0_12px_rgba(29,185,84,0.25)]"
-                      : "bg-white/[0.06] text-white/40 hover:bg-white/10 hover:text-white",
+                      : "bg-white/[0.06] text-white/60 hover:bg-white/10 hover:text-white",
                   )}
                 >
                   {n}
@@ -287,10 +287,10 @@ export function NowPlayingCard({
               ) : nowPlaying.current_rating ? (
                 <span className="text-xs font-bold tabular-nums text-spotify-green">
                   {nowPlaying.current_rating}
-                  <span className="text-white/30">/10</span>
+                  <span className="text-white/60">/10</span>
                 </span>
               ) : (
-                <span className="text-[10px] text-white/30">Nota</span>
+                <span className="text-[10px] text-white/60">Nota</span>
               )}
             </div>
           </div>
@@ -313,13 +313,13 @@ function HarmonyLine({
   ].filter(Boolean);
   if (parts.length === 0) {
     return (
-      <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/35 sm:text-[11px]">
+      <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/60 sm:text-[11px]">
         Sin tono/BPM medido
       </p>
     );
   }
   return (
-    <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/40 sm:text-[11px]">
+    <p className="mt-0.5 truncate text-[10px] tabular-nums text-white/60 sm:text-[11px]">
       {parts.join(" · ")}
     </p>
   );
