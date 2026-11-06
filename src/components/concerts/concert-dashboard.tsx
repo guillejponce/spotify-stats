@@ -59,7 +59,15 @@ function showMatches(show: ConcertEntry, focus: Focus | null): boolean {
   return show.songKeys.includes(focus.id);
 }
 
-export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; partial: boolean }) {
+export function ConcertDashboard({
+  stats,
+  partial,
+  songsLoading = false,
+}: {
+  stats: ConcertStats;
+  partial: boolean;
+  songsLoading?: boolean;
+}) {
   const [focus, setFocus] = useState<Focus | null>(null);
   const pick = (kind: FocusKind) => (item: RankedItem) => {
     setFocus((current) =>
@@ -79,9 +87,11 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
           title="Conciertos"
           value={stats.concerts.toLocaleString("es-CL")}
           subtitle={
-            stats.missingSetlists > 0
-              ? `${stats.missingSetlists} todavía sin canciones`
-              : `${stats.showsWithEncore.toLocaleString("es-CL")} con encore`
+            songsLoading
+              ? "Cargando temas…"
+              : stats.missingSetlists > 0
+                ? `${stats.missingSetlists} todavía sin canciones`
+                : `${stats.showsWithEncore.toLocaleString("es-CL")} con encore`
           }
           icon={Ticket}
         />
@@ -95,9 +105,11 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
           title="Canciones en vivo"
           value={stats.songCount.toLocaleString("es-CL")}
           subtitle={
-            stats.coverCount > 0
-              ? `${stats.coverCount.toLocaleString("es-CL")} covers`
-              : "Sin temas de cinta"
+            songsLoading
+              ? "Cargando temas…"
+              : stats.coverCount > 0
+                ? `${stats.coverCount.toLocaleString("es-CL")} covers`
+                : "Sin temas de cinta"
           }
           icon={Music2}
         />
@@ -110,7 +122,13 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
         <StatCard
           title="Canción más escuchada"
           value={stats.topSong?.name || "—"}
-          subtitle={stats.topSong ? `${stats.topSong.detail ?? ""} · ${countText(stats.topSong.count, "show", "shows")}` : "Cuando haya setlists con temas"}
+          subtitle={
+            songsLoading
+              ? "Cargando temas…"
+              : stats.topSong
+                ? `${stats.topSong.detail ?? ""} · ${countText(stats.topSong.count, "show", "shows")}`
+                : "Estos shows no tienen temas cargados"
+          }
           icon={Mic2}
           wrapValue
         />

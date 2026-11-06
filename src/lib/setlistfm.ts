@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import type { UserCtx } from "@/lib/user-context";
 
 const SETLIST_API = "https://api.setlist.fm/rest/1.0";
@@ -171,19 +172,70 @@ export async function loadAttendedSetlists(username: string): Promise<AttendedPa
   return { kind: "ok", setlists, total: first.total || setlists.length, partial };
 }
 
-export async function loadSetlist(id: string): Promise<RawSetlist | null | "missing-key" | "unavailable"> {
-  if (!/^[A-Za-z0-9]+$/.test(id)) return null;
-  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
-  if (!apiKey) return "missing-key";
+function asSongList(setlist: RawSetlist): RawSong[] {
+  return asList(setlist.set).flatMap((set) => asList(set.song));
+}
 
+export function setlistHasSongs(setlist: RawSetlist): boolean {
+  return asSongList(setlist).some((song) => Boolean(song.name?.trim()));
+}
+
+async function fetchSetlist(id: string): Promise<RawSetlist | null> {
+  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
+  if (!apiKey) {
+    const error = new Error("missing key");
+    error.name = "MissingKey";
+    throw error;
+  }
   const response = await fetch(`${SETLIST_API}/setlist/${id}`, {
     headers: {
       "x-api-key": apiKey,
       Accept: "application/json",
     },
-    next: { revalidate: 60 * 60 },
+    cache: "no-store",
   });
   if (response.status === 404) return null;
-  if (!response.ok) return "unavailable";
+  if (response.status === 429) {
+    const error = new Error("rate limit");
+    error.name = "RateLimit";
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(`setlist ${response.status}`);
+    error.name = "SetlistError";
+    throw error;
+  }
   return (await response.json()) as RawSetlist;
+}
+
+const getCachedSetlist = unstable_cache(
+  async (id: string) => fetchSetlist(id),
+  ["setlist-detail"],
+  { revalidate: 60 * 60 * 24 },
+);
+
+export async function loadSetlist(id: string): Promise<RawSetlist | null | "missing-key" | "unavailable"> {
+  if (!/^[A-Za-z0-9]+$/.test(id)) return null;
+  if (!setlistFmConfigured()) return "missing-key";
+  try {
+    return await getCachedSetlist(id);
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function loadSetlistsById(ids: string[]): Promise<{ setlists: RawSetlist[]; retry: boolean }> {
+  const setlists: RawSetlist[] = [];
+  for (const id of ids) {
+    if (!/^[A-Za-z0-9]+$/.test(id)) continue;
+    try {
+      const row = await getCachedSetlist(id);
+      if (row) setlists.push(row);
+    } catch (error) {
+      if (error instanceof Error && error.name === "RateLimit") {
+        return { setlists, retry: true };
+      }
+    }
+  }
+  return { setlists, retry: false };
 }

@@ -1,7 +1,6 @@
 import { requireUser } from "@/lib/auth";
-import { buildConcertStats } from "@/lib/concert-stats";
 import { getLinkedSetlistUser, loadAttendedSetlists, setlistFmConfigured } from "@/lib/setlistfm";
-import { ConcertDashboard } from "@/components/concerts/concert-dashboard";
+import { ConcertsLive } from "@/components/concerts/concerts-live";
 import { SetlistConnect } from "@/components/concerts/setlist-connect";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -16,7 +15,6 @@ export default async function ConcertsPage() {
   const linked = await getLinkedSetlistUser(auth.ctx);
   const configured = setlistFmConfigured();
   const attended = linked.username && configured ? await loadAttendedSetlists(linked.username) : null;
-  const stats = attended?.kind === "ok" ? buildConcertStats(attended.setlists) : null;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -59,8 +57,8 @@ export default async function ConcertsPage() {
         </Card>
       )}
 
-      {stats && attended?.kind === "ok" && (
-        <ConcertDashboard stats={stats} partial={attended.partial} />
+      {attended?.kind === "ok" && (
+        <ConcertsLive setlists={attended.setlists} partial={attended.partial} />
       )}
 
       <p className="text-xs text-spotify-light-gray">
