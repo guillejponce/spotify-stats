@@ -320,20 +320,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Sección de Trending y Actividad Social */}
-      {!blockingLoad && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <TrendingWidget />
-          <div>
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <span className="text-2xl">👥</span>
-              Actividad de Amigos
-            </h3>
-            <FriendActivityFeed limit={5} compact />
-          </div>
-        </div>
-      )}
-
       <div className="grid gap-5 sm:gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] xl:items-start">
         <div className="order-2 min-w-0 space-y-5 sm:space-y-8 xl:order-1">
           <div className="grid gap-4 sm:gap-6 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -429,6 +415,19 @@ export default function DashboardPage() {
           </Tabs>
         </section>
       </div>
+
+      {!blockingLoad && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TrendingWidget />
+          <div>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <span className="text-2xl">👥</span>
+              Actividad de Amigos
+            </h3>
+            <FriendActivityFeed limit={5} compact />
+          </div>
+        </div>
+      )}
 
       <details className="group rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md text-xs text-spotify-light-gray focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-spotify-green [&::-webkit-details-marker]:hidden">

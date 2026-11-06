@@ -9,11 +9,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 interface CurrentMood {
   mood_label: string;
   mood_intensity: number;
-  avg_valence: number;
-  avg_energy: number;
-  avg_danceability: number;
+  avg_valence: number | null;
+  avg_energy: number | null;
+  avg_danceability: number | null;
   total_plays: number;
   unique_tracks: number;
+  message?: string;
 }
 
 interface Recommendation {
@@ -30,20 +31,23 @@ export function MoodDashboardClient() {
   const [currentMood, setCurrentMood] = useState<CurrentMood | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loadingMood, setLoadingMood] = useState(true);
+  const [moodError, setMoodError] = useState<string | null>(null);
   const [loadingRecs, setLoadingRecs] = useState(false);
   const [selectedMoodForRecs, setSelectedMoodForRecs] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchCurrentMood() {
       setLoadingMood(true);
+      setMoodError(null);
       try {
         const response = await fetch(`/api/mood/current?period=${period}`);
-        if (!response.ok) throw new Error("Failed to fetch mood");
-
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "No se pudo cargar el mood");
         setCurrentMood(data.mood);
       } catch (err) {
         console.error("Error fetching current mood:", err);
+        setCurrentMood(null);
+        setMoodError(err instanceof Error ? err.message : "No se pudo cargar el mood");
       } finally {
         setLoadingMood(false);
       }
@@ -70,16 +74,18 @@ export function MoodDashboardClient() {
     }
   }
 
+  const pct = (value: number | null | undefined) => `${Math.round((value ?? 0) * 100)}%`;
+
   const getMoodDescription = (label: string, stats: CurrentMood) => {
     const descriptions: Record<string, string> = {
-      euphoric: `¡Tu música está en las nubes! Con valence de ${(stats.avg_valence * 100).toFixed(0)}% y energy de ${(stats.avg_energy * 100).toFixed(0)}%, estás escuchando pura euforia.`,
-      energetic: `Andas con todo! Tu música tiene ${(stats.avg_energy * 100).toFixed(0)}% de energía. Perfecto para mantenerte activo.`,
-      intense: `Tu música es pura intensidad. Energy alta (${(stats.avg_energy * 100).toFixed(0)}%) pero valence moderada. ¿Workout o catarsis?`,
-      chill: `Modo relax activado. Energy baja (${(stats.avg_energy * 100).toFixed(0)}%) y valence positiva. Perfecto para descansar.`,
-      melancholic: `Estás en tu mood reflexivo. Música de baja energía y valence. A veces está bien sentir.`,
-      focused: `En modo concentración. Tu música es perfecta para trabajar o estudiar.`,
-      balanced: `Tu música está equilibrada. Un buen balance entre diferentes moods.`,
-      no_data: `No hay suficientes datos para este período. ¡Escucha más música!`,
+      euphoric: `Tu música está en las nubes. Valence ${pct(stats.avg_valence)} y energía ${pct(stats.avg_energy)}.`,
+      energetic: `Andas con todo. La energía de lo que escuchaste está en ${pct(stats.avg_energy)}.`,
+      intense: `Pura intensidad: energía ${pct(stats.avg_energy)} y valence más baja.`,
+      chill: `Modo relax. Energía ${pct(stats.avg_energy)} y valence positiva.`,
+      melancholic: `Un período más reflexivo, con energía y valence bajas.`,
+      focused: `Música más quieta y acústica, de las que sirven para concentrarse.`,
+      balanced: `Un equilibrio entre moods distintos.`,
+      no_data: stats.message || "No hay suficientes datos para este período.",
     };
 
     return descriptions[label] || "Analizando tu mood musical...";
@@ -138,36 +144,37 @@ export function MoodDashboardClient() {
               </select>
             </div>
 
+            {moodError && <p className="text-gray-300">{moodError}</p>}
+
+            {currentMood && (
+              <p className="text-gray-300 mb-4">
+                {getMoodDescription(currentMood.mood_label, currentMood)}
+              </p>
+            )}
+
             {currentMood && currentMood.mood_label !== "no_data" && (
               <>
-                <p className="text-gray-300 mb-4">
-                  {getMoodDescription(currentMood.mood_label, currentMood)}
+                <p className="text-xs text-gray-500 mb-4">
+                  Estimado a partir de los géneros que escuchaste.
                 </p>
-
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   <div className="p-3 bg-gray-800/50 rounded-lg">
                     <p className="text-xs text-gray-400">Valence</p>
-                    <p className="text-xl font-bold text-green-400">
-                      {(currentMood.avg_valence * 100).toFixed(0)}%
-                    </p>
+                    <p className="text-xl font-bold text-green-400">{pct(currentMood.avg_valence)}</p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
                     <p className="text-xs text-gray-400">Energy</p>
-                    <p className="text-xl font-bold text-orange-400">
-                      {(currentMood.avg_energy * 100).toFixed(0)}%
-                    </p>
+                    <p className="text-xl font-bold text-orange-400">{pct(currentMood.avg_energy)}</p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
                     <p className="text-xs text-gray-400">Danceability</p>
                     <p className="text-xl font-bold text-purple-400">
-                      {(currentMood.avg_danceability * 100).toFixed(0)}%
+                      {pct(currentMood.avg_danceability)}
                     </p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
                     <p className="text-xs text-gray-400">Tracks</p>
-                    <p className="text-xl font-bold text-blue-400">
-                      {currentMood.unique_tracks}
-                    </p>
+                    <p className="text-xl font-bold text-blue-400">{currentMood.unique_tracks}</p>
                   </div>
                 </div>
               </>

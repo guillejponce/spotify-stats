@@ -77,9 +77,9 @@ export function MoodTimeline({ period = "week", limit = 12 }: MoodTimelineProps)
   if (timeline.length === 0) {
     return (
       <div className="p-8 text-center text-gray-400">
-        <p>No hay suficientes datos para mostrar el mood timeline.</p>
+        <p>No hay suficientes géneros en este período para armar el timeline.</p>
         <p className="text-sm mt-2">
-          Sigue escuchando música y volveremos a analizar tu mood!
+          El mood se estima con los géneros de los artistas que escuchaste.
         </p>
       </div>
     );
