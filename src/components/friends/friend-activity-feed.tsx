@@ -1,250 +1,164 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { UserAvatar } from "@/components/friends/user-avatar";
 
 interface ActivityEvent {
   activity_id: string;
   user_id: string;
-  display_name: string;
+  display_name: string | null;
   avatar_url: string | null;
   event_type: string;
-  event_data: Record<string, any>;
+  event_data: Record<string, string | number | null | undefined>;
   created_at: string;
 }
 
-interface FriendActivityFeedProps {
-  limit?: number;
-  compact?: boolean;
+function text(value: string | number | null | undefined): string {
+  return value == null ? "" : String(value);
 }
 
-export function FriendActivityFeed({ limit = 20, compact = false }: FriendActivityFeedProps) {
+function ActivityCopy({ activity }: { activity: ActivityEvent }) {
+  const data = activity.event_data;
+  const name = activity.display_name ?? "Alguien";
+
+  switch (activity.event_type) {
+    case "new_rating":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> calificó{" "}
+          <span className="font-medium">{text(data.track_name)}</span>
+          {data.artist_name ? <span className="text-spotify-light-gray"> · {text(data.artist_name)}</span> : null}
+          <span className="ml-1.5 font-semibold text-spotify-green">{text(data.rating)}/10</span>
+        </p>
+      );
+    case "discovered_artist":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> descubrió a{" "}
+          <span className="font-medium">{text(data.artist_name)}</span>
+        </p>
+      );
+    case "discovered_track":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> escuchó por primera vez{" "}
+          <span className="font-medium">{text(data.track_name)}</span>
+          {data.artist_name ? <span className="text-spotify-light-gray"> · {text(data.artist_name)}</span> : null}
+        </p>
+      );
+    case "listening_streak":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> lleva{" "}
+          <span className="font-medium">{text(data.days)} días seguidos</span> escuchando
+        </p>
+      );
+    case "top_track_changed":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> cambió su canción favorita a{" "}
+          <span className="font-medium">{text(data.track_name)}</span>
+        </p>
+      );
+    case "big_milestone":
+      return (
+        <p className="text-sm leading-snug text-white">
+          <span className="font-medium">{name}</span> {text(data.message)}
+        </p>
+      );
+    default:
+      return (
+        <p className="text-sm text-spotify-light-gray">
+          {name} tuvo actividad nueva
+        </p>
+      );
+  }
+}
+
+function ActivityThumb({ activity }: { activity: ActivityEvent }) {
+  const image = text(activity.event_data.album_image || activity.event_data.artist_image);
+  if (!image) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={image} alt="" className="h-11 w-11 shrink-0 rounded-md object-cover" />
+  );
+}
+
+export function FriendActivityFeed({ limit = 30 }: { limit?: number }) {
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchActivities() {
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setError(null);
-
       try {
         const response = await fetch(`/api/friends/activity?limit=${limit}`);
-        if (!response.ok) throw new Error("Failed to fetch friend activity");
-
         const data = await response.json();
-        setActivities(data.activities || []);
+        if (!response.ok) throw new Error(data.error || "No se pudo cargar la actividad");
+        if (!cancelled) setActivities(data.activities || []);
       } catch (err) {
-        console.error("Error fetching friend activity:", err);
-        setError("No se pudo cargar la actividad de amigos");
+        if (!cancelled) {
+          setActivities([]);
+          setError(err instanceof Error ? err.message : "No se pudo cargar la actividad");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-
-    fetchActivities();
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [limit]);
 
-  const renderActivityContent = (activity: ActivityEvent) => {
-    const { event_type, event_data } = activity;
-
-    switch (event_type) {
-      case "new_rating":
-        return (
-          <div className="flex items-start gap-3">
-            {event_data.album_image && (
-              <img
-                src={event_data.album_image}
-                alt={event_data.track_name}
-                className="w-12 h-12 rounded object-cover flex-shrink-0"
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}calificó{" "}
-                <span className="font-medium text-green-400">
-                  {event_data.track_name}
-                </span>
-                {" "}con{" "}
-                <span className="text-yellow-400 font-bold">{event_data.rating}/10</span>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {event_data.artist_name}
-              </p>
-            </div>
-          </div>
-        );
-
-      case "discovered_artist":
-        return (
-          <div className="flex items-start gap-3">
-            {event_data.artist_image && (
-              <img
-                src={event_data.artist_image}
-                alt={event_data.artist_name}
-                className="w-12 h-12 rounded-full object-cover flex-shrink-0"
-              />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}descubrió a{" "}
-                <span className="font-medium text-blue-400">
-                  {event_data.artist_name}
-                </span>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                🎉 Nuevo artista
-              </p>
-            </div>
-          </div>
-        );
-
-      case "discovered_track":
-        return (
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded bg-gray-800 flex items-center justify-center flex-shrink-0">
-              🎵
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}descubrió{" "}
-                <span className="font-medium text-purple-400">
-                  {event_data.track_name}
-                </span>
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {event_data.artist_name}
-              </p>
-            </div>
-          </div>
-        );
-
-      case "listening_streak":
-        return (
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-2xl">🔥</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}lleva{" "}
-                <span className="font-bold text-orange-400">
-                  {event_data.days} días consecutivos
-                </span>
-                {" "}escuchando música
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Racha {event_data.milestone}
-              </p>
-            </div>
-          </div>
-        );
-
-      case "top_track_changed":
-        return (
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded bg-gray-800 flex items-center justify-center flex-shrink-0">
-              👑
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}tiene nueva canción favorita:{" "}
-                <span className="font-medium text-yellow-400">
-                  {event_data.track_name}
-                </span>
-              </p>
-            </div>
-          </div>
-        );
-
-      case "big_milestone":
-        return (
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-2xl">🎉</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-medium">{activity.display_name}</span>
-                {" "}{event_data.message}
-              </p>
-            </div>
-          </div>
-        );
-
-      default:
-        return (
-          <p className="text-sm text-gray-400">
-            {activity.display_name} - {event_type}
-          </p>
-        );
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Card key={i} className="p-4 animate-pulse">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gray-800 rounded" />
-              <div className="flex-1 space-y-2">
-                <div className="h-4 bg-gray-800 rounded w-3/4" />
-                <div className="h-3 bg-gray-800 rounded w-1/2" />
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="p-8 text-center">
-        <p className="text-gray-400">{error}</p>
-      </Card>
-    );
-  }
-
-  if (activities.length === 0) {
-    return (
-      <Card className="p-8 text-center">
-        <p className="text-gray-400 mb-2">No hay actividad reciente de tus amigos</p>
-        <p className="text-sm text-gray-500">
-          Cuando tus amigos califiquen canciones o descubran artistas, aparecerán aquí
-        </p>
-      </Card>
-    );
-  }
-
   return (
-    <div className={compact ? "space-y-2" : "space-y-3"}>
-      {activities.map((activity) => (
-        <Card
-          key={activity.activity_id}
-          className={`${compact ? "p-3" : "p-4"} hover:bg-gray-900/50 transition-colors`}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              {renderActivityContent(activity)}
+    <Card>
+      <CardHeader>
+        <CardTitle>Actividad</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {loading &&
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex animate-pulse items-center gap-3 rounded-lg bg-white/5 p-3">
+              <div className="h-10 w-10 rounded-full bg-white/10" />
+              <div className="h-4 flex-1 rounded bg-white/10" />
             </div>
-            <span className="text-xs text-gray-500 flex-shrink-0">
-              {formatDistanceToNow(new Date(activity.created_at), {
-                addSuffix: true,
-                locale: es,
-              })}
-            </span>
-          </div>
-        </Card>
-      ))}
-    </div>
+          ))}
+
+        {!loading && error && <p className="text-sm text-red-300">{error}</p>}
+
+        {!loading && !error && activities.length === 0 && (
+          <p className="text-sm text-spotify-light-gray">
+            Cuando un amigo califique una canción con 8 o más, va a aparecer acá.
+          </p>
+        )}
+
+        {!loading &&
+          activities.map((activity) => (
+            <div key={activity.activity_id} className="flex items-center gap-3 rounded-lg bg-white/5 p-3">
+              <Link href={`/u/${activity.user_id}`} className="shrink-0 hover:opacity-90">
+                <UserAvatar url={activity.avatar_url} name={activity.display_name} />
+              </Link>
+              <div className="min-w-0 flex-1">
+                <ActivityCopy activity={activity} />
+                <p className="mt-1 text-xs text-spotify-light-gray">
+                  {formatDistanceToNow(new Date(activity.created_at), {
+                    addSuffix: true,
+                    locale: es,
+                  })}
+                </p>
+              </div>
+              <ActivityThumb activity={activity} />
+            </div>
+          ))}
+      </CardContent>
+    </Card>
   );
 }
