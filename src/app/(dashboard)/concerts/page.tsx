@@ -1,62 +1,13 @@
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 import { requireUser } from "@/lib/auth";
-import {
-  attendedShows,
-  getLinkedSetlistUser,
-  setlistFmConfigured,
-  type ConcertShow,
-} from "@/lib/setlistfm";
+import { buildConcertStats } from "@/lib/concert-stats";
+import { getLinkedSetlistUser, loadAttendedSetlists, setlistFmConfigured } from "@/lib/setlistfm";
+import { ConcertDashboard } from "@/components/concerts/concert-dashboard";
 import { SetlistConnect } from "@/components/concerts/setlist-connect";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 
 export const dynamic = "force-dynamic";
-
-function formatShowDate(iso: string): string {
-  const [year, month, day] = iso.split("-").map(Number);
-  if (!year || !month || !day) return iso;
-  return format(new Date(year, month - 1, day), "d MMM yyyy", { locale: es });
-}
-
-function ShowCard({ show }: { show: ConcertShow }) {
-  const place = [show.cityName, show.countryName].filter(Boolean).join(", ");
-  const inChile = show.countryCode === "CL";
-
-  return (
-    <Card className="overflow-hidden">
-      <div className="p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-semibold text-white">{show.artistName}</h2>
-          {inChile && (
-            <span className="rounded-full bg-spotify-green/15 px-2 py-0.5 text-[11px] font-semibold text-spotify-green">
-              En Chile
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-sm text-spotify-light-gray">
-          {formatShowDate(show.eventDate)}
-          {place ? ` · ${place}` : ""}
-        </p>
-        <p className="text-sm text-white/80">{show.venueName}</p>
-        {show.tour && <p className="mt-1 text-xs text-spotify-light-gray">{show.tour}</p>}
-        {show.songs.length > 0 && (
-          <p className="mt-3 text-sm leading-relaxed text-spotify-light-gray">
-            {show.songs.join(" · ")}
-          </p>
-        )}
-        <a
-          href={show.url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-block text-sm font-medium text-spotify-green hover:underline"
-        >
-          Ver setlist
-        </a>
-      </div>
-    </Card>
-  );
-}
+export const maxDuration = 60;
 
 export default async function ConcertsPage() {
   const auth = await requireUser();
@@ -64,7 +15,8 @@ export default async function ConcertsPage() {
 
   const linked = await getLinkedSetlistUser(auth.ctx);
   const configured = setlistFmConfigured();
-  const attended = linked.username && configured ? await attendedShows(linked.username) : null;
+  const attended = linked.username && configured ? await loadAttendedSetlists(linked.username) : null;
+  const stats = attended?.kind === "ok" ? buildConcertStats(attended.setlists) : null;
   const profileUrl = linked.username
     ? `https://www.setlist.fm/user/${encodeURIComponent(linked.username)}`
     : null;
@@ -73,7 +25,7 @@ export default async function ConcertsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Conciertos"
-        description="Cada cuenta conecta su usuario de setlist.fm. Acá aparecen los shows que marcaste como asistidos."
+        description="Stats de los shows que marcaste en setlist.fm. Las canciones salen del setlist: lo de cinta no cuenta como tocado en vivo."
       />
 
       <Card className="p-5">
@@ -121,17 +73,8 @@ export default async function ConcertsPage() {
         </Card>
       )}
 
-      {attended?.kind === "ok" && (
-        <div className="space-y-3">
-          {attended.shows.map((show) => (
-            <ShowCard key={show.id} show={show} />
-          ))}
-          {attended.total > attended.shows.length && profileUrl && (
-            <p className="text-sm text-spotify-light-gray">
-              Hay {attended.total} shows. Estos son los más recientes.
-            </p>
-          )}
-        </div>
+      {stats && attended?.kind === "ok" && (
+        <ConcertDashboard stats={stats} partial={attended.partial} />
       )}
 
       <p className="text-xs text-spotify-light-gray">

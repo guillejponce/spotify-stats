@@ -1,41 +1,49 @@
 import type { UserCtx } from "@/lib/user-context";
 
 const SETLIST_API = "https://api.setlist.fm/rest/1.0";
+const MAX_PAGES = 25;
 
-export interface ConcertShow {
-  id: string;
-  artistName: string;
-  eventDate: string;
-  venueName: string;
-  cityName: string;
-  countryName: string;
-  countryCode: string;
-  tour: string | null;
-  url: string;
-  songs: string[];
-}
+export type RawArtist = { mbid?: string; name?: string; url?: string };
 
-export type AttendedResult =
-  | { kind: "ok"; shows: ConcertShow[]; total: number }
-  | { kind: "private" }
-  | { kind: "empty" }
-  | { kind: "missing-key" }
-  | { kind: "unavailable" };
+export type RawSong = {
+  name?: string;
+  tape?: boolean;
+  info?: string;
+  cover?: RawArtist;
+  with?: RawArtist;
+};
 
-type RawSong = { name?: string };
-type RawSet = { song?: RawSong | RawSong[] };
-type RawSetlist = {
+export type RawSet = {
+  name?: string;
+  encore?: number;
+  song?: RawSong | RawSong[];
+};
+
+export type RawSetlist = {
   id?: string;
   eventDate?: string;
   url?: string;
-  artist?: { name?: string };
+  artist?: RawArtist;
   venue?: {
+    id?: string;
     name?: string;
-    city?: { name?: string; country?: { name?: string; code?: string } };
+    url?: string;
+    city?: {
+      id?: string;
+      name?: string;
+      country?: { name?: string; code?: string };
+    };
   };
   tour?: { name?: string };
   set?: RawSet | RawSet[];
 };
+
+export type AttendedPage =
+  | { kind: "ok"; setlists: RawSetlist[]; total: number; partial: boolean }
+  | { kind: "private" }
+  | { kind: "empty" }
+  | { kind: "missing-key" }
+  | { kind: "unavailable" };
 
 function asList<T>(value: T | T[] | undefined): T[] {
   if (!value) return [];
@@ -58,40 +66,6 @@ export function parseSetlistUsername(raw: string): string | null {
   }
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(value)) return null;
   return value;
-}
-
-function eventIso(value: string): string {
-  const [day, month, year] = value.split("-");
-  if (!year || !month || !day) return "";
-  return `${year}-${month}-${day}`;
-}
-
-function songsOf(setlist: RawSetlist): string[] {
-  const names: string[] = [];
-  for (const set of asList(setlist.set)) {
-    for (const song of asList(set.song)) {
-      const name = song.name?.trim();
-      if (name) names.push(name);
-    }
-  }
-  return names.slice(0, 12);
-}
-
-function toShow(setlist: RawSetlist): ConcertShow | null {
-  const eventDate = eventIso(setlist.eventDate ?? "");
-  if (!setlist.id || !eventDate || !setlist.url) return null;
-  return {
-    id: setlist.id,
-    artistName: setlist.artist?.name?.trim() || "Artista",
-    eventDate,
-    venueName: setlist.venue?.name?.trim() || "Venue",
-    cityName: setlist.venue?.city?.name?.trim() || "",
-    countryName: setlist.venue?.city?.country?.name?.trim() || "",
-    countryCode: setlist.venue?.city?.country?.code?.trim() || "",
-    tour: setlist.tour?.name?.trim() || null,
-    url: setlist.url,
-    songs: songsOf(setlist),
-  };
 }
 
 function columnMissing(error: { code?: string; message?: string }): boolean {
@@ -128,12 +102,13 @@ export async function saveSetlistUser(ctx: UserCtx, username: string | null): Pr
   }
 }
 
-export async function attendedShows(username: string): Promise<AttendedResult> {
-  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
-  if (!apiKey) return { kind: "missing-key" };
-
+async function fetchAttendedPage(
+  username: string,
+  page: number,
+  apiKey: string,
+): Promise<{ status: number; setlists: RawSetlist[]; total: number; itemsPerPage: number }> {
   const url = new URL(`${SETLIST_API}/user/${encodeURIComponent(username)}/attended`);
-  url.searchParams.set("p", "1");
+  url.searchParams.set("p", String(page));
   const response = await fetch(url, {
     headers: {
       "x-api-key": apiKey,
@@ -141,20 +116,56 @@ export async function attendedShows(username: string): Promise<AttendedResult> {
     },
     cache: "no-store",
   });
-
-  if (response.status === 403) return { kind: "private" };
-  if (response.status === 404) return { kind: "empty" };
-  if (!response.ok) return { kind: "unavailable" };
-
+  if (!response.ok) {
+    return { status: response.status, setlists: [], total: 0, itemsPerPage: 20 };
+  }
   const json = (await response.json()) as {
     setlist?: RawSetlist | RawSetlist[];
     total?: number;
+    itemsPerPage?: number;
   };
-  const shows = asList(json.setlist)
-    .map((row) => toShow(row))
-    .filter((row): row is ConcertShow => Boolean(row))
-    .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
+  return {
+    status: response.status,
+    setlists: asList(json.setlist),
+    total: Number(json.total) || 0,
+    itemsPerPage: Number(json.itemsPerPage) || 20,
+  };
+}
 
-  if (!shows.length) return { kind: "empty" };
-  return { kind: "ok", shows, total: Number(json.total) || shows.length };
+export async function loadAttendedSetlists(username: string): Promise<AttendedPage> {
+  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
+  if (!apiKey) return { kind: "missing-key" };
+
+  const first = await fetchAttendedPage(username, 1, apiKey);
+  if (first.status === 403) return { kind: "private" };
+  if (first.status === 404) return { kind: "empty" };
+  if (first.status !== 200) return { kind: "unavailable" };
+  if (!first.setlists.length) return { kind: "empty" };
+
+  const pages = Math.min(
+    MAX_PAGES,
+    Math.max(1, Math.ceil(first.total / Math.max(first.itemsPerPage, 1))),
+  );
+  const rows = [...first.setlists];
+  let partial = pages * first.itemsPerPage < first.total;
+
+  for (let page = 2; page <= pages; page += 1) {
+    const next = await fetchAttendedPage(username, page, apiKey);
+    if (next.status === 429 || next.status !== 200) {
+      partial = true;
+      break;
+    }
+    rows.push(...next.setlists);
+  }
+
+  const seen = new Set<string>();
+  const setlists = rows.filter((row) => {
+    const id = row.id ?? "";
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  if (!setlists.length) return { kind: "empty" };
+  return { kind: "ok", setlists, total: first.total || setlists.length, partial };
 }
