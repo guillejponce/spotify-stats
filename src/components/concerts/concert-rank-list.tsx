@@ -14,11 +14,15 @@ export function ConcertRankList({
   items,
   hideTitle = false,
   initialCount = 10,
+  activeId,
+  onPick,
 }: {
   title: string;
   items: RankedItem[];
   hideTitle?: boolean;
   initialCount?: number;
+  activeId?: string | null;
+  onPick?: (item: RankedItem) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const max = items[0]?.count ?? 0;
@@ -39,6 +43,7 @@ export function ConcertRankList({
           <div className="space-y-1">
             {visible.map((item, index) => {
               const width = max > 0 ? (item.count / max) * 100 : 0;
+              const active = activeId === item.matchId;
               const body = (
                 <>
                   <span className="w-6 shrink-0 text-right text-sm tabular-nums text-spotify-light-gray/75">
@@ -59,17 +64,13 @@ export function ConcertRankList({
                   </div>
                 </>
               );
-              const className = "flex items-center gap-3 rounded-xl p-2.5";
-              return item.href ? (
-                <a
-                  key={item.id}
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`${className} hover:bg-white/[0.06]`}
-                >
+              const className = `flex w-full items-center gap-3 rounded-xl p-2.5 text-left ${
+                active ? "bg-white/[0.08]" : onPick ? "hover:bg-white/[0.06]" : ""
+              }`;
+              return onPick ? (
+                <button key={item.id} type="button" className={className} onClick={() => onPick(item)}>
                   {body}
-                </a>
+                </button>
               ) : (
                 <div key={item.id} className={className}>
                   {body}

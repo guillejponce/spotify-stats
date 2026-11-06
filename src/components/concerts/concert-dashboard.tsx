@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Building2, CalendarDays, MapPin, Mic2, Music2, Ticket, Users } from "lucide-react";
@@ -5,7 +9,10 @@ import { ConcertRankList } from "@/components/concerts/concert-rank-list";
 import { StatCard } from "@/components/stats/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { ConcertStats } from "@/lib/concert-stats";
+import type { ConcertEntry, ConcertStats, RankedItem } from "@/lib/concert-stats";
+
+type FocusKind = "song" | "artist" | "venue" | "city" | "tour";
+type Focus = { kind: FocusKind; id: string; label: string };
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -43,7 +50,23 @@ function Bars({
   );
 }
 
+function showMatches(show: ConcertEntry, focus: Focus | null): boolean {
+  if (!focus) return true;
+  if (focus.kind === "artist") return show.artistId === focus.id;
+  if (focus.kind === "venue") return show.venueId === focus.id;
+  if (focus.kind === "city") return show.cityId === focus.id;
+  if (focus.kind === "tour") return show.tourKey === focus.id;
+  return show.songKeys.includes(focus.id);
+}
+
 export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; partial: boolean }) {
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const pick = (kind: FocusKind) => (item: RankedItem) => {
+    setFocus((current) =>
+      current?.kind === kind && current.id === item.matchId ? null : { kind, id: item.matchId, label: item.name },
+    );
+  };
+  const visibleShows = stats.shows.filter((show) => showMatches(show, focus));
   const peakYear = stats.years.reduce(
     (best, row) => (row.count > best.count ? row : best),
     stats.years[0] ?? { year: 0, count: 0 },
@@ -137,7 +160,12 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(18rem,24rem)] xl:items-start">
-        <ConcertRankList title="Canciones que más escuchaste en vivo" items={stats.songs} />
+        <ConcertRankList
+          title="Canciones que más escuchaste en vivo"
+          items={stats.songs}
+          activeId={focus?.kind === "song" ? focus.id : null}
+          onPick={pick("song")}
+        />
         <Tabs defaultValue="artists" className="min-w-0">
           <div className="-mx-1 overflow-x-auto pb-1">
             <TabsList className="inline-flex w-max flex-nowrap gap-1">
@@ -149,40 +177,82 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
             </TabsList>
           </div>
           <TabsContent value="artists" className="mt-3">
-            <ConcertRankList title="Artistas" items={stats.artists} hideTitle />
+            <ConcertRankList
+              title="Artistas"
+              items={stats.artists}
+              hideTitle
+              activeId={focus?.kind === "artist" ? focus.id : null}
+              onPick={pick("artist")}
+            />
           </TabsContent>
           <TabsContent value="venues" className="mt-3">
-            <ConcertRankList title="Venues" items={stats.venues} hideTitle />
+            <ConcertRankList
+              title="Venues"
+              items={stats.venues}
+              hideTitle
+              activeId={focus?.kind === "venue" ? focus.id : null}
+              onPick={pick("venue")}
+            />
           </TabsContent>
           <TabsContent value="cities" className="mt-3">
-            <ConcertRankList title="Ciudades" items={stats.cities} hideTitle />
+            <ConcertRankList
+              title="Ciudades"
+              items={stats.cities}
+              hideTitle
+              activeId={focus?.kind === "city" ? focus.id : null}
+              onPick={pick("city")}
+            />
           </TabsContent>
           {stats.tours.length > 0 && (
             <TabsContent value="tours" className="mt-3">
-              <ConcertRankList title="Tours" items={stats.tours} hideTitle />
+              <ConcertRankList
+                title="Tours"
+                items={stats.tours}
+                hideTitle
+                activeId={focus?.kind === "tour" ? focus.id : null}
+                onPick={pick("tour")}
+              />
             </TabsContent>
           )}
           {stats.covers.length > 0 && (
             <TabsContent value="covers" className="mt-3">
-              <ConcertRankList title="Covers" items={stats.covers} hideTitle />
+              <ConcertRankList
+                title="Covers"
+                items={stats.covers}
+                hideTitle
+                activeId={focus?.kind === "song" ? focus.id : null}
+                onPick={pick("song")}
+              />
             </TabsContent>
           )}
         </Tabs>
       </div>
 
       <Card className="border-white/[0.06]">
-        <CardHeader className="px-4 pt-5 sm:p-6">
-          <CardTitle className="text-base sm:text-lg">Todos los shows</CardTitle>
+        <CardHeader className="flex-row items-center justify-between gap-3 px-4 pt-5 sm:p-6">
+          <CardTitle className="text-base sm:text-lg">
+            {focus ? `Shows de ${focus.label}` : "Todos los shows"}
+          </CardTitle>
+          {focus && (
+            <button
+              type="button"
+              onClick={() => setFocus(null)}
+              className="text-sm font-medium text-spotify-green hover:underline"
+            >
+              Ver todos
+            </button>
+          )}
         </CardHeader>
         <CardContent className="max-h-[32rem] space-y-1 overflow-y-auto px-2 pb-4 sm:px-3">
-          {stats.shows.map((show) => {
+          {visibleShows.length === 0 && (
+            <p className="px-2 py-6 text-sm text-spotify-light-gray">No hay shows para ese filtro.</p>
+          )}
+          {visibleShows.map((show) => {
             const place = [show.cityName, show.countryName].filter(Boolean).join(", ");
             return (
-              <a
+              <Link
                 key={show.id}
-                href={show.url}
-                target="_blank"
-                rel="noreferrer"
+                href={/^[A-Za-z0-9]+$/.test(show.id) ? `/concerts/${show.id}` : "/concerts"}
                 className="flex items-baseline justify-between gap-3 rounded-xl px-2.5 py-2.5 hover:bg-white/[0.06]"
               >
                 <div className="min-w-0">
@@ -200,7 +270,7 @@ export function ConcertDashboard({ stats, partial }: { stats: ConcertStats; part
                   {show.songCount > 0 ? `${show.songCount} temas` : "Sin setlist"}
                   {show.hasEncore ? " · encore" : ""}
                 </p>
-              </a>
+              </Link>
             );
           })}
         </CardContent>

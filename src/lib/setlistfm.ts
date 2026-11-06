@@ -35,6 +35,7 @@ export type RawSetlist = {
     };
   };
   tour?: { name?: string };
+  info?: string;
   set?: RawSet | RawSet[];
 };
 
@@ -168,4 +169,21 @@ export async function loadAttendedSetlists(username: string): Promise<AttendedPa
 
   if (!setlists.length) return { kind: "empty" };
   return { kind: "ok", setlists, total: first.total || setlists.length, partial };
+}
+
+export async function loadSetlist(id: string): Promise<RawSetlist | null | "missing-key" | "unavailable"> {
+  if (!/^[A-Za-z0-9]+$/.test(id)) return null;
+  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
+  if (!apiKey) return "missing-key";
+
+  const response = await fetch(`${SETLIST_API}/setlist/${id}`, {
+    headers: {
+      "x-api-key": apiKey,
+      Accept: "application/json",
+    },
+    next: { revalidate: 60 * 60 },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) return "unavailable";
+  return (await response.json()) as RawSetlist;
 }

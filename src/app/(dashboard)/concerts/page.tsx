@@ -17,10 +17,6 @@ export default async function ConcertsPage() {
   const configured = setlistFmConfigured();
   const attended = linked.username && configured ? await loadAttendedSetlists(linked.username) : null;
   const stats = attended?.kind === "ok" ? buildConcertStats(attended.setlists) : null;
-  const profileUrl = linked.username
-    ? `https://www.setlist.fm/user/${encodeURIComponent(linked.username)}`
-    : null;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -35,16 +31,6 @@ export default async function ConcertsPage() {
           </p>
         ) : (
           <SetlistConnect username={linked.username} />
-        )}
-        {profileUrl && (
-          <a
-            href={profileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-block text-sm text-spotify-green hover:underline"
-          >
-            Ver perfil en setlist.fm
-          </a>
         )}
       </Card>
 

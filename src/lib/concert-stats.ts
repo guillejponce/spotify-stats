@@ -2,13 +2,44 @@ import type { RawSet, RawSetlist, RawSong } from "@/lib/setlistfm";
 
 export interface RankedItem {
   id: string;
+  matchId: string;
   name: string;
   detail?: string;
   count: number;
-  href?: string;
 }
 
 export interface ConcertEntry {
+  id: string;
+  artistId: string;
+  artistName: string;
+  venueId: string;
+  cityId: string;
+  tourKey: string | null;
+  songKeys: string[];
+  eventDate: string;
+  venueName: string;
+  cityName: string;
+  countryName: string;
+  countryCode: string;
+  tour: string | null;
+  songCount: number;
+  hasEncore: boolean;
+}
+
+export interface SetlistSongLine {
+  name: string;
+  tape: boolean;
+  cover?: string;
+  guest?: string;
+  info?: string;
+}
+
+export interface SetlistBlock {
+  title: string;
+  songs: SetlistSongLine[];
+}
+
+export interface SetlistView {
   id: string;
   artistName: string;
   eventDate: string;
@@ -17,9 +48,9 @@ export interface ConcertEntry {
   countryName: string;
   countryCode: string;
   tour: string | null;
-  url: string;
-  songCount: number;
-  hasEncore: boolean;
+  info: string | null;
+  sourceUrl: string;
+  blocks: SetlistBlock[];
 }
 
 export interface ConcertStats {
@@ -65,15 +96,15 @@ function songKey(artist: string, title: string): string {
 type Bucket = {
   name: string;
   detail?: string;
-  href?: string;
+  matchId?: string;
   shows: Set<string>;
 };
 
-function bump(map: Map<string, Bucket>, id: string, showId: string, name: string, extra?: { detail?: string; href?: string }) {
-  const current = map.get(id) ?? { name, detail: extra?.detail, href: extra?.href, shows: new Set<string>() };
+function bump(map: Map<string, Bucket>, id: string, showId: string, name: string, extra?: { detail?: string; matchId?: string }) {
+  const current = map.get(id) ?? { name, detail: extra?.detail, matchId: extra?.matchId, shows: new Set<string>() };
   current.shows.add(showId);
   if (!current.detail && extra?.detail) current.detail = extra.detail;
-  if (!current.href && extra?.href) current.href = extra.href;
+  if (!current.matchId && extra?.matchId) current.matchId = extra.matchId;
   map.set(id, current);
 }
 
@@ -81,9 +112,9 @@ function ranked(map: Map<string, Bucket>, limit = 40): RankedItem[] {
   return Array.from(map.entries())
     .map(([id, bucket]) => ({
       id,
+      matchId: bucket.matchId || id,
       name: bucket.name,
       detail: bucket.detail,
-      href: bucket.href,
       count: bucket.shows.size,
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "es"))
@@ -115,20 +146,19 @@ export function buildConcertStats(setlists: RawSetlist[]): ConcertStats {
 
     const artistName = setlist.artist?.name?.trim() || "Artista";
     const artistId = setlist.artist?.mbid || artistName.toLowerCase();
-    bump(artists, artistId, showId, artistName, { href: setlist.artist?.url });
+    bump(artists, artistId, showId, artistName);
 
     const venueName = setlist.venue?.name?.trim() || "Venue";
     const cityName = setlist.venue?.city?.name?.trim() || "";
     const countryName = setlist.venue?.city?.country?.name?.trim() || "";
     const countryCode = setlist.venue?.city?.country?.code?.trim() || "";
     const venueId = setlist.venue?.id || `${venueName}|${cityName}`.toLowerCase();
+    const cityId = setlist.venue?.city?.id || `${cityName}|${countryCode || countryName}`.toLowerCase();
     bump(venues, venueId, showId, venueName, {
-      detail: [cityName, countryName].filter(Boolean).join(", "),
-      href: setlist.venue?.url,
+      detail: [cityName, countryName].filter(Boolean).join(", ") || undefined,
     });
 
     if (cityName) {
-      const cityId = setlist.venue?.city?.id || `${cityName}|${countryCode || countryName}`.toLowerCase();
       bump(cities, cityId, showId, cityName, { detail: countryName || undefined });
     }
     if (countryCode || countryName) countries.add(countryCode || countryName);
@@ -155,10 +185,11 @@ export function buildConcertStats(setlists: RawSetlist[]): ConcertStats {
           original ? `cover de ${original}` : "",
           guest ? `con ${guest}` : "",
         ].filter(Boolean).join(" · ");
-        bump(songs, key, showId, title, { detail });
+        bump(songs, key, showId, title, { detail, matchId: key });
         if (original) {
           bump(covers, `${key}::${original.toLowerCase()}`, showId, title, {
             detail: `${artistName} · original de ${original}`,
+            matchId: key,
           });
         }
       }
@@ -172,14 +203,18 @@ export function buildConcertStats(setlists: RawSetlist[]): ConcertStats {
 
     shows.push({
       id: showId,
+      artistId,
       artistName,
+      venueId,
+      cityId,
+      tourKey: tour ? tour.toLowerCase() : null,
+      songKeys: Array.from(heard),
       eventDate: when.iso,
       venueName,
       cityName,
       countryName,
       countryCode,
       tour: tour || null,
-      url: setlist.url || "https://www.setlist.fm",
       songCount,
       hasEncore: encore,
     });
@@ -215,5 +250,63 @@ export function buildConcertStats(setlists: RawSetlist[]): ConcertStats {
     years,
     weekdays,
     shows,
+  };
+}
+
+export function describeSetlist(setlist: RawSetlist): SetlistView | null {
+  const when = eventParts(setlist.eventDate);
+  if (!setlist.id || !when) return null;
+
+  const blocks: SetlistBlock[] = [];
+  let mainIndex = 0;
+  let encoreIndex = 0;
+  const sets = asList(setlist.set);
+
+  for (const set of sets) {
+    const songs = asList(set.song)
+      .map((song) => {
+        const name = song.name?.trim();
+        if (!name) return null;
+        const line: SetlistSongLine = {
+          name,
+          tape: song.tape === true,
+        };
+        const cover = song.cover?.name?.trim();
+        const guest = song.with?.name?.trim();
+        const info = song.info?.trim();
+        if (cover) line.cover = cover;
+        if (guest) line.guest = guest;
+        if (info) line.info = info;
+        return line;
+      })
+      .filter((song): song is SetlistSongLine => Boolean(song));
+
+    if (!songs.length) continue;
+    const isEncore = typeof set.encore === "number" && set.encore > 0;
+    const custom = set.name?.trim();
+    let title: string;
+    if (isEncore) {
+      encoreIndex += 1;
+      title = encoreIndex === 1 ? "Encore" : `Encore ${encoreIndex}`;
+    } else {
+      mainIndex += 1;
+      title = custom || (sets.length > 1 ? `Set ${mainIndex}` : "Set");
+    }
+    if (custom && isEncore) title = `${title} · ${custom}`;
+    blocks.push({ title, songs });
+  }
+
+  return {
+    id: setlist.id,
+    artistName: setlist.artist?.name?.trim() || "Artista",
+    eventDate: when.iso,
+    venueName: setlist.venue?.name?.trim() || "Venue",
+    cityName: setlist.venue?.city?.name?.trim() || "",
+    countryName: setlist.venue?.city?.country?.name?.trim() || "",
+    countryCode: setlist.venue?.city?.country?.code?.trim() || "",
+    tour: setlist.tour?.name?.trim() || null,
+    info: setlist.info?.trim() || null,
+    sourceUrl: setlist.url || "https://www.setlist.fm",
+    blocks,
   };
 }
