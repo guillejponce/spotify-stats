@@ -1,4 +1,3 @@
-import { getTopArtists } from "@/lib/stats";
 import type { UserCtx } from "@/lib/user-context";
 
 const SETLIST_API = "https://api.setlist.fm/rest/1.0";
@@ -6,7 +5,6 @@ const SETLIST_API = "https://api.setlist.fm/rest/1.0";
 export interface ConcertShow {
   id: string;
   artistName: string;
-  artistImage: string | null;
   eventDate: string;
   venueName: string;
   cityName: string;
@@ -16,6 +14,13 @@ export interface ConcertShow {
   url: string;
   songs: string[];
 }
+
+export type AttendedResult =
+  | { kind: "ok"; shows: ConcertShow[]; total: number }
+  | { kind: "private" }
+  | { kind: "empty" }
+  | { kind: "missing-key" }
+  | { kind: "unavailable" };
 
 type RawSong = { name?: string };
 type RawSet = { song?: RawSong | RawSong[] };
@@ -37,6 +42,24 @@ function asList<T>(value: T | T[] | undefined): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+export function setlistFmConfigured(): boolean {
+  return Boolean(process.env.SETLISTFM_API_KEY?.trim());
+}
+
+export function parseSetlistUsername(raw: string): string | null {
+  let value = raw.trim().replace(/^@/, "");
+  const fromUrl = value.match(/setlist\.fm\/user\/([^/?#]+)/i);
+  if (fromUrl) {
+    try {
+      value = decodeURIComponent(fromUrl[1]);
+    } catch {
+      value = fromUrl[1];
+    }
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/.test(value)) return null;
+  return value;
+}
+
 function eventIso(value: string): string {
   const [day, month, year] = value.split("-");
   if (!year || !month || !day) return "";
@@ -54,13 +77,12 @@ function songsOf(setlist: RawSetlist): string[] {
   return names.slice(0, 12);
 }
 
-function toShow(setlist: RawSetlist, artistImage: string | null): ConcertShow | null {
+function toShow(setlist: RawSetlist): ConcertShow | null {
   const eventDate = eventIso(setlist.eventDate ?? "");
   if (!setlist.id || !eventDate || !setlist.url) return null;
   return {
     id: setlist.id,
     artistName: setlist.artist?.name?.trim() || "Artista",
-    artistImage,
     eventDate,
     venueName: setlist.venue?.name?.trim() || "Venue",
     cityName: setlist.venue?.city?.name?.trim() || "",
@@ -72,78 +94,67 @@ function toShow(setlist: RawSetlist, artistImage: string | null): ConcertShow | 
   };
 }
 
-async function searchYear(artistName: string, year: number, apiKey: string): Promise<RawSetlist[]> {
-  const url = new URL(`${SETLIST_API}/search/setlists`);
-  url.searchParams.set("artistName", artistName);
-  url.searchParams.set("year", String(year));
+function columnMissing(error: { code?: string; message?: string }): boolean {
+  return error.code === "42703" || (error.message ?? "").includes("setlist_fm_user");
+}
+
+export async function getLinkedSetlistUser(ctx: UserCtx): Promise<{
+  username: string | null;
+  columnReady: boolean;
+}> {
+  const { data, error } = await ctx.db
+    .from("profiles")
+    .select("setlist_fm_user")
+    .eq("id", ctx.userId)
+    .maybeSingle();
+  if (error) {
+    if (columnMissing(error)) return { username: null, columnReady: false };
+    throw new Error(error.message);
+  }
+  const username = typeof data?.setlist_fm_user === "string" ? data.setlist_fm_user.trim() : "";
+  return { username: username || null, columnReady: true };
+}
+
+export async function saveSetlistUser(ctx: UserCtx, username: string | null): Promise<void> {
+  const { error } = await ctx.db
+    .from("profiles")
+    .update({ setlist_fm_user: username })
+    .eq("id", ctx.userId);
+  if (error) {
+    if (columnMissing(error)) {
+      throw new Error("Falta correr supabase/setlistfm_user.sql en Supabase.");
+    }
+    throw new Error(error.message);
+  }
+}
+
+export async function attendedShows(username: string): Promise<AttendedResult> {
+  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
+  if (!apiKey) return { kind: "missing-key" };
+
+  const url = new URL(`${SETLIST_API}/user/${encodeURIComponent(username)}/attended`);
+  url.searchParams.set("p", "1");
   const response = await fetch(url, {
     headers: {
       "x-api-key": apiKey,
       Accept: "application/json",
     },
-    next: { revalidate: 60 * 60 * 12 },
+    cache: "no-store",
   });
-  if (response.status === 404) return [];
-  if (response.status === 429) {
-    const error = new Error("setlist.fm rate limit");
-    error.name = "SetlistRateLimit";
-    throw error;
-  }
-  if (!response.ok) throw new Error(`setlist.fm ${response.status}`);
-  const json = (await response.json()) as { setlist?: RawSetlist | RawSetlist[] };
-  return asList(json.setlist);
-}
 
-async function latestShow(
-  artistName: string,
-  artistImage: string | null,
-  apiKey: string,
-): Promise<ConcertShow | null> {
-  const year = new Date().getFullYear();
-  for (const candidate of [year, year - 1, year - 2]) {
-    const rows = await searchYear(artistName, candidate, apiKey);
-    const exact = rows.filter(
-      (row) => row.artist?.name?.trim().toLowerCase() === artistName.trim().toLowerCase(),
-    );
-    const pool = exact.length ? exact : [];
-    const newest = pool
-      .map((row) => toShow(row, artistImage))
-      .filter((row): row is ConcertShow => Boolean(row))
-      .sort((a, b) => b.eventDate.localeCompare(a.eventDate))[0];
-    if (newest) return newest;
-  }
-  return null;
-}
+  if (response.status === 403) return { kind: "private" };
+  if (response.status === 404) return { kind: "empty" };
+  if (!response.ok) return { kind: "unavailable" };
 
-export function setlistFmConfigured(): boolean {
-  return Boolean(process.env.SETLISTFM_API_KEY?.trim());
-}
+  const json = (await response.json()) as {
+    setlist?: RawSetlist | RawSetlist[];
+    total?: number;
+  };
+  const shows = asList(json.setlist)
+    .map((row) => toShow(row))
+    .filter((row): row is ConcertShow => Boolean(row))
+    .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
 
-export async function recentShowsForUser(ctx: UserCtx): Promise<{
-  shows: ConcertShow[];
-  limited: boolean;
-}> {
-  const apiKey = process.env.SETLISTFM_API_KEY?.trim();
-  if (!apiKey) return { shows: [], limited: false };
-
-  const artists = await getTopArtists(ctx, { filter: "last_6_months" }, 6);
-  const shows: ConcertShow[] = [];
-  let limited = false;
-
-  for (const artist of artists) {
-    if (!artist.name.trim()) continue;
-    try {
-      const show = await latestShow(artist.name, artist.image_url, apiKey);
-      if (show) shows.push(show);
-    } catch (error) {
-      if (error instanceof Error && error.name === "SetlistRateLimit") {
-        limited = true;
-        break;
-      }
-      console.warn("[setlist.fm]", artist.name, error);
-    }
-  }
-
-  shows.sort((a, b) => b.eventDate.localeCompare(a.eventDate));
-  return { shows, limited };
+  if (!shows.length) return { kind: "empty" };
+  return { kind: "ok", shows, total: Number(json.total) || shows.length };
 }
