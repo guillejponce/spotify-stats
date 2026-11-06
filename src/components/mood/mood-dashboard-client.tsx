@@ -124,7 +124,7 @@ export function MoodDashboardClient() {
                 size="xl"
               />
             ) : (
-              <MoodRobot mood="no_data" size="xl" />
+              <MoodRobot mood="no_data" intensity={0} size="xl" />
             )}
           </div>
 

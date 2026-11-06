@@ -1,5 +1,7 @@
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
+import { getSpotifyClientCredentialsToken } from "@/lib/spotify";
+import { getSpotifyAccessToken } from "@/lib/spotify-token";
 import type { UserCtx } from "@/lib/user-context";
 
 export type MoodPeriod = "day" | "week" | "month" | "year";
@@ -86,7 +88,8 @@ export function vectorForGenres(genres: string[] | null | undefined): Vec | null
     const rule = GENRE_RULES.find((item) => item.re.test(text));
     if (rule) hits.push(rule.vec);
   }
-  return hits.length ? average(hits) : null;
+  if (hits.length) return average(hits);
+  return { valence: 0.5, energy: 0.5, acousticness: 0.3 };
 }
 
 export function classifyMood(valence: number, energy: number, acousticness: number): MoodLabel {
@@ -149,18 +152,123 @@ async function loadPlays(ctx: UserCtx, start: Date, end: Date): Promise<PlayRow[
   return rows;
 }
 
-async function genresByArtist(ctx: UserCtx, artistIds: string[]): Promise<Map<string, string[] | null>> {
-  const map = new Map<string, string[] | null>();
+type ArtistGenreRow = { name: string; genres: string[] | null };
+
+async function artistsById(ctx: UserCtx, artistIds: string[]): Promise<Map<string, ArtistGenreRow>> {
+  const map = new Map<string, ArtistGenreRow>();
   for (let i = 0; i < artistIds.length; i += 200) {
     const chunk = artistIds.slice(i, i + 200);
-    const { data, error } = await ctx.db.from("artists").select("id, genres").in("id", chunk);
+    const { data, error } = await ctx.db.from("artists").select("id, name, genres").in("id", chunk);
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
-      const genres = Array.isArray(row.genres) ? (row.genres as string[]) : null;
-      map.set(String(row.id), genres);
+      map.set(String(row.id), {
+        name: String(row.name ?? ""),
+        genres: Array.isArray(row.genres) ? (row.genres as string[]) : null,
+      });
     }
   }
   return map;
+}
+
+async function attachArtists(ctx: UserCtx, plays: PlayRow[]): Promise<PlayRow[]> {
+  const missingTrackIds = Array.from(
+    new Set(
+      plays
+        .filter((play) => !play.artist_id && play.track_id)
+        .map((play) => play.track_id as string),
+    ),
+  );
+  if (!missingTrackIds.length) return plays;
+
+  const artistByTrack = new Map<string, string>();
+  for (let i = 0; i < missingTrackIds.length; i += 200) {
+    const chunk = missingTrackIds.slice(i, i + 200);
+    const { data, error } = await ctx.db.from("tracks").select("id, artist_id").in("id", chunk);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      if (row.artist_id) artistByTrack.set(String(row.id), String(row.artist_id));
+    }
+  }
+
+  return plays.map((play) => {
+    if (play.artist_id || !play.track_id) return play;
+    return { ...play, artist_id: artistByTrack.get(play.track_id) ?? null };
+  });
+}
+
+async function searchArtistGenres(token: string, name: string): Promise<string[] | null> {
+  const url = `https://api.spotify.com/v1/search?type=artist&limit=5&q=${encodeURIComponent(name)}`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) return null;
+  const json = (await response.json()) as {
+    artists?: { items?: Array<{ name?: string; genres?: unknown }> };
+  };
+  const items = json.artists?.items ?? [];
+  const exact =
+    items.find((item) => item.name?.toLowerCase() === name.toLowerCase()) ?? items[0];
+  if (!exact || !Array.isArray(exact.genres)) return null;
+  return exact.genres.map((genre) => String(genre)).slice(0, 8);
+}
+
+async function fillMissingGenres(
+  ctx: UserCtx,
+  plays: PlayRow[],
+  artists: Map<string, ArtistGenreRow>,
+): Promise<Map<string, string[] | null>> {
+  const weight = new Map<string, number>();
+  for (const play of plays) {
+    if (!play.artist_id) continue;
+    weight.set(play.artist_id, (weight.get(play.artist_id) ?? 0) + (Number(play.ms_played) || 0));
+  }
+
+  const missing = Array.from(weight.entries())
+    .filter(([id]) => {
+      const row = artists.get(id);
+      return row && row.genres == null && row.name.trim().length > 0;
+    })
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 16)
+    .map(([id]) => id);
+
+  const genres = new Map<string, string[] | null>();
+  for (const [id, row] of Array.from(artists.entries())) genres.set(id, row.genres);
+  if (!missing.length) return genres;
+
+  const token =
+    (await getSpotifyClientCredentialsToken()) ?? (await getSpotifyAccessToken(ctx));
+  if (!token) return genres;
+  const bearer = token;
+
+  let cursor = 0;
+  async function worker() {
+    while (cursor < missing.length) {
+      const id = missing[cursor];
+      cursor += 1;
+      const name = artists.get(id)?.name ?? "";
+      try {
+        const found = await searchArtistGenres(bearer, name);
+        if (!found) continue;
+        const { error } = await ctx.db.from("artists").update({ genres: found }).eq("id", id);
+        if (!error) genres.set(id, found);
+      } catch (error) {
+        console.warn("[mood] genre lookup failed", name, error);
+      }
+    }
+  }
+
+  const workers = Math.min(4, missing.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return genres;
+}
+
+async function playsForMood(ctx: UserCtx, start: Date, end: Date) {
+  const plays = await attachArtists(ctx, await loadPlays(ctx, start, end));
+  const artistIds = Array.from(
+    new Set(plays.map((play) => play.artist_id).filter((id): id is string => Boolean(id))),
+  );
+  const artists = await artistsById(ctx, artistIds);
+  const genres = await fillMissingGenres(ctx, plays, artists);
+  return { plays, genres };
 }
 
 function summarize(plays: PlayRow[], genres: Map<string, string[] | null>): MoodSnapshot {
@@ -210,11 +318,7 @@ export function rollingRange(period: string, now = new Date()): { start: Date; e
 
 export async function currentMood(ctx: UserCtx, period: string, now = new Date()): Promise<MoodSnapshot> {
   const { start, end } = rollingRange(period, now);
-  const plays = await loadPlays(ctx, start, end);
-  const artistIds = Array.from(
-    new Set(plays.map((play) => play.artist_id).filter((id): id is string => Boolean(id))),
-  );
-  const genres = await genresByArtist(ctx, artistIds);
+  const { plays, genres } = await playsForMood(ctx, start, end);
   return summarize(plays, genres);
 }
 
@@ -286,11 +390,7 @@ export async function moodTimeline(
 ): Promise<MoodTimelinePoint[]> {
   const safeLimit = Math.min(Math.max(limit, 1), 24);
   const buckets = bucketsFor(period, safeLimit, now);
-  const plays = await loadPlays(ctx, buckets[0].start, buckets[buckets.length - 1].end);
-  const artistIds = Array.from(
-    new Set(plays.map((play) => play.artist_id).filter((id): id is string => Boolean(id))),
-  );
-  const genres = await genresByArtist(ctx, artistIds);
+  const { plays, genres } = await playsForMood(ctx, buckets[0].start, buckets[buckets.length - 1].end);
 
   return buckets.map((bucket) => {
     const slice = plays.filter((play) => {
