@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       timeline: timeline.filter((point) => point.mood_label !== "no_data"),
       period: periodParam,
       limit,
-      basis: "genres",
+      basis: "schedule",
     });
   } catch (error) {
     console.error("[mood/timeline] Error:", error);

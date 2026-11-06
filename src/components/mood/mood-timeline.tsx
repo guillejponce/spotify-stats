@@ -77,9 +77,9 @@ export function MoodTimeline({ period = "week", limit = 12 }: MoodTimelineProps)
   if (timeline.length === 0) {
     return (
       <div className="p-8 text-center text-gray-400">
-        <p>No hay suficientes géneros en este período para armar el timeline.</p>
+        <p>Todavía no hay escuchas en este rango.</p>
         <p className="text-sm mt-2">
-          El mood se estima con los géneros de los artistas que escuchaste.
+          Cada punto sale de la hora en que escuchaste esa semana, ese día o ese mes.
         </p>
       </div>
     );
@@ -133,7 +133,7 @@ export function MoodTimeline({ period = "week", limit = 12 }: MoodTimelineProps)
       {/* Mood Chart - visualización simplificada */}
       <div className="mt-8">
         <h3 className="text-sm font-medium text-gray-400 mb-4">
-          Valence vs Energy
+          Cómo se movió el ánimo
         </h3>
         <div className="h-64 bg-gray-900/30 rounded-lg p-4 relative overflow-hidden">
           {/* Cuadrantes */}
@@ -155,7 +155,7 @@ export function MoodTimeline({ period = "week", limit = 12 }: MoodTimelineProps)
           {/* Puntos del timeline */}
           <div className="absolute inset-4">
             {timeline.map((point, index) => {
-              if (!point.avg_valence || !point.avg_energy) return null;
+              if (point.avg_valence == null || point.avg_energy == null) return null;
 
               const x = point.avg_valence * 100;
               const y = (1 - point.avg_energy) * 100;
@@ -177,10 +177,10 @@ export function MoodTimeline({ period = "week", limit = 12 }: MoodTimelineProps)
 
           {/* Labels de ejes */}
           <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-xs text-gray-600">
-            Valence →
+            Más alegre →
           </div>
           <div className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 text-xs text-gray-600">
-            Energy →
+            Más energía →
           </div>
         </div>
       </div>

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       mood,
       recommendations,
       count: recommendations.length,
-      basis: "genres",
+      basis: "schedule",
     });
   } catch (error) {
     console.error("[mood/recommendations] Error:", error);

@@ -1,7 +1,5 @@
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
-import { getSpotifyClientCredentialsToken } from "@/lib/spotify";
-import { getSpotifyAccessToken } from "@/lib/spotify-token";
 import type { UserCtx } from "@/lib/user-context";
 
 export type MoodPeriod = "day" | "week" | "month" | "year";
@@ -25,6 +23,10 @@ export interface MoodSnapshot {
   avg_acousticness: number | null;
   total_plays: number;
   unique_tracks: number;
+  night_share: number;
+  morning_share: number;
+  day_share: number;
+  evening_share: number;
   message?: string;
 }
 
@@ -42,54 +44,14 @@ export interface MoodRecommendation {
   mood_match_score: number;
 }
 
-type Vec = { valence: number; energy: number; acousticness: number };
+const NO_DATA = "No hay reproducciones en este período.";
 
-const GENRE_RULES: Array<{ re: RegExp; vec: Vec }> = [
-  { re: /black metal|death metal|grindcore|hardcore|metalcore|industrial/, vec: { valence: 0.22, energy: 0.92, acousticness: 0.04 } },
-  { re: /metal|punk|hard rock/, vec: { valence: 0.38, energy: 0.86, acousticness: 0.06 } },
-  { re: /edm|house|techno|trance|drum and bass|dubstep|electro|dance/, vec: { valence: 0.72, energy: 0.9, acousticness: 0.03 } },
-  { re: /reggaeton|latin|salsa|cumbia|funk|disco|k-pop|pop/, vec: { valence: 0.78, energy: 0.74, acousticness: 0.1 } },
-  { re: /hip hop|hip-hop|rap|trap/, vec: { valence: 0.48, energy: 0.72, acousticness: 0.08 } },
-  { re: /rock|alternative/, vec: { valence: 0.52, energy: 0.7, acousticness: 0.12 } },
-  { re: /lo-fi|lofi|ambient|classical|piano|instrumental|study|soundtrack|score/, vec: { valence: 0.42, energy: 0.22, acousticness: 0.82 } },
-  { re: /sad|emo|blues|post-rock|singer-songwriter/, vec: { valence: 0.24, energy: 0.32, acousticness: 0.55 } },
-  { re: /jazz|soul|r&b|rnb|bossa|acoustic|folk|reggae|chill|bossanova/, vec: { valence: 0.62, energy: 0.34, acousticness: 0.58 } },
-  { re: /indie/, vec: { valence: 0.46, energy: 0.48, acousticness: 0.32 } },
-];
-
-const TARGETS: Record<string, { valence: number; energy: number }> = {
-  euphoric: { valence: 0.85, energy: 0.85 },
-  energetic: { valence: 0.65, energy: 0.75 },
-  party: { valence: 0.8, energy: 0.8 },
-  chill: { valence: 0.65, energy: 0.35 },
-  melancholic: { valence: 0.25, energy: 0.35 },
-  intense: { valence: 0.3, energy: 0.88 },
-  focused: { valence: 0.45, energy: 0.3 },
-  balanced: { valence: 0.5, energy: 0.5 },
-};
-
-const NO_DATA =
-  "No hay géneros en lo que escuchaste en este período, así que no puedo estimar el mood.";
-
-function average(vecs: Vec[]): Vec {
-  const n = vecs.length;
-  return {
-    valence: vecs.reduce((s, v) => s + v.valence, 0) / n,
-    energy: vecs.reduce((s, v) => s + v.energy, 0) / n,
-    acousticness: vecs.reduce((s, v) => s + v.acousticness, 0) / n,
-  };
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
-export function vectorForGenres(genres: string[] | null | undefined): Vec | null {
-  if (!genres?.length) return null;
-  const hits: Vec[] = [];
-  for (const genre of genres) {
-    const text = genre.toLowerCase();
-    const rule = GENRE_RULES.find((item) => item.re.test(text));
-    if (rule) hits.push(rule.vec);
-  }
-  if (hits.length) return average(hits);
-  return { valence: 0.5, energy: 0.5, acousticness: 0.3 };
+function hourInChile(iso: string): number {
+  return Number(formatInTimeZone(iso, DISPLAY_TIME_ZONE, "H"));
 }
 
 export function classifyMood(valence: number, energy: number, acousticness: number): MoodLabel {
@@ -116,6 +78,10 @@ function emptySnapshot(totalPlays: number, message = NO_DATA): MoodSnapshot {
     avg_acousticness: null,
     total_plays: totalPlays,
     unique_tracks: 0,
+    night_share: 0,
+    morning_share: 0,
+    day_share: 0,
+    evening_share: 0,
     message,
   };
 }
@@ -152,151 +118,54 @@ async function loadPlays(ctx: UserCtx, start: Date, end: Date): Promise<PlayRow[
   return rows;
 }
 
-type ArtistGenreRow = { name: string; genres: string[] | null };
-
-async function artistsById(ctx: UserCtx, artistIds: string[]): Promise<Map<string, ArtistGenreRow>> {
-  const map = new Map<string, ArtistGenreRow>();
-  for (let i = 0; i < artistIds.length; i += 200) {
-    const chunk = artistIds.slice(i, i + 200);
-    const { data, error } = await ctx.db.from("artists").select("id, name, genres").in("id", chunk);
-    if (error) throw new Error(error.message);
-    for (const row of data ?? []) {
-      map.set(String(row.id), {
-        name: String(row.name ?? ""),
-        genres: Array.isArray(row.genres) ? (row.genres as string[]) : null,
-      });
-    }
+function whenPhrase(shares: { night: number; morning: number; day: number; evening: number }): string {
+  const ranked: Array<[string, number]> = [
+    ["de noche", shares.night],
+    ["en la mañana", shares.morning],
+    ["durante el día", shares.day],
+    ["de tarde", shares.evening],
+  ];
+  ranked.sort((a, b) => b[1] - a[1]);
+  if (ranked[0][1] - ranked[1][1] < 0.08) {
+    return "La escuchaste repartida entre varios horarios.";
   }
-  return map;
+  return `La mayor parte la escuchaste ${ranked[0][0]}.`;
 }
 
-async function attachArtists(ctx: UserCtx, plays: PlayRow[]): Promise<PlayRow[]> {
-  const missingTrackIds = Array.from(
-    new Set(
-      plays
-        .filter((play) => !play.artist_id && play.track_id)
-        .map((play) => play.track_id as string),
-    ),
-  );
-  if (!missingTrackIds.length) return plays;
+export function snapshotFromPlays(plays: PlayRow[]): MoodSnapshot {
+  if (!plays.length) return emptySnapshot(0, NO_DATA);
 
-  const artistByTrack = new Map<string, string>();
-  for (let i = 0; i < missingTrackIds.length; i += 200) {
-    const chunk = missingTrackIds.slice(i, i + 200);
-    const { data, error } = await ctx.db.from("tracks").select("id, artist_id").in("id", chunk);
-    if (error) throw new Error(error.message);
-    for (const row of data ?? []) {
-      if (row.artist_id) artistByTrack.set(String(row.id), String(row.artist_id));
-    }
-  }
-
-  return plays.map((play) => {
-    if (play.artist_id || !play.track_id) return play;
-    return { ...play, artist_id: artistByTrack.get(play.track_id) ?? null };
-  });
-}
-
-async function searchArtistGenres(token: string, name: string): Promise<string[] | null> {
-  const url = `https://api.spotify.com/v1/search?type=artist&limit=5&q=${encodeURIComponent(name)}`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) return null;
-  const json = (await response.json()) as {
-    artists?: { items?: Array<{ name?: string; genres?: unknown }> };
-  };
-  const items = json.artists?.items ?? [];
-  const exact =
-    items.find((item) => item.name?.toLowerCase() === name.toLowerCase()) ?? items[0];
-  if (!exact || !Array.isArray(exact.genres)) return null;
-  return exact.genres.map((genre) => String(genre)).slice(0, 8);
-}
-
-async function fillMissingGenres(
-  ctx: UserCtx,
-  plays: PlayRow[],
-  artists: Map<string, ArtistGenreRow>,
-): Promise<Map<string, string[] | null>> {
-  const weight = new Map<string, number>();
-  for (const play of plays) {
-    if (!play.artist_id) continue;
-    weight.set(play.artist_id, (weight.get(play.artist_id) ?? 0) + (Number(play.ms_played) || 0));
-  }
-
-  const missing = Array.from(weight.entries())
-    .filter(([id]) => {
-      const row = artists.get(id);
-      return row && row.genres == null && row.name.trim().length > 0;
-    })
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 16)
-    .map(([id]) => id);
-
-  const genres = new Map<string, string[] | null>();
-  for (const [id, row] of Array.from(artists.entries())) genres.set(id, row.genres);
-  if (!missing.length) return genres;
-
-  const token =
-    (await getSpotifyClientCredentialsToken()) ?? (await getSpotifyAccessToken(ctx));
-  if (!token) return genres;
-  const bearer = token;
-
-  let cursor = 0;
-  async function worker() {
-    while (cursor < missing.length) {
-      const id = missing[cursor];
-      cursor += 1;
-      const name = artists.get(id)?.name ?? "";
-      try {
-        const found = await searchArtistGenres(bearer, name);
-        if (!found) continue;
-        const { error } = await ctx.db.from("artists").update({ genres: found }).eq("id", id);
-        if (!error) genres.set(id, found);
-      } catch (error) {
-        console.warn("[mood] genre lookup failed", name, error);
-      }
-    }
-  }
-
-  const workers = Math.min(4, missing.length);
-  await Promise.all(Array.from({ length: workers }, () => worker()));
-  return genres;
-}
-
-async function playsForMood(ctx: UserCtx, start: Date, end: Date) {
-  const plays = await attachArtists(ctx, await loadPlays(ctx, start, end));
-  const artistIds = Array.from(
-    new Set(plays.map((play) => play.artist_id).filter((id): id is string => Boolean(id))),
-  );
-  const artists = await artistsById(ctx, artistIds);
-  const genres = await fillMissingGenres(ctx, plays, artists);
-  return { plays, genres };
-}
-
-function summarize(plays: PlayRow[], genres: Map<string, string[] | null>): MoodSnapshot {
-  if (!plays.length) return emptySnapshot(0, "No hay reproducciones en este período.");
-
-  let valence = 0;
-  let energy = 0;
-  let acousticness = 0;
-  let weight = 0;
+  let night = 0;
+  let morning = 0;
+  let day = 0;
+  let evening = 0;
   const tracks = new Set<string>();
 
   for (const play of plays) {
-    if (play.track_id) tracks.add(play.track_id);
-    if (!play.artist_id) continue;
-    const vec = vectorForGenres(genres.get(play.artist_id));
-    if (!vec) continue;
     const ms = Math.max(Number(play.ms_played) || 0, 1);
-    valence += vec.valence * ms;
-    energy += vec.energy * ms;
-    acousticness += vec.acousticness * ms;
-    weight += ms;
+    const hour = hourInChile(play.played_at);
+    if (hour <= 5) night += ms;
+    else if (hour <= 11) morning += ms;
+    else if (hour <= 17) day += ms;
+    else evening += ms;
+    if (play.track_id) tracks.add(play.track_id);
   }
 
-  if (weight === 0) return emptySnapshot(plays.length);
-
-  const avgValence = valence / weight;
-  const avgEnergy = energy / weight;
-  const avgAcousticness = acousticness / weight;
+  const total = night + morning + day + evening || 1;
+  const shares = {
+    night: night / total,
+    morning: morning / total,
+    day: day / total,
+    evening: evening / total,
+  };
+  const variety = tracks.size / plays.length;
+  const avgValence = clamp01(
+    0.35 + shares.evening * 0.42 + shares.day * 0.18 + shares.morning * 0.12 - shares.night * 0.28,
+  );
+  const avgEnergy = clamp01(
+    0.28 + shares.evening * 0.5 + shares.day * 0.22 + shares.morning * 0.1 + variety * 0.02 - shares.night * 0.4,
+  );
+  const avgAcousticness = clamp01(shares.night * 0.85 + shares.morning * 0.7 + shares.day * 0.05);
   const label = classifyMood(avgValence, avgEnergy, avgAcousticness);
 
   return {
@@ -305,9 +174,14 @@ function summarize(plays: PlayRow[], genres: Map<string, string[] | null>): Mood
     avg_valence: avgValence,
     avg_energy: avgEnergy,
     avg_acousticness: avgAcousticness,
-    avg_danceability: Math.min(1, avgEnergy * 0.55 + avgValence * 0.25 + (1 - avgAcousticness) * 0.2),
+    avg_danceability: clamp01(shares.evening * 0.7 + shares.day * 0.25),
     total_plays: plays.length,
     unique_tracks: tracks.size,
+    night_share: shares.night,
+    morning_share: shares.morning,
+    day_share: shares.day,
+    evening_share: shares.evening,
+    message: whenPhrase(shares),
   };
 }
 
@@ -318,8 +192,7 @@ export function rollingRange(period: string, now = new Date()): { start: Date; e
 
 export async function currentMood(ctx: UserCtx, period: string, now = new Date()): Promise<MoodSnapshot> {
   const { start, end } = rollingRange(period, now);
-  const { plays, genres } = await playsForMood(ctx, start, end);
-  return summarize(plays, genres);
+  return snapshotFromPlays(await loadPlays(ctx, start, end));
 }
 
 function chileYmd(date: Date): string {
@@ -390,14 +263,14 @@ export async function moodTimeline(
 ): Promise<MoodTimelinePoint[]> {
   const safeLimit = Math.min(Math.max(limit, 1), 24);
   const buckets = bucketsFor(period, safeLimit, now);
-  const { plays, genres } = await playsForMood(ctx, buckets[0].start, buckets[buckets.length - 1].end);
+  const plays = await loadPlays(ctx, buckets[0].start, buckets[buckets.length - 1].end);
 
   return buckets.map((bucket) => {
     const slice = plays.filter((play) => {
       const at = new Date(play.played_at).getTime();
       return at >= bucket.start.getTime() && at < bucket.end.getTime();
     });
-    const mood = summarize(slice, genres);
+    const mood = snapshotFromPlays(slice);
     return {
       ...mood,
       period_start: bucket.start.toISOString(),
@@ -406,14 +279,30 @@ export async function moodTimeline(
   });
 }
 
-function artistName(value: unknown): { name: string; genres: string[] | null } | null {
+function hourMatchesMood(mood: string, hour: number): boolean {
+  switch (mood) {
+    case "melancholic":
+      return hour <= 5;
+    case "chill":
+      return hour <= 5 || hour >= 22;
+    case "focused":
+      return hour >= 6 && hour <= 17;
+    case "intense":
+    case "energetic":
+      return hour >= 18;
+    case "euphoric":
+    case "party":
+      return hour >= 18 || hour <= 1;
+    default:
+      return true;
+  }
+}
+
+function oneArtist(value: unknown): string {
   const row = Array.isArray(value) ? value[0] : value;
-  if (!row || typeof row !== "object") return null;
-  const record = row as { name?: unknown; genres?: unknown };
-  return {
-    name: typeof record.name === "string" ? record.name : "",
-    genres: Array.isArray(record.genres) ? (record.genres as string[]) : null,
-  };
+  if (!row || typeof row !== "object") return "";
+  const name = (row as { name?: unknown }).name;
+  return typeof name === "string" ? name : "";
 }
 
 export async function recommendByMood(
@@ -422,44 +311,40 @@ export async function recommendByMood(
   limit: number,
   now = new Date(),
 ): Promise<MoodRecommendation[]> {
-  const target = TARGETS[mood] ?? TARGETS.balanced;
-  const start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-  const { data, error } = await ctx.db.rpc("get_top_tracks", {
-    start_date: start.toISOString(),
-    end_date: now.toISOString(),
-    result_limit: 150,
-    p_user_id: ctx.userId,
-  });
-  if (error) throw new Error(error.message);
+  const start = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+  const plays = await loadPlays(ctx, start, now);
+  const totals = new Map<string, number>();
 
-  const ranked = (Array.isArray(data) ? data : []) as Array<{ id?: string; name?: string }>;
-  const ids = ranked.map((row) => row.id).filter((id): id is string => Boolean(id));
-  if (!ids.length) return [];
-
-  const { data: tracks, error: trackError } = await ctx.db
-    .from("tracks")
-    .select("id, name, artist_id, artists(name, genres)")
-    .in("id", ids);
-  if (trackError) throw new Error(trackError.message);
-
-  const scored: MoodRecommendation[] = [];
-  for (const track of tracks ?? []) {
-    const artist = artistName(track.artists);
-    const vec = vectorForGenres(artist?.genres);
-    if (!vec) continue;
-    const distance = Math.sqrt((vec.valence - target.valence) ** 2 + (vec.energy - target.energy) ** 2);
-    const score = 1 - distance / Math.SQRT2;
-    scored.push({
-      track_id: String(track.id),
-      track_name: String(track.name ?? ""),
-      artist_name: artist?.name || "Artista",
-      valence: vec.valence,
-      energy: vec.energy,
-      mood_match_score: score,
-    });
+  for (const play of plays) {
+    if (!play.track_id || !hourMatchesMood(mood, hourInChile(play.played_at))) continue;
+    totals.set(play.track_id, (totals.get(play.track_id) ?? 0) + (Number(play.ms_played) || 0));
   }
 
-  scored.sort((a, b) => b.mood_match_score - a.mood_match_score);
-  const cutoff = scored.filter((row) => row.mood_match_score >= 0.55);
-  return (cutoff.length >= 5 ? cutoff : scored).slice(0, limit);
+  const ranked = Array.from(totals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+  if (!ranked.length) return [];
+
+  const ids = ranked.map(([id]) => id);
+  const { data: tracks, error } = await ctx.db
+    .from("tracks")
+    .select("id, name, artists(name)")
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+
+  const byId = new Map((tracks ?? []).map((track) => [String(track.id), track]));
+  const maxMs = ranked[0][1] || 1;
+
+  return ranked.flatMap(([id, ms]) => {
+    const track = byId.get(id);
+    if (!track) return [];
+    return [{
+      track_id: id,
+      track_name: String(track.name ?? ""),
+      artist_name: oneArtist(track.artists) || "Artista",
+      valence: 0,
+      energy: 0,
+      mood_match_score: ms / maxMs,
+    }];
+  });
 }

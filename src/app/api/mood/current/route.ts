@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/mood/current
- * Mood del período reciente, estimado con los géneros de las reproducciones.
+ * Mood del período reciente, a partir de la hora de las reproducciones.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireUser();
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const mood = await currentMood(auth.ctx, period);
-    return NextResponse.json({ mood, period, basis: "genres" });
+    return NextResponse.json({ mood, period, basis: "schedule" });
   } catch (error) {
     console.error("[mood/current] Error:", error);
     return NextResponse.json({ error: "No se pudo calcular el mood" }, { status: 500 });

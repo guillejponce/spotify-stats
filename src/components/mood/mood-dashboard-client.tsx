@@ -14,6 +14,10 @@ interface CurrentMood {
   avg_danceability: number | null;
   total_plays: number;
   unique_tracks: number;
+  night_share?: number;
+  morning_share?: number;
+  day_share?: number;
+  evening_share?: number;
   message?: string;
 }
 
@@ -77,18 +81,18 @@ export function MoodDashboardClient() {
   const pct = (value: number | null | undefined) => `${Math.round((value ?? 0) * 100)}%`;
 
   const getMoodDescription = (label: string, stats: CurrentMood) => {
-    const descriptions: Record<string, string> = {
-      euphoric: `Tu música está en las nubes. Valence ${pct(stats.avg_valence)} y energía ${pct(stats.avg_energy)}.`,
-      energetic: `Andas con todo. La energía de lo que escuchaste está en ${pct(stats.avg_energy)}.`,
-      intense: `Pura intensidad: energía ${pct(stats.avg_energy)} y valence más baja.`,
-      chill: `Modo relax. Energía ${pct(stats.avg_energy)} y valence positiva.`,
-      melancholic: `Un período más reflexivo, con energía y valence bajas.`,
-      focused: `Música más quieta y acústica, de las que sirven para concentrarse.`,
-      balanced: `Un equilibrio entre moods distintos.`,
-      no_data: stats.message || "No hay suficientes datos para este período.",
+    if (label === "no_data") return stats.message || "No hay reproducciones en este período.";
+    const names: Record<string, string> = {
+      euphoric: "Eufórico: casi todo fue de tarde",
+      energetic: "Energético: mucha escucha de tarde",
+      intense: "Intenso: mucha escucha de tarde",
+      chill: "Relajado: más escucha de noche o al final del día",
+      melancholic: "Melancólico: lo escuchaste sobre todo de noche",
+      focused: "Concentrado: lo escuchaste de mañana o durante el día",
+      balanced: "Equilibrado: repartido entre varios horarios",
     };
-
-    return descriptions[label] || "Analizando tu mood musical...";
+    const name = names[label] || "Mood";
+    return `${name}. ${stats.message ?? ""}`.trim();
   };
 
   const moodButtons = [
@@ -107,7 +111,7 @@ export function MoodDashboardClient() {
       <div>
         <h1 className="text-3xl font-bold mb-2">Tu Mood Musical</h1>
         <p className="text-gray-400">
-          Descubre cómo tu música refleja tu estado de ánimo
+          Sale de la hora de Chile en que escuchaste.
         </p>
       </div>
 
@@ -155,26 +159,24 @@ export function MoodDashboardClient() {
             {currentMood && currentMood.mood_label !== "no_data" && (
               <>
                 <p className="text-xs text-gray-500 mb-4">
-                  Estimado a partir de los géneros que escuchaste.
+                  Noche 0–5 · Mañana 6–11 · Día 12–17 · Tarde 18–23. Cuenta escuchas de 30 segundos o más.
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   <div className="p-3 bg-gray-800/50 rounded-lg">
-                    <p className="text-xs text-gray-400">Valence</p>
-                    <p className="text-xl font-bold text-green-400">{pct(currentMood.avg_valence)}</p>
+                    <p className="text-xs text-gray-400">Noche</p>
+                    <p className="text-xl font-bold text-indigo-300">{pct(currentMood.night_share)}</p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
-                    <p className="text-xs text-gray-400">Energy</p>
-                    <p className="text-xl font-bold text-orange-400">{pct(currentMood.avg_energy)}</p>
+                    <p className="text-xs text-gray-400">Mañana</p>
+                    <p className="text-xl font-bold text-amber-300">{pct(currentMood.morning_share)}</p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
-                    <p className="text-xs text-gray-400">Danceability</p>
-                    <p className="text-xl font-bold text-purple-400">
-                      {pct(currentMood.avg_danceability)}
-                    </p>
+                    <p className="text-xs text-gray-400">Día</p>
+                    <p className="text-xl font-bold text-sky-300">{pct(currentMood.day_share)}</p>
                   </div>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
-                    <p className="text-xs text-gray-400">Tracks</p>
-                    <p className="text-xl font-bold text-blue-400">{currentMood.unique_tracks}</p>
+                    <p className="text-xs text-gray-400">Tarde</p>
+                    <p className="text-xl font-bold text-orange-300">{pct(currentMood.evening_share)}</p>
                   </div>
                 </div>
               </>
@@ -187,7 +189,7 @@ export function MoodDashboardClient() {
       <Card className="p-6">
         <h2 className="text-xl font-bold mb-4">Escuchar según tu mood</h2>
         <p className="text-sm text-gray-400 mb-6">
-          Selecciona un mood y te recomendaremos canciones de tu biblioteca que lo matcheen
+          Cada mood corresponde a un horario. Acá aparecen las canciones que más escuchaste en ese horario durante los últimos 6 meses.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-6">
@@ -234,7 +236,7 @@ export function MoodDashboardClient() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">
-                    Match: {(rec.mood_match_score * 100).toFixed(0)}%
+                    {index === 0 ? "La más escuchada" : `${Math.round(rec.mood_match_score * 100)}% del tiempo`}
                   </p>
                 </div>
               </div>
@@ -244,9 +246,7 @@ export function MoodDashboardClient() {
 
         {!loadingRecs && selectedMoodForRecs && recommendations.length === 0 && (
           <div className="text-center py-8 text-gray-400">
-            No encontramos canciones con ese mood en tu biblioteca.
-            <br />
-            ¡Prueba con otro mood o escucha más música!
+            En los últimos 6 meses no hay escuchas en el horario de ese mood.
           </div>
         )}
       </Card>
