@@ -1,5 +1,7 @@
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
+import OpenAI from "openai";
 import { DISPLAY_TIME_ZONE } from "@/lib/chile-time";
+import { STYLE_TAG_LIST, normalizeStyleTags, styleLabel, styleMatchesMood, stylesForTrack } from "@/lib/mood-style";
 import type { UserCtx } from "@/lib/user-context";
 
 export type MoodPeriod = "day" | "week" | "month" | "year";
@@ -42,6 +44,7 @@ export interface MoodRecommendation {
   valence: number;
   energy: number;
   mood_match_score: number;
+  style: string;
 }
 
 const NO_DATA = "No hay reproducciones en este período.";
@@ -279,30 +282,96 @@ export async function moodTimeline(
   });
 }
 
-function hourMatchesMood(mood: string, hour: number): boolean {
-  switch (mood) {
-    case "melancholic":
-      return hour <= 5;
-    case "chill":
-      return hour <= 5 || hour >= 22;
-    case "focused":
-      return hour >= 6 && hour <= 17;
-    case "intense":
-    case "energetic":
-      return hour >= 18;
-    case "euphoric":
-    case "party":
-      return hour >= 18 || hour <= 1;
-    default:
-      return true;
-  }
+type ArtistStyleRow = { id: string; name: string; genres: string[] | null };
+
+function oneArtist(value: unknown): ArtistStyleRow | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== "object") return null;
+  const record = row as { id?: unknown; name?: unknown; genres?: unknown };
+  if (typeof record.id !== "string") return null;
+  return {
+    id: record.id,
+    name: typeof record.name === "string" ? record.name : "",
+    genres: Array.isArray(record.genres) ? record.genres.map((genre) => String(genre)) : null,
+  };
 }
 
-function oneArtist(value: unknown): string {
-  const row = Array.isArray(value) ? value[0] : value;
-  if (!row || typeof row !== "object") return "";
-  const name = (row as { name?: unknown }).name;
-  return typeof name === "string" ? name : "";
+export async function classifyArtistStyles(names: string[]): Promise<Map<string, string[]>> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const found = new Map<string, string[]>();
+  if (!apiKey || !names.length) return found;
+
+  const openai = new OpenAI({ apiKey });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "Label each musician with genre tags for a mood filter. " +
+          `Reply JSON {"artists":[{"name":"exact input","tags":["..."]}]}. ` +
+          `Tags only from: ${STYLE_TAG_LIST}. ` +
+          "Metalcore, deathcore, beatdown, screamo and grind are hardcore and metal, never rock alone. " +
+          "Ambient, jazz, soul, folk and singer-songwriter stay out of edm and metal. " +
+          'If you are not sure, use ["unknown"]. Keep the exact artist name.',
+      },
+      { role: "user", content: JSON.stringify(names) },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const parsed = JSON.parse(raw) as { artists?: Array<{ name?: unknown; tags?: unknown }> };
+  for (const row of parsed.artists ?? []) {
+    if (typeof row.name !== "string" || !Array.isArray(row.tags)) continue;
+    found.set(row.name.trim().toLowerCase(), normalizeStyleTags(row.tags.map((tag) => String(tag))));
+  }
+  return found;
+}
+
+async function stylesByArtist(
+  ctx: UserCtx,
+  artists: ArtistStyleRow[],
+): Promise<Map<string, string[]>> {
+  const styles = new Map<string, string[]>();
+  const pending: ArtistStyleRow[] = [];
+
+  for (const artist of artists) {
+    const fromName = stylesForTrack(artist.name, "", null);
+    const stored = normalizeStyleTags(artist.genres);
+    if (stored.length) {
+      styles.set(artist.id, fromName.some((tag) => tag === "hardcore" || tag === "metal") ? fromName : stored);
+      continue;
+    }
+    if (fromName.length) {
+      styles.set(artist.id, fromName);
+      continue;
+    }
+    pending.push(artist);
+  }
+
+  if (!pending.length) return styles;
+
+  const toClassify = pending.slice(0, 80);
+  let classified = new Map<string, string[]>();
+  try {
+    classified = await classifyArtistStyles(toClassify.map((artist) => artist.name));
+  } catch (error) {
+    console.warn("[mood] artist style lookup failed", error);
+  }
+
+  await Promise.all(
+    pending.map(async (artist) => {
+      const tags = classified.get(artist.name.trim().toLowerCase()) ?? [];
+      styles.set(artist.id, tags);
+      if (!tags.length) return;
+      const { error } = await ctx.db.from("artists").update({ genres: tags }).eq("id", artist.id).is("genres", null);
+      if (error) console.warn("[mood] could not store artist style", artist.name, error.message);
+    }),
+  );
+
+  return styles;
 }
 
 export async function recommendByMood(
@@ -316,35 +385,53 @@ export async function recommendByMood(
   const totals = new Map<string, number>();
 
   for (const play of plays) {
-    if (!play.track_id || !hourMatchesMood(mood, hourInChile(play.played_at))) continue;
+    if (!play.track_id) continue;
     totals.set(play.track_id, (totals.get(play.track_id) ?? 0) + (Number(play.ms_played) || 0));
   }
 
   const ranked = Array.from(totals.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
+    .slice(0, 250);
   if (!ranked.length) return [];
 
-  const ids = ranked.map(([id]) => id);
   const { data: tracks, error } = await ctx.db
     .from("tracks")
-    .select("id, name, artists(name)")
-    .in("id", ids);
+    .select("id, name, artists(id, name, genres)")
+    .in("id", ranked.map(([id]) => id));
   if (error) throw new Error(error.message);
 
   const byId = new Map((tracks ?? []).map((track) => [String(track.id), track]));
-  const maxMs = ranked[0][1] || 1;
+  const artistMs = new Map<string, number>();
+  const artistRows: ArtistStyleRow[] = [];
+  const seenArtists = new Set<string>();
+  for (const [id, ms] of ranked) {
+    const track = byId.get(id);
+    const artist = track ? oneArtist(track.artists) : null;
+    if (!artist) continue;
+    artistMs.set(artist.id, (artistMs.get(artist.id) ?? 0) + ms);
+    if (seenArtists.has(artist.id)) continue;
+    seenArtists.add(artist.id);
+    artistRows.push(artist);
+  }
+  artistRows.sort((a, b) => (artistMs.get(b.id) ?? 0) - (artistMs.get(a.id) ?? 0));
+
+  const styles = await stylesByArtist(ctx, artistRows);
+  const safeLimit = Math.min(Math.max(limit, 1), 20);
 
   return ranked.flatMap(([id, ms]) => {
     const track = byId.get(id);
-    if (!track) return [];
+    const artist = track ? oneArtist(track.artists) : null;
+    if (!track || !artist) return [];
+    const tags = styles.get(artist.id) ?? stylesForTrack(artist.name, String(track.name ?? ""), null);
+    if (!styleMatchesMood(mood, tags)) return [];
     return [{
       track_id: id,
       track_name: String(track.name ?? ""),
-      artist_name: oneArtist(track.artists) || "Artista",
+      artist_name: artist.name || "Artista",
       valence: 0,
       energy: 0,
-      mood_match_score: ms / maxMs,
+      mood_match_score: ms,
+      style: styleLabel(tags),
     }];
-  });
+  }).slice(0, safeLimit);
 }

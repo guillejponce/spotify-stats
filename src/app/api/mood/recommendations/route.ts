@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { recommendByMood } from "@/lib/mood";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const VALID_MOODS = [
   "euphoric",
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
       mood,
       recommendations,
       count: recommendations.length,
-      basis: "schedule",
+      basis: "style",
     });
   } catch (error) {
     console.error("[mood/recommendations] Error:", error);

@@ -28,6 +28,7 @@ interface Recommendation {
   valence: number;
   energy: number;
   mood_match_score: number;
+  style?: string;
 }
 
 export function MoodDashboardClient() {
@@ -189,7 +190,7 @@ export function MoodDashboardClient() {
       <Card className="p-6">
         <h2 className="text-xl font-bold mb-4">Escuchar según tu mood</h2>
         <p className="text-sm text-gray-400 mb-6">
-          Cada mood corresponde a un horario. Acá aparecen las canciones que más escuchaste en ese horario durante los últimos 6 meses.
+          Son canciones de tu historial, filtradas por el estilo del artista. Relajado es lo-fi, jazz, soul o acústico. Intenso es metal y hardcore.
         </p>
 
         <div className="flex flex-wrap gap-2 mb-6">
@@ -236,7 +237,7 @@ export function MoodDashboardClient() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">
-                    {index === 0 ? "La más escuchada" : `${Math.round(rec.mood_match_score * 100)}% del tiempo`}
+                    {rec.style || "estilo"}
                   </p>
                 </div>
               </div>
@@ -246,7 +247,7 @@ export function MoodDashboardClient() {
 
         {!loadingRecs && selectedMoodForRecs && recommendations.length === 0 && (
           <div className="text-center py-8 text-gray-400">
-            En los últimos 6 meses no hay escuchas en el horario de ese mood.
+            No hay canciones de tu historial con ese estilo.
           </div>
         )}
       </Card>
