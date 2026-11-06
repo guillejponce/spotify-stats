@@ -300,6 +300,33 @@ async function loadListening(db: SupabaseClient, userId: string): Promise<Listen
   };
 }
 
+export type FriendListening = {
+  profile: PublicProfile;
+  listening: ListeningNow | null;
+};
+
+/** Qué está sonando (o lo último) entre amigos aceptados. Quien está en vivo va primero. */
+export async function listFriendsListening(
+  db: SupabaseClient,
+  userId: string,
+): Promise<FriendListening[]> {
+  const { friends } = await listFriendships(db, userId);
+  const rows = await Promise.all(
+    friends.slice(0, 12).map(async (friend) => ({
+      profile: friend.profile,
+      listening: await loadListening(db, friend.profile.id),
+    })),
+  );
+  rows.sort((a, b) => {
+    const playing = Number(Boolean(b.listening?.is_playing)) - Number(Boolean(a.listening?.is_playing));
+    if (playing !== 0) return playing;
+    const at = (row: FriendListening) =>
+      row.listening ? new Date(row.listening.updated_at).getTime() : 0;
+    return at(b) - at(a);
+  });
+  return rows;
+}
+
 export type ProfileView = {
   profile: PublicProfile;
   relation: Relation;

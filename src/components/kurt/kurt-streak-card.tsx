@@ -76,9 +76,9 @@ export function KurtStreakCard() {
 
   if (!status || !mood) {
     return (
-      <div className="flex items-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-3 text-sm text-spotify-light-gray">
-        <Loader2 className="h-4 w-4 animate-spin text-spotify-green" />
-        Contando la racha de Kurt…
+      <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-xs text-spotify-light-gray">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-spotify-green" />
+        Racha…
       </div>
     );
   }
@@ -86,64 +86,29 @@ export function KurtStreakCard() {
   const down = mood.tone === "down";
   const risk = mood.tone === "risk";
   const recent = status.recent.slice(-7);
+  const detail = down
+    ? "Kurt se disparó"
+    : risk
+      ? `se dispara en ${formatUntilShot(remainingMs)}`
+      : "Kurt está a salvo";
 
   return (
     <Link
       href="/kurt"
-      className={cn(
-        "flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition",
-        down
-          ? "border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/15"
-          : risk
-            ? "border-amber-400/30 bg-amber-400/10 hover:bg-amber-400/15"
-            : "border-spotify-green/20 bg-spotify-green/10 hover:bg-spotify-green/15",
-      )}
+      className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 transition hover:bg-white/[0.05]"
     >
-      <span
-        className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-          down
-            ? "bg-rose-500/20 text-rose-300"
-            : risk
-              ? "bg-amber-400/20 text-amber-300"
-              : "bg-spotify-green/20 text-spotify-green",
-        )}
-      >
-        {down ? <Skull className="h-5 w-5" /> : <Flame className="h-5 w-5" />}
-      </span>
-
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-semibold text-white">
-            {status.current_streak}{" "}
-            {status.current_streak === 1 ? "día" : "días"} sin disparos
-          </span>
-          {risk && (
-            <span className="font-mono text-xs font-semibold tabular-nums text-amber-200">
-              se dispara en {formatUntilShot(remainingMs)}
-            </span>
-          )}
+      {down ? (
+        <Skull className="h-3.5 w-3.5 shrink-0 text-rose-300" />
+      ) : (
+        <Flame className={cn("h-3.5 w-3.5 shrink-0", risk ? "text-amber-300" : "text-spotify-green")} />
+      )}
+      <span className="min-w-0 truncate text-xs text-white/80">
+        <span className="font-medium text-white">
+          {status.current_streak} {status.current_streak === 1 ? "día" : "días"}
         </span>
-        <span className="mt-0.5 block truncate text-xs text-white/55">
-          {down
-            ? "Kurt se disparó. Un tema de 30s lo resucita."
-            : risk
-              ? "Hoy todavía no hay música. Medianoche Chile = racha a 0."
-              : "Hoy ya escuchaste. Kurt está a salvo."}
-        </span>
-        {risk && (
-          <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-black/30">
-            <span
-              className="block h-full rounded-full bg-amber-300 transition-[width] duration-1000 ease-linear"
-              style={{
-                width: `${Math.min(100, Math.max(2, (1 - remainingMs / 86_400_000) * 100))}%`,
-              }}
-            />
-          </span>
-        )}
+        <span className="text-white/45"> · {detail}</span>
       </span>
-
-      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+      <span className="ml-auto flex shrink-0 items-center gap-0.5" aria-hidden>
         {recent.map((day) => (
           <span
             key={day.date}

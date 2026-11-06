@@ -7,6 +7,7 @@ import { TopItemsList } from "@/components/stats/top-items-list";
 import { TimeFilterControl } from "@/components/stats/time-filter";
 import { DashboardPeriodBar } from "@/components/stats/dashboard-period-bar";
 import { KurtStreakCard } from "@/components/kurt/kurt-streak-card";
+import { FriendsListeningCard } from "@/components/friends/friends-listening-card";
 import { ListeningInsights } from "@/components/stats/listening-insights";
 import {
   StatsSyncBanner,
@@ -241,9 +242,12 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
-        <NowPlayingCard />
-        <KurtStreakCard />
+      <div className="grid gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,1fr)] lg:items-stretch">
+        <div className="flex min-w-0 flex-col gap-3">
+          <NowPlayingCard />
+          <KurtStreakCard />
+        </div>
+        <FriendsListeningCard />
       </div>
 
       <DashboardPeriodBar>
