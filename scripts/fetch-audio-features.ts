@@ -124,34 +124,72 @@ async function main() {
   // Get tracks that don't have audio features yet
   console.log("\n📋 Finding tracks without audio features...");
 
-  let query = supabase
-    .from("tracks")
-    .select("id")
-    .not("id", "in", supabase.from("track_audio_features").select("track_id"));
+  const tracksToFetch: { id: string }[] = [];
 
-  // If user_id specified, only get tracks from that user's plays
   if (userId) {
-    const { data: userTracks } = await supabase
-      .from("plays")
-      .select("track_id")
-      .eq("user_id", userId);
+    const seen = new Set<string>();
+    const pageSize = 1000;
+    let from = 0;
 
-    if (!userTracks || userTracks.length === 0) {
+    while (seen.size < limit + 5000) {
+      const { data: userTracks, error: playsError } = await supabase
+        .from("plays")
+        .select("track_id")
+        .eq("user_id", userId)
+        .range(from, from + pageSize - 1);
+
+      if (playsError) {
+        throw new Error(`Error fetching plays: ${playsError.message}`);
+      }
+      if (!userTracks || userTracks.length === 0) break;
+
+      for (const play of userTracks) {
+        if (play.track_id) seen.add(play.track_id);
+      }
+      if (userTracks.length < pageSize) break;
+      from += pageSize;
+    }
+
+    if (seen.size === 0) {
       console.log("❌ No tracks found for user");
       return;
     }
 
-    const trackIds = [...new Set(userTracks.map((p) => p.track_id))];
-    query = query.in("id", trackIds);
+    const uniqueIds = Array.from(seen);
+    for (let i = 0; i < uniqueIds.length && tracksToFetch.length < limit; i += 200) {
+      const chunk = uniqueIds.slice(i, i + 200);
+      const { data: already, error: featuresError } = await supabase
+        .from("track_audio_features")
+        .select("track_id")
+        .in("track_id", chunk);
+
+      if (featuresError) {
+        throw new Error(`Error fetching audio features: ${featuresError.message}`);
+      }
+
+      const have = new Set((already ?? []).map((row) => row.track_id));
+      for (const id of chunk) {
+        if (!have.has(id)) tracksToFetch.push({ id });
+        if (tracksToFetch.length >= limit) break;
+      }
+    }
+  } else {
+    const { data, error: fetchError } = await supabase
+      .from("tracks")
+      .select("id, track_audio_features!left(track_id)")
+      .is("track_audio_features", null)
+      .limit(limit);
+
+    if (fetchError) {
+      throw new Error(`Error fetching tracks: ${fetchError.message}`);
+    }
+
+    for (const row of data ?? []) {
+      tracksToFetch.push({ id: row.id });
+    }
   }
 
-  const { data: tracksToFetch, error: fetchError } = await query.limit(limit);
-
-  if (fetchError) {
-    throw new Error(`Error fetching tracks: ${fetchError.message}`);
-  }
-
-  if (!tracksToFetch || tracksToFetch.length === 0) {
+  if (tracksToFetch.length === 0) {
     console.log("✨ All tracks already have audio features!");
     return;
   }

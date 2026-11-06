@@ -432,3 +432,17 @@ COMMENT ON FUNCTION calculate_mood_snapshot IS 'Calcular mood para un período e
 COMMENT ON FUNCTION get_mood_timeline IS 'Timeline de mood por período';
 COMMENT ON FUNCTION recommend_tracks_by_mood IS 'Recomendar tracks que matcheen un mood target';
 COMMENT ON FUNCTION calculate_diversity_score IS 'Calcular diversity score (artistas, géneros)';
+
+-- Solo el servidor (service role) puede ejecutarlas. Son SECURITY DEFINER
+-- y reciben un user id arbitrario.
+REVOKE EXECUTE ON FUNCTION public.classify_mood(float, float, float) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.calculate_mood_snapshot(uuid, timestamptz, timestamptz, text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_mood_timeline(uuid, text, integer) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.recommend_tracks_by_mood(uuid, text, integer) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.calculate_diversity_score(uuid, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.classify_mood(float, float, float) TO service_role;
+GRANT EXECUTE ON FUNCTION public.calculate_mood_snapshot(uuid, timestamptz, timestamptz, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_mood_timeline(uuid, text, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.recommend_tracks_by_mood(uuid, text, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.calculate_diversity_score(uuid, timestamptz, timestamptz) TO service_role;

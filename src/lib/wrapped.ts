@@ -203,11 +203,19 @@ export async function getWrappedPayload(
           )
         : Promise.resolve(null),
       listListenYears(ctx, todayYear, year).catch(() => [todayYear, year]),
-      ctx.db.rpc("calculate_diversity_score", {
-        p_user_id: ctx.userId,
-        p_start_date: yearStart,
-        p_end_date: yearEnd,
-      }).then(({ data }) => data).catch(() => null),
+      (async () => {
+        const { data, error } = await ctx.db.rpc("calculate_diversity_score", {
+          p_user_id: ctx.userId,
+          p_start_date: yearStart,
+          p_end_date: yearEnd,
+        });
+        if (error || !data || typeof data !== "object") return null;
+        return data as {
+          overall_score?: number;
+          unique_artists?: number;
+          unique_genres?: number;
+        };
+      })(),
     ]);
 
   const listenDaysSet = new Set(

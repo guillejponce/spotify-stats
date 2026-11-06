@@ -219,3 +219,13 @@ COMMENT ON TABLE friend_activity_events IS 'Eventos de actividad musical de usua
 COMMENT ON FUNCTION get_friend_activity_feed IS 'Feed de actividad de amigos aceptados';
 COMMENT ON FUNCTION detect_artist_discovery IS 'Detectar y registrar descubrimiento de nuevo artista';
 COMMENT ON FUNCTION check_listening_streak IS 'Calcular racha actual de días consecutivos escuchando';
+
+REVOKE EXECUTE ON FUNCTION public.get_friend_activity_feed(uuid, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.trigger_rating_activity() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.detect_artist_discovery(uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.check_listening_streak(uuid) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_friend_activity_feed(uuid, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.trigger_rating_activity() TO service_role;
+GRANT EXECUTE ON FUNCTION public.detect_artist_discovery(uuid, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.check_listening_streak(uuid) TO service_role;

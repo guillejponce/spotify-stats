@@ -313,3 +313,13 @@ COMMENT ON FUNCTION get_trending_artists IS 'Detectar artistas con mayor acelera
 COMMENT ON FUNCTION get_trending_tracks IS 'Detectar tracks con mayor aceleración en escuchas';
 COMMENT ON FUNCTION predict_future_ranking IS 'Predecir ranking futuro basado en tendencia actual';
 COMMENT ON FUNCTION get_trends_dashboard IS 'Dashboard completo de tendencias y descubrimientos';
+
+REVOKE EXECUTE ON FUNCTION public.get_trending_artists(uuid, integer) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_trending_tracks(uuid, integer) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.predict_future_ranking(uuid, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_trends_dashboard(uuid) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.get_trending_artists(uuid, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_trending_tracks(uuid, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.predict_future_ranking(uuid, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_trends_dashboard(uuid) TO service_role;
