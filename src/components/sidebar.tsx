@@ -21,6 +21,7 @@ import {
   Gift,
   Guitar,
   Shield,
+  Ticket,
   UserRound,
   UsersRound,
   ChevronDown,
@@ -37,7 +38,6 @@ type NavItem = {
   label: string;
   icon: typeof LayoutDashboard;
   adminOnly?: boolean;
-  beta?: boolean;
 };
 
 type NavGroup = {
@@ -80,6 +80,7 @@ const navGroups: NavGroup[] = [
     icon: UsersRound,
     items: [
       { href: "/friends", label: "Amigos", icon: UsersRound },
+      { href: "/concerts", label: "Conciertos", icon: Ticket },
       { href: "/kurt", label: "Racha", icon: Flame },
     ],
   },
@@ -88,7 +89,6 @@ const navGroups: NavGroup[] = [
     label: "Análisis",
     icon: Wrench,
     items: [
-      { href: "/mood", label: "Mood Musical", icon: Bot, beta: true },
       { href: "/charts", label: "Cifras", icon: Guitar },
     ],
   },
@@ -290,11 +290,6 @@ export function Sidebar() {
                             className={cn("h-4 w-4", isActive && "text-spotify-green")}
                           />
                           {item.label}
-                          {item.beta && (
-                            <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-spotify-light-gray">
-                              Beta
-                            </span>
-                          )}
                           {item.href === "/friends" && incoming > 0 && (
                             <IncomingBadge count={incoming} />
                           )}
